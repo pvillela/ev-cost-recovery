@@ -26,7 +26,6 @@ pub use crate::session::RSession;
 use jiff::civil::Date;
 use std::error::Error;
 use std::fmt;
-use std::path::PathBuf;
 
 /// Peak power estimates for a billing period.
 pub struct PowerEstimates {
@@ -244,7 +243,7 @@ impl Error for PeakPowerError {
 pub fn peak_power(
     billing_period_ending: Date,
     gb_period_values: PeriodValues,
-    sessions: &[RSession],
+    sessions: &Sessions,
 ) -> Result<PowerEstimates, PeakPowerError> {
     // Re-checked rather than assumed. This is an entry point in its own right, and a caller
     // reaching it directly has not been through `io::peak_power`'s validation.
@@ -256,10 +255,10 @@ pub fn peak_power(
 
     // Both estimates come off the one report, so the two figures cannot be drawn from different
     // session data.
-    let (sessions_report, sources) = one_report(sessions);
+    let sources = sessions.sources.clone();
     Ok(PowerEstimates {
-        kw_estimates: estimates_from_report(kw_ioi, sources.clone(), &sessions_report),
-        kva_estimates: estimates_from_report(kva_ioi, sources, &sessions_report),
+        kw_estimates: estimates_from_report(kw_ioi, sources.clone(), sessions),
+        kva_estimates: estimates_from_report(kva_ioi, sources, sessions),
     })
 }
 
@@ -335,7 +334,7 @@ const BILLED_DAYS_PER_MONTH: f64 = 30.0;
 pub fn peak_power_cost(
     bill: &HydroBill,
     gb_period_values: PeriodValues,
-    sessions: &[RSession],
+    sessions: &Sessions,
 ) -> Result<DeliveryCost, PeakPowerError> {
     // An off-cycle bill -- one whose meter reading period does not close a billing period -- is
     // refused rather than estimated from. Its demand figures are levied over a window this does not
@@ -344,13 +343,12 @@ pub fn peak_power_cost(
     billing_period_dates(billing_period_ending)?;
     check_period_covered(billing_period_ending, &gb_period_values)?;
 
-    let (sessions_report, sources) = one_report(sessions);
     let estimates = |peak, unit| {
         let ioi = peak_interval(peak, unit, billing_period_ending)?;
         Ok::<_, PeakPowerError>(estimates_from_report(
             ioi,
-            sources.clone(),
-            &sessions_report,
+            sessions.sources.clone(),
+            sessions,
         ))
     };
 
@@ -569,39 +567,6 @@ fn check_period_covered(
     Ok(())
 }
 
-/// The sessions as one report, with the files they came from.
-///
-/// `sessions` may state the same session more than once, and this is what counts it once. It also
-/// decides what each surviving session is fit for — both questions about the records alone, which
-/// is why they are settled on this side of the `io`/`pure` split rather than by a reader.
-///
-/// Shared by both entry points so that a [`DeliveryCost`] and the [`PowerEstimates`] for the same
-/// period cannot be built from different readings of the same records.
-fn one_report(sessions: &[RSession]) -> (Sessions, Vec<PathBuf>) {
-    (
-        Sessions::from_session_lists(vec![sessions.to_vec()], sources_of(sessions), Vec::new()),
-        sources_of(sessions),
-    )
-}
-
-/// The files `sessions` were read from, each named once, in the order they first appear.
-///
-/// Taken from the sessions rather than from a list of paths passed alongside them, so that what a
-/// report says it was built from cannot disagree with what it was actually built from.
-///
-/// A file that contributed no session is therefore not named. That is the intended reading of
-/// [`IntervalEstimates::sources`](crate::session::IntervalEstimates::sources) — the files the sessions were
-/// read from — and a month in which nobody charged contributed nothing to any figure.
-pub(super) fn sources_of(sessions: &[RSession]) -> Vec<PathBuf> {
-    let mut sources: Vec<PathBuf> = Vec::new();
-    for session in sessions {
-        if !sources.iter().any(|p| p == session.path.as_ref()) {
-            sources.push(session.path.as_ref().clone());
-        }
-    }
-    sources
-}
-
 /// The metering hour a peak occurred in, as an interval of interest.
 ///
 /// # Errors
@@ -626,12 +591,13 @@ fn peak_interval(
 mod test {
     use super::*;
     use crate::api::pure::test_support::{
-        KVA_PEAK_HOUR, KW_PEAK_HOUR, NOP_PEAK_HOUR, bill, close, period_ending_date,
-        period_values_with_nop, ts, two_reports,
+        KVA_PEAK_HOUR, KW_PEAK_HOUR, NOP_PEAK_HOUR, as_report, bill, close, period_ending_date,
+        period_values_with_nop, ts, two_report_sessions, two_reports,
     };
     use crate::hydro_bill::{BILL_END_DAY, BillingPeriod};
     use crate::session::{AnomalyKind, IntervalEstimates, test_support::session};
     use jiff::civil::date;
+    use std::path::PathBuf;
 
     /// A bill figure of zero is refused rather than divided by. Every one of the four is checked,
     /// because they are four separate divisions and three of them went unguarded until this test.
@@ -759,28 +725,28 @@ mod test {
     /// identically. It is one session, and counting it twice would inflate every figure it enters.
     #[test]
     fn a_session_both_reports_state_identically_is_counted_once() {
-        let one_copy = two_reports();
+        let one_copy = two_report_sessions();
         let mut two_copies = one_copy.clone();
         // The same session as June's `WHOLE`, as May's report states it: its own row in its own
         // file, and every figure the same.
         two_copies.insert(1, session("May.csv", 9, "WHOLE", KW_PEAK_HOUR, 60, 6.0));
 
-        let estimate = |sessions: &[RSession]| {
+        let estimate = |sessions: Vec<RSession>| {
             peak_power(
                 period_ending_date(),
                 period_values(Some(KW_PEAK_HOUR), Some(KVA_PEAK_HOUR)),
-                sessions,
+                &as_report(sessions),
             )
             .unwrap()
         };
 
         assert_eq!(
-            membership(&estimate(&two_copies).kw_estimates),
-            membership(&estimate(&one_copy).kw_estimates),
+            membership(&estimate(two_copies.clone()).kw_estimates),
+            membership(&estimate(one_copy).kw_estimates),
             "the duplicate should leave the segments as they were"
         );
         assert!(
-            estimate(&two_copies)
+            estimate(two_copies)
                 .kw_estimates
                 .session_anomalies
                 .is_empty(),
@@ -792,7 +758,7 @@ mod test {
     /// so both count, and both are flagged for a reader rather than one being discarded.
     #[test]
     fn a_reused_id_keeps_both_sessions_and_flags_them() {
-        let mut sessions = two_reports();
+        let mut sessions = two_report_sessions();
         // Same id as `MID_A`, a different session entirely — a week earlier, in another file.
         sessions.push(session(
             "May.csv",
@@ -806,7 +772,7 @@ mod test {
         let estimates = peak_power(
             period_ending_date(),
             period_values(Some(KW_PEAK_HOUR), Some(KVA_PEAK_HOUR)),
-            &sessions,
+            &as_report(sessions),
         )
         .unwrap();
 

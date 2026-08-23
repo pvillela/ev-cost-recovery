@@ -947,11 +947,10 @@ impl Sessions {
     /// Merges the session lists and sorts what survives into the three buckets.
     ///
     /// One call rather than two because every caller wants both and neither step is useful without
-    /// the other. Merging decides which records are the same session — see
-    /// [`MergedSessions::merge_sessions`], which is also where a shared `Charge_Session_ID` is
-    /// noticed — and bucketing decides what each surviving session is fit for. A caller passing one
-    /// list has nothing to merge across files and gets the flagging alone, which is how a
-    /// single-file read is the same code path as a two-file one.
+    /// the other. Merging decides which records are the same session — and is also where a shared
+    /// `Charge_Session_ID` is noticed — while bucketing decides what each surviving session is fit
+    /// for. A caller passing one list has nothing to merge across files and gets the flagging
+    /// alone, which is how a single-file read is the same code path as a two-file one.
     ///
     /// Bucketing is kept here, and out of both readers, so that a session read from a CSV and the
     /// same session read back from the workbook written from it cannot land in different buckets.
@@ -965,7 +964,10 @@ impl Sessions {
     /// 3. Everything else — [`Sessions::sessions`].
     ///
     /// Order within each bucket is the order given, which for both readers is report order.
-    pub(crate) fn from_session_lists(
+    ///
+    /// Public because the `api::pure` entry points take a [`Sessions`] rather than a list, and a
+    /// caller outside this crate with sessions of its own needs a way to make one.
+    pub fn from_session_lists(
         session_lists: Vec<Vec<RSession>>,
         sources: Vec<PathBuf>,
         log_paths: Vec<PathBuf>,
@@ -995,6 +997,59 @@ impl Sessions {
             }
         }
         report
+    }
+
+    /// One report from several, each read from its own file.
+    ///
+    /// A billing period straddles two calendar months and an Evolute report covers one, so the
+    /// figures for a period are drawn from two files. This is what puts them together, and it is
+    /// deliberately not a concatenation: the same session appears in both files when it spans the
+    /// month boundary, and counting it twice would inflate every figure derived from it.
+    ///
+    /// The sessions go back through [`Self::from_session_lists`] as one list per file, which is
+    /// the shape the merge needs to tell "one session in two files" from "one id on two sessions".
+    /// Each report's own `anomalies` are therefore dropped rather than
+    /// concatenated: they are re-derived from the combined records, which finds every duplicate
+    /// the separate reads found and the cross-file ones besides.
+    ///
+    /// `sources` and `log_paths` are concatenated in the order given, so a file that contributed
+    /// no session is still named by the report it is part of.
+    pub(crate) fn merge(reports: Vec<Self>) -> Self {
+        let mut session_lists = Vec::with_capacity(reports.len());
+        let mut sources = Vec::new();
+        let mut log_paths = Vec::new();
+        for report in reports {
+            sources.extend(report.sources.iter().cloned());
+            log_paths.extend(report.log_paths.iter().cloned());
+            session_lists.push(report.into_sessions());
+        }
+        Self::from_session_lists(session_lists, sources, log_paths)
+    }
+
+    /// Every session held, whichever bucket it is in, in bucket order.
+    ///
+    /// The inverse of the bucketing [`Self::from_session_lists`] does, so that a report can be put
+    /// back through it. Bucketing is a function of a session's own anomalies alone, so what comes
+    /// out of a second pass is what went into the first.
+    fn into_sessions(self) -> Vec<RSession> {
+        let mut all = self.sessions;
+        all.extend(self.spikes);
+        all.extend(self.excluded);
+        all
+    }
+
+    /// The sessions whose energy may be placed on a timeline: [`Self::sessions`] and
+    /// [`Self::spikes`].
+    ///
+    /// [`Self::excluded`] is left out rather than overlooked. Those records' start, end and
+    /// duration contradict each other, and an inverted one panics in `adj_duration` before any
+    /// figure comes of it.
+    ///
+    /// A spike is counted because the contradiction in it is between energy and *charge time*: the
+    /// energy is still energy, and the connection window it was drawn over is still a window. Only
+    /// figures that divide by charge time have to hold one out.
+    pub fn countable(&self) -> Vec<RSession> {
+        self.sessions.iter().chain(&self.spikes).cloned().collect()
     }
 }
 

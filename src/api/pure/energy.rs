@@ -179,7 +179,7 @@ impl Error for EnergyError {
 ///
 /// [`EnergyError::NotABillingPeriodEnding`] if `billing_period_ending` is not [`BILL_END_DAY`] of its
 /// month.
-pub fn energy(billing_period_ending: Date, sessions: &[RSession]) -> Result<Energy, EnergyError> {
+pub fn energy(billing_period_ending: Date, sessions: &Sessions) -> Result<Energy, EnergyError> {
     billing_period_dates(billing_period_ending)?;
 
     let period = BillingPeriod::ending_on(billing_period_ending, BILL_END_DAY);
@@ -187,35 +187,8 @@ pub fn energy(billing_period_ending: Date, sessions: &[RSession]) -> Result<Ener
 
     Ok(Energy {
         billing_period_ending,
-        kwh: tou_kwh(time_range, &countable(sessions)),
+        kwh: tou_kwh(time_range, &sessions.countable()),
     })
-}
-
-/// The sessions whose energy may be placed on a timeline, from a list that may state one of them
-/// more than once.
-///
-/// Two things at once, and both are needed by every figure drawn from sessions.
-///
-/// Deduplicated, because a caller supplying overlapping reports states a session twice and summing
-/// as given would count its energy twice.
-///
-/// Two of the three report buckets. `excluded` is left out rather than overlooked: those records'
-/// start, end and duration contradict each other, and an inverted one panics in `adj_duration`
-/// before any figure comes of it.
-pub(super) fn countable(sessions: &[RSession]) -> Vec<RSession> {
-    let report = Sessions::from_session_lists(
-        vec![sessions.to_vec()],
-        // Derived from the sessions, which is all a pure function has. A file that contributed no
-        // session is invisible here; `io` is where the paths actually passed in are known.
-        super::peak_power::sources_of(sessions),
-        Vec::new(),
-    );
-    report
-        .sessions
-        .iter()
-        .chain(&report.spikes)
-        .cloned()
-        .collect()
 }
 
 /// Estimates the net energy cost attributable to EV charging sessions during a billing period.
@@ -260,7 +233,7 @@ pub(super) fn countable(sessions: &[RSession]) -> Vec<RSession> {
 /// [`EnergyError::NotABillingPeriodEnding`] if the bill's meter reading period does not close on
 /// [`BILL_END_DAY`], and [`EnergyError::NoRate`] if the bill reports no consumption in one of the
 /// three bands.
-pub fn energy_cost(bill: &HydroBill, sessions: &[RSession]) -> Result<EnergyCost, EnergyError> {
+pub fn energy_cost(bill: &HydroBill, sessions: &Sessions) -> Result<EnergyCost, EnergyError> {
     // An off-cycle bill -- one whose meter reading period does not close a billing period -- is
     // refused rather than estimated from, because `energy` sums over a period this does not model.
     // The check is `energy`'s own; there is no second one here.
@@ -460,6 +433,7 @@ fn band_name(tou: Tou) -> &'static str {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::api::pure::test_support::as_report;
     use crate::session::test_support::{inverted_session, session, spike_session};
     use jiff::civil::{Date, date};
 
@@ -469,7 +443,7 @@ mod test {
     }
 
     fn kwh(sessions: &[RSession]) -> f64 {
-        energy(period_ending_date(), sessions)
+        energy(period_ending_date(), &as_report(sessions.to_vec()))
             .expect("23 June closes a billing period")
             .kwh
             .total_kwh()
@@ -532,8 +506,8 @@ mod test {
     /// than reaching the panic in `BillingPeriod::ending_on`.
     #[test]
     fn a_date_that_does_not_close_a_billing_period_is_refused() {
-        let err =
-            energy(date(2026, 6, 30), &[]).expect_err("30 June does not label a billing period");
+        let err = energy(date(2026, 6, 30), &as_report(Vec::new()))
+            .expect_err("30 June does not label a billing period");
         assert!(
             matches!(err, EnergyError::NotABillingPeriodEnding(_)),
             "{err}"
@@ -610,12 +584,12 @@ mod test {
     /// One session in each band, on Wednesday 10 June: 02:00 EDT is off-peak, 08:00 is mid-peak and
     /// 12:00 is on-peak in the summer schedule. Three different amounts of energy, so a figure
     /// taken from the wrong band shows as a wrong number.
-    fn sessions() -> Vec<RSession> {
-        vec![
+    fn sessions() -> Sessions {
+        as_report(vec![
             session("June.csv", 2, "OFF", "2026-06-10T06:00:00Z", 60, 7.0),
             session("June.csv", 3, "MID", "2026-06-10T12:00:00Z", 60, 3.0),
             session("June.csv", 4, "ON", "2026-06-10T16:00:00Z", 60, 5.0),
-        ]
+        ])
     }
 
     fn cost() -> EnergyCost {

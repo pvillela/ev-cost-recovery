@@ -14,7 +14,7 @@ use crate::hydro_bill::{
     BILL_END_DAY, BillingPeriod, NotABillingPeriodEnding, billing_period_dates, billing_period_span,
 };
 use crate::markdown::{Left, Right, amounts, field, h1, h2, rounding_note, table, wrap};
-use crate::session::tou_kwh;
+use crate::session::{Sessions, tou_kwh};
 use crate::time::{Interval, local_midnight};
 use jiff::{Timestamp, civil::Date};
 use std::{error::Error, fmt};
@@ -22,7 +22,7 @@ use std::{error::Error, fmt};
 // Through `super`, not through `crate::io`. The two cost breakdowns are computed here in `pure`;
 // reaching them by the path `io` re-exports them under would point this half of the API at the
 // other, which is the one direction the split exists to prevent.
-use super::energy::{EnergyCost, EnergyError, countable, energy_cost};
+use super::energy::{EnergyCost, EnergyError, energy_cost};
 use super::peak_power::{DeliveryCost, PeakPowerError, peak_power_cost};
 
 // Re-exported because the functions here take these and return those, and a caller should not have
@@ -318,7 +318,7 @@ impl Error for CostRecoveryError {
 /// second schedule takes effect outside it.
 pub fn cost_recovery(
     billing_period_ending: Date,
-    sessions: &[RSession],
+    sessions: &Sessions,
     recovery_rates_at_start: CostRecoveryRates,
     recovery_rates_at_end: Option<CostRecoveryRates>,
 ) -> Result<CostRecovery, CostRecoveryError> {
@@ -341,7 +341,7 @@ pub fn cost_recovery(
     }
 
     let period = BillingPeriod::ending_on(billing_period_ending, BILL_END_DAY);
-    let counted = countable(sessions);
+    let counted = sessions.countable();
 
     // The instant the rates change, and with it the two stretches. Checked above to fall strictly
     // inside the period, so neither stretch is empty and the two partition it exactly.
@@ -439,7 +439,7 @@ pub fn cost_recovery(
 pub fn cost_recovery_surplus(
     bill: &HydroBill,
     gb_period_values: PeriodValues,
-    sessions: &[RSession],
+    sessions: &Sessions,
     recovery_rates_at_start: CostRecoveryRates,
     recovery_rates_at_end: Option<CostRecoveryRates>,
 ) -> Result<CostRecoverySurplus, CostRecoverySurplusError> {
@@ -687,10 +687,18 @@ fn verdict(surplus: f64) -> &'static str {
 mod test {
     use super::*;
     use crate::api::pure::test_support::{
-        KVA_PEAK_HOUR, KW_PEAK_HOUR, NOP_PEAK_HOUR, bill, period_ending_date,
+        KVA_PEAK_HOUR, KW_PEAK_HOUR, NOP_PEAK_HOUR, as_report, bill, period_ending_date,
         period_values_with_nop, two_reports,
     };
     use crate::session::test_support::session;
+
+    /// No sessions at all, as a report.
+    ///
+    /// What the rate-schedule checks are made against: they refuse the schedule before any session
+    /// is looked at, so a fixture carrying sessions would suggest the two bear on each other.
+    fn none() -> Sessions {
+        as_report(Vec::new())
+    }
     use jiff::civil::date;
 
     /// The period every fixture here belongs to: 24 May to 23 June 2026.
@@ -725,8 +733,13 @@ mod test {
         // 02:00 EDT on 10 June, an hour long, wholly inside the period.
         let s = session("June.csv", 2, "IN", "2026-06-10T06:00:00Z", 60, 7.0);
 
-        let r = cost_recovery(ending(), &[s], flat(date(2026, 5, 1), 0.10), None)
-            .expect("23 June closes a billing period");
+        let r = cost_recovery(
+            ending(),
+            &as_report(vec![s]),
+            flat(date(2026, 5, 1), 0.10),
+            None,
+        )
+        .expect("23 June closes a billing period");
 
         assert_eq!(r.stretches.len(), 1);
         assert_eq!(r.stretches[0].from, date(2026, 5, 24));
@@ -741,7 +754,7 @@ mod test {
     /// twice and nothing falls between.
     #[test]
     fn a_rate_change_splits_the_energy_without_losing_any() {
-        let sessions = [
+        let sessions = as_report(vec![
             // Before the change, and before the period's own start: only its tail counts.
             session("May.csv", 2, "EARLY", "2026-05-23T22:00:00Z", 240, 8.0),
             // Squarely inside the first stretch.
@@ -750,7 +763,7 @@ mod test {
             session("June.csv", 2, "ACROSS", "2026-06-01T02:00:00Z", 240, 12.0),
             // Squarely inside the second stretch.
             session("June.csv", 3, "JUNE", "2026-06-10T06:00:00Z", 60, 7.0),
-        ];
+        ]);
 
         let whole = cost_recovery(ending(), &sessions, flat(date(2026, 5, 1), 0.10), None)
             .expect("23 June closes a billing period");
@@ -795,7 +808,7 @@ mod test {
     fn the_stretches_are_dated_by_the_period_not_by_the_effective_dates() {
         let r = cost_recovery(
             ending(),
-            &[],
+            &none(),
             flat(date(2026, 5, 1), 0.10),
             Some(flat(date(2026, 6, 1), 0.12)),
         )
@@ -825,7 +838,7 @@ mod test {
         let off = session("June.csv", 2, "OFF", "2026-06-10T06:00:00Z", 60, 10.0);
         let r = cost_recovery(
             ending(),
-            &[off],
+            &as_report(vec![off]),
             rates(date(2026, 5, 1), 1.0, 2.0, 3.0),
             None,
         )
@@ -844,8 +857,13 @@ mod test {
     /// than reaching the panic in `BillingPeriod::ending_on`.
     #[test]
     fn a_date_that_does_not_close_a_billing_period_is_refused() {
-        let err = cost_recovery(date(2026, 6, 30), &[], flat(date(2026, 5, 1), 0.10), None)
-            .expect_err("30 June does not label a billing period");
+        let err = cost_recovery(
+            date(2026, 6, 30),
+            &none(),
+            flat(date(2026, 5, 1), 0.10),
+            None,
+        )
+        .expect_err("30 June does not label a billing period");
         assert!(
             matches!(err, CostRecoveryError::NotABillingPeriodEnding(_)),
             "{err}"
@@ -856,7 +874,7 @@ mod test {
     /// at all. Refused rather than backdated.
     #[test]
     fn opening_rates_must_reach_the_periods_first_day() {
-        let err = cost_recovery(ending(), &[], flat(date(2026, 6, 1), 0.10), None)
+        let err = cost_recovery(ending(), &none(), flat(date(2026, 6, 1), 0.10), None)
             .expect_err("1 June is after the period starts on 24 May");
         assert!(
             matches!(
@@ -871,9 +889,9 @@ mod test {
 
         // Rates already in effect when the period opens are the ordinary case, and the common one:
         // a period starting on the 24th is nearly always charged at rates set earlier that month.
-        assert!(cost_recovery(ending(), &[], flat(date(2026, 5, 1), 0.10), None).is_ok());
+        assert!(cost_recovery(ending(), &none(), flat(date(2026, 5, 1), 0.10), None).is_ok());
         // In effect exactly on the first day is inside, not outside.
-        assert!(cost_recovery(ending(), &[], flat(date(2026, 5, 24), 0.10), None).is_ok());
+        assert!(cost_recovery(ending(), &none(), flat(date(2026, 5, 24), 0.10), None).is_ok());
     }
 
     /// A change dated outside the period names a split this period does not contain. Both ends are
@@ -882,7 +900,7 @@ mod test {
     fn a_rate_change_must_fall_inside_the_period() {
         let start = flat(date(2026, 5, 1), 0.10);
         let outside = |change: Date| {
-            cost_recovery(ending(), &[], start, Some(flat(change, 0.12)))
+            cost_recovery(ending(), &none(), start, Some(flat(change, 0.12)))
                 .expect_err("{change} is outside the period")
         };
 
@@ -908,7 +926,7 @@ mod test {
         // The two days just inside each end are accepted, which is what fixes the boundary.
         for change in [date(2026, 5, 25), date(2026, 6, 23)] {
             assert!(
-                cost_recovery(ending(), &[], start, Some(flat(change, 0.12))).is_ok(),
+                cost_recovery(ending(), &none(), start, Some(flat(change, 0.12))).is_ok(),
                 "a change on {change}"
             );
         }
@@ -922,7 +940,7 @@ mod test {
 
         let one = cost_recovery(
             ending(),
-            std::slice::from_ref(&s),
+            &as_report(vec![s.clone()]),
             flat(date(2026, 5, 1), 0.10),
             None,
         )
@@ -936,7 +954,7 @@ mod test {
 
         let two = cost_recovery(
             ending(),
-            &[s],
+            &as_report(vec![s]),
             flat(date(2026, 5, 1), 0.10),
             Some(flat(date(2026, 6, 1), 0.12)),
         )

@@ -8,7 +8,7 @@
 use crate::api::pure;
 use crate::green_button::period_values_xml;
 use crate::hydro_bill::{BILL_END_DAY, hydro_bill_from_pdf};
-use crate::session::{RSession, csv};
+use crate::session::{Sessions, csv};
 use jiff::civil::Date;
 use std::error::Error;
 use std::fmt;
@@ -441,27 +441,26 @@ fn bill_source(cause: &EnergyError, bill_pdf: Option<&Path>) -> Option<PathBuf> 
     }
 }
 
-/// Every session the named reports hold, in the order the reports are given.
+/// The named reports as one [`Sessions`].
 ///
-/// Flattened rather than kept per file, and deliberately not merged. Which records describe one
-/// session is a question about the records, so it belongs to
-/// [`pure::peak_power`](fn@super::pure::peak_power); this only fetches them.
+/// Merged rather than flattened, and merged as reports rather than as lists of sessions. What each
+/// file contributed — the anomalies that are relations between its records, the path it was read
+/// from, the log written beside it — is context that belongs to the read, and flattening the
+/// buckets into a bare `Vec` threw all of it away at the one point in the program that had it.
 ///
-/// All three of each report's buckets are taken. Bucketing is a function of a session's own
-/// anomalies, so it is redone identically on the other side, and dropping the excluded ones here
-/// would silently lose the records a reader most needs to see.
-fn read_sessions(paths: &[&Path]) -> Result<Vec<RSession>, ReadError> {
-    let mut sessions = Vec::new();
+/// [`Sessions::merge`] is where the merging is defined; this only fetches the files and hands them
+/// over in the order given.
+fn read_sessions(paths: &[&Path]) -> Result<Sessions, ReadError> {
+    let mut reports = Vec::with_capacity(paths.len());
     for path in paths {
-        let report = csv::session_list(path).map_err(|cause| ReadError::SessionReport {
-            path: path.to_path_buf(),
-            cause,
-        })?;
-        sessions.extend(report.sessions);
-        sessions.extend(report.spikes);
-        sessions.extend(report.excluded);
+        reports.push(
+            csv::session_list(path).map_err(|cause| ReadError::SessionReport {
+                path: path.to_path_buf(),
+                cause,
+            })?,
+        );
     }
-    Ok(sessions)
+    Ok(Sessions::merge(reports))
 }
 
 #[cfg(test)]

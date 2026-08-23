@@ -10,11 +10,12 @@
 
 use crate::green_button::{Peak, PeriodValues};
 use crate::hydro_bill::{BILL_END_DAY, BillingPeriod, HydroBill};
-use crate::session::{RSession, test_support::session};
+use crate::session::{RSession, Sessions, test_support::session};
 use crate::time::Tou;
 use jiff::Timestamp;
 use jiff::civil::{Date, date};
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 
 /// The period every fixture here belongs to: 24 May to 23 June 2026.
 const PERIOD_ENDING: (i16, i8, i8) = (2026, 6, 23);
@@ -121,7 +122,15 @@ pub(crate) fn bill() -> HydroBill {
 ///
 /// `EVENING` sits in the kVA peak hour instead, and `ELSEWHERE` in neither, so the two estimates
 /// cannot accidentally agree.
-pub(crate) fn two_reports() -> Vec<RSession> {
+pub(crate) fn two_reports() -> Sessions {
+    as_report(two_report_sessions())
+}
+
+/// The same sessions as a bare list, for the tests that add a record to them before reading.
+///
+/// What those tests are about is a record that turns up twice, or an id that turns up on two
+/// records, so they have to build the list before it becomes a report.
+pub(crate) fn two_report_sessions() -> Vec<RSession> {
     vec![
         session("May.csv", 2, "MAY_ONLY", "2026-05-26T18:00:00Z", 30, 2.0),
         session("June.csv", 2, "WHOLE", KW_PEAK_HOUR, 60, 6.0),
@@ -130,6 +139,23 @@ pub(crate) fn two_reports() -> Vec<RSession> {
         session("June.csv", 5, "EVENING", "2026-06-11T23:45:00Z", 14, 1.0),
         session("June.csv", 6, "ELSEWHERE", "2026-06-01T12:00:00Z", 30, 2.0),
     ]
+}
+
+/// A list of sessions as `io` now hands one over: a [`Sessions`], naming the files the sessions
+/// themselves came from.
+///
+/// The `api::pure` entry points take a report rather than a list, and a test that builds a list to
+/// make one point about it should not have to say so twice. Sources are derived here rather than
+/// passed, which is what the pure side could do before the read began carrying them; a test whose
+/// point is a file that contributed nothing builds its own report instead.
+pub(crate) fn as_report(sessions: Vec<RSession>) -> Sessions {
+    let mut sources: Vec<PathBuf> = Vec::new();
+    for s in &sessions {
+        if !sources.iter().any(|p| p == s.path.as_ref()) {
+            sources.push(s.path.as_ref().clone());
+        }
+    }
+    Sessions::from_session_lists(vec![sessions], sources, Vec::new())
 }
 
 /// Money, to the cent.
