@@ -77,6 +77,12 @@ fn main() -> ExitCode {
 
     match interval_estimates(interval, &path) {
         Ok(report) => {
+            // The library hands its run log back rather than writing it; a binary is where it
+            // lands. Written before the report is printed, so a failure is not buried under it.
+            if let Err(e) = report.write_logs() {
+                eprintln!("error: {e}");
+                return ExitCode::FAILURE;
+            }
             print!("{report}");
             ExitCode::SUCCESS
         }

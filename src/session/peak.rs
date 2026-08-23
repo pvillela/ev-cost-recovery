@@ -1,5 +1,5 @@
 use super::excel::session_list;
-use super::{Anomaly, Bracket, RSegment, RSession, SEGMENT_DURATION, Segment, Sessions};
+use super::{Anomaly, Bracket, RSegment, RSession, SEGMENT_DURATION, Segment, Sessions, SourceLog};
 use crate::time::Interval;
 use std::{
     error::Error,
@@ -43,6 +43,25 @@ pub struct IntervalEstimates {
     /// The report states which ones appear to touch the interval and lists the rest anyway,
     /// leaving the judgement to a reader who can go back to the source rows.
     pub excluded_sessions: Vec<RSession>,
+    /// The run logs of the files the sessions were read from, unwritten.
+    ///
+    /// Carried for the same reason [`Self::sources`] is: so the report is self-describing, and so
+    /// a binary handed one has everything it needs to put a log where a user can read it. Nothing
+    /// in the report renders them. See [`Sessions::logs`].
+    pub logs: Vec<SourceLog>,
+}
+
+impl IntervalEstimates {
+    /// Writes each source's log beside it, returning where they went.
+    ///
+    /// For a binary. See [`Sessions::write_logs`], which this is the report-side counterpart of.
+    ///
+    /// # Errors
+    ///
+    /// The first write that fails, with none of the later ones attempted.
+    pub fn write_logs(&self) -> Result<Vec<PathBuf>, Box<dyn Error>> {
+        self.logs.iter().map(SourceLog::write).collect()
+    }
 }
 
 /// The four estimates for one [`Segment`].
@@ -125,6 +144,7 @@ pub(crate) fn estimates_from_report(
         // still reported: a caller judging an estimate needs to know what was left out. See
         // docs/session/README.md, "Other".
         excluded_sessions: report.excluded.clone(),
+        logs: report.logs.clone(),
     }
 }
 
