@@ -6,6 +6,18 @@
 //! 2026 invoice states its period as `MAY 23 2026 TO JUN 23 2026` over `31` days, which is the same
 //! span read from the meter-reading instants rather than the calendar days.
 //!
+//! # What the bill's two dates mean
+//!
+//! They are stated in EST, and they name the meter readings that bound the period rather than the
+//! days it covers. Read as days, `FROM` is exclusive and `TO` is inclusive: the period covers all
+//! of June 23rd and none of May 23rd. No clock makes it 23rd to 23rd -- on an EST clock the covered
+//! days run 24th to 23rd, and on a summer EDT clock the span runs from part of the 24th to part of
+//! the following 24th.
+//!
+//! Inferred rather than stated. The bill says only `MAY 23 2026 TO JUN 23 2026` and `31`; counting
+//! both dates would give 32 and counting neither 30, so exactly one endpoint is included, and the
+//! reconciliation of 19 invoices with Green Button data is what says which.
+//!
 //! Standard time, not prevailing local time: the boundary is at 00:00 EST all year and does not
 //! move when the clocks do. That is what the invoices say. Cutting at prevailing local midnight
 //! instead reproduces 6 of 19 invoices; cutting on a fixed EST clock reproduces all 19 to the

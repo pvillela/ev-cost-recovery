@@ -55,6 +55,29 @@ Two consequences worth knowing:
 The Green Button feed itself keeps the same standard-time day — its `IntervalBlock`s start at 05:00
 UTC year-round. See `../green_button/Toronto_Hydro_Object_Model.md`, "Fixed daily grid".
 
+### What the bill's two dates mean
+
+A bill states its `Meter Reading Period` as two dates — `MAY 23 2026 TO JUN 23 2026`. **Those dates
+are in EST, and they name the two meter readings that bound the period, not the days it covers.**
+Read as days, `FROM` is exclusive and `TO` is inclusive: the period covers all of June 23rd and none
+of May 23rd.
+
+The label is easy to misread as "the 23rd to the 23rd", which no clock makes true:
+
+| Clock | Season | Days actually covered |
+| :--- | :--- | :--- |
+| EST | either | 24 May 00:00:00 → 23 Jun 23:59:59 — the 24th to the 23rd |
+| EDT | summer | 24 May 01:00 → 24 Jun 00:59:59 — part of the 24th to part of the 24th |
+
+This is inferred rather than stated. The bill gives only the two dates and a `Number of Days` of
+`31`; counting both dates would give 32 and counting neither 30, so exactly one endpoint is
+included. Which one is settled by the reconciliation of 19 invoices with Green Button data, in
+[`../hydro_bill/archive/dst-energy-anomaly-pre-fix.md`](../hydro_bill/archive/dst-energy-anomaly-pre-fix.md).
+
+None of the arithmetic depends on the label. `BillingPeriod` works in instants and never parses it;
+the reading matters only when someone compares an invoice to the code and has to decide whether the
+two agree.
+
 ## Time zone
 
 - The session report's timestamps are stated in local time, i.e., ET. We need to convert them to UTC.
