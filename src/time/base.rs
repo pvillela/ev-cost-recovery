@@ -86,12 +86,13 @@ pub(crate) fn local_midnight(d: Date) -> Timestamp {
 /// entry it is meant to be, so reordering that array cannot silently move every period boundary.
 pub const BILLING_OFFSET: (&str, i8) = TZ_OFFSETS[0];
 
-static BILLING_ZONE: LazyLock<TimeZone> =
-    LazyLock::new(|| TimeZone::fixed(Offset::constant(BILLING_OFFSET.1)));
-
 /// The zone billing periods are cut in: a fixed offset, with no daylight-saving rule at all.
-fn billing_zone() -> TimeZone {
-    BILLING_ZONE.clone()
+///
+/// Built on the spot rather than resolved once, unlike [`time_zone`]. A fixed offset is arithmetic
+/// on the offset itself: `jiff` packs it into the value and allocates nothing, so there is no
+/// lookup to share and nothing for a `LazyLock` to save.
+const fn billing_zone() -> TimeZone {
+    TimeZone::fixed(Offset::constant(BILLING_OFFSET.1))
 }
 
 /// The standard-time calendar date an instant falls on.
