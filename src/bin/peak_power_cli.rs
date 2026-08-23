@@ -70,6 +70,7 @@ fn run(
         kw_estimates,
         kva_estimates,
         notes,
+        meter,
     } = peak_power(billing_period_ending, gb_xml, session_csv1, session_csv2)?;
 
     // The library hands its run logs back rather than writing them; a binary is where they land.
@@ -81,5 +82,10 @@ fn run(
     print!("{kw_estimates}");
     println!("\nBilling period ending {billing_period_ending} -- interval maximizing kVA\n");
     print!("{kva_estimates}");
+
+    // The two reports above are each about one interval; what the sessions and the meter export as
+    // a whole needed a judgement call about is stated once, after both.
+    println!("\n{}", notes.to_markdown());
+    print!("{}", meter.to_markdown());
     Ok(())
 }

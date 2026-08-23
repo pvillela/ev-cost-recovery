@@ -27,7 +27,7 @@ use super::peak_power::{DeliveryCost, PeakPowerError, peak_power_cost};
 
 // Re-exported because the functions here take these and return those, and a caller should not have
 // to know which module they come from in order to spell the call.
-pub use crate::green_button::PeriodValues;
+pub use crate::green_button::{MeterNotes, PeriodValues};
 pub use crate::hydro_bill::HydroBill;
 pub use crate::session::{RSession, TouKwh};
 
@@ -155,9 +155,13 @@ pub struct CostRecoverySurplus {
     /// What all three parts were drawn from, and what was odd about it.
     ///
     /// Hoisted here rather than left to the three, which carry their own. The three read the same
-    /// records, so this is the widest of their selections — every kind — stated once. The report
-    /// prints it under the surplus and the three sub-reports print none of their own.
+    /// records, so this is the union of their two selections, stated once. The report prints it
+    /// under the surplus and the three sub-reports print none of their own.
     pub notes: SessionNotes,
+
+    /// The same, for the meter export. Hoisted from the delivery cost, which is the only one of
+    /// the three parts that reads one.
+    pub meter: MeterNotes,
 }
 
 // No per-band recovery for the whole period. A band's kilowatt-hours were charged at one rate in
@@ -485,6 +489,7 @@ pub fn cost_recovery_surplus(
     // three hours it prices. Both bear on the subtraction, and neither contains the other.
     let mut notes = sessions.notes(AnomalyKind::bears_on_energy);
     notes.add_anomalies(delivery.notes.anomalies.iter().cloned());
+    let meter = std::mem::take(&mut delivery.meter);
     recovery.notes = SessionNotes::default();
     delivery.notes = SessionNotes::default();
     energy.notes = SessionNotes::default();
@@ -496,6 +501,7 @@ pub fn cost_recovery_surplus(
                 - to_the_cent(energy.energy_cost),
         ),
         notes,
+        meter,
         recovery,
         delivery,
         energy,
@@ -688,6 +694,7 @@ impl fmt::Display for CostRecoverySurplus {
         // Once, above the three parts rather than inside each. They are drawn from the same
         // records, so what is odd about those records is odd about all three figures.
         writeln!(f, "{}", self.notes.to_markdown())?;
+        writeln!(f, "{}", self.meter.to_markdown())?;
 
         // The three parts in full, under their own headings. The figure above is a subtraction of
         // three numbers, and none of them can be checked without the report it came from.

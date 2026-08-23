@@ -6,7 +6,8 @@
 
 use crate::green_button::{Anomaly, METER_INTERVAL, Reading, Readings};
 use crate::hydro_bill::BillingPeriod;
-use crate::time::{Interval, Tou, is_off_peak, tou_of};
+use crate::markdown::{Left, h2, table, wrap};
+use crate::time::{Interval, Tou, is_off_peak, time_zone, tou_of};
 use jiff::Timestamp;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -40,6 +41,15 @@ pub struct PeriodValues {
     pub max_kva_nop: Option<Peak>,
     pub anomaly_counts: BTreeMap<Anomaly, usize>,
 
+    /// The same anomalies as `anomaly_counts`, kept hour by hour rather than tallied.
+    ///
+    /// Ascending by hour, one entry per hour and kind. A count answers "how much of this feed is
+    /// suspect"; only the hours answer "does any of it bear on the figure in front of me", which
+    /// is what a reader checking a demand charge against the hour it was levied on is asking.
+    /// `gb_peak_values` writes the counts into a workbook cell and wants nothing finer; the API
+    /// reports the hours.
+    pub anomalies: Vec<(Timestamp, Anomaly)>,
+
     /// The export these figures were read from, carried through from
     /// [`Readings::source`](crate::green_button::Readings).
     ///
@@ -52,6 +62,102 @@ impl PeriodValues {
     /// Whether the period holds every hour it should. Drives the red fill on `nbr_of_intervals`.
     pub fn is_complete(&self) -> bool {
         self.interval_count == self.period.expected_intervals()
+    }
+
+    /// What a figure drawn from these meter readings should say about them.
+    ///
+    /// Taken rather than borrowed: [`PeriodValues`] is consumed by the functions that price a
+    /// period, and this is what survives them.
+    pub fn notes(&self) -> MeterNotes {
+        MeterNotes {
+            source: self.source.clone(),
+            anomalies: self.anomalies.clone(),
+        }
+    }
+}
+
+/// What a figure drawn from the meter export should say about it: which file, and which hours in
+/// it needed a judgement call.
+///
+/// The meter-side counterpart of [`SessionNotes`](crate::session::SessionNotes), and carried
+/// alongside one by every figure that reads both. Kept apart from it rather than merged, because
+/// the two are checked against different things: a session anomaly is looked up in a session
+/// report by row, a meter anomaly in an export by hour.
+///
+/// Not filtered by relevance, unlike the session side's. The demand figures rest on maxima over
+/// the whole period, so an hour anywhere in it that carried no kW is an hour that could have held
+/// the maximum and did not offer one.
+#[derive(Debug, Clone, Default)]
+pub struct MeterNotes {
+    /// The export the readings came from. `None` when they were parsed from a string.
+    pub source: Option<PathBuf>,
+    /// Ascending by hour, one entry per hour and kind.
+    pub anomalies: Vec<(Timestamp, Anomaly)>,
+}
+
+impl MeterNotes {
+    /// Whether there is nothing to report.
+    pub fn is_clean(&self) -> bool {
+        self.anomalies.is_empty()
+    }
+
+    /// Renders the meter side as markdown that also reads as plain text.
+    ///
+    /// Empty when there is nothing to say and no file to name — which is what a figure that gives
+    /// its notes up to a hoisted section leaves behind.
+    ///
+    /// Hours are stated in local time, as every other hour in these reports is. The export
+    /// timestamps in UTC, but a reader comparing an hour against a bill is reading a local clock.
+    pub fn to_markdown(&self) -> String {
+        if self.source.is_none() && self.is_clean() {
+            return String::new();
+        }
+        let mut out: Vec<String> = Vec::new();
+        out.push(h2("Meter data"));
+        out.push(String::new());
+        match &self.source {
+            Some(path) => out.push(format!("- {}", path.display())),
+            None => out.push("- (readings not read from a file)".to_owned()),
+        }
+        out.push(String::new());
+
+        if self.is_clean() {
+            return out.join("\n");
+        }
+        out.push(wrap(
+            "These hours of the export needed a judgement call. Every figure on the demand side is \
+             a maximum over the whole period, so an hour anywhere in it that carried no reading is \
+             an hour that could have held the maximum and offered nothing.",
+            "",
+        ));
+        out.push(String::new());
+        let rows: Vec<Vec<String>> = self
+            .anomalies
+            .iter()
+            .map(|(at, kind)| {
+                vec![
+                    at.to_zoned(time_zone())
+                        .strftime("%Y-%m-%d %H:%M")
+                        .to_string(),
+                    kind.as_str().to_owned(),
+                ]
+            })
+            .collect();
+        out.push(table(&["Hour", "Anomaly"], &rows, &[Left, Left]));
+        out.push(String::new());
+
+        let mut seen: Vec<Anomaly> = Vec::new();
+        for (_, kind) in &self.anomalies {
+            if !seen.contains(kind) {
+                seen.push(*kind);
+                out.push(wrap(
+                    &format!("- {} - {}.", kind.as_str(), kind.description()),
+                    "  ",
+                ));
+            }
+        }
+        out.push(String::new());
+        out.join("\n")
     }
 }
 
@@ -73,10 +179,12 @@ pub fn period_values(readings: &Readings, bill_end_day: i8) -> Vec<PeriodValues>
         .into_iter()
         .map(|(period, rows)| {
             let mut anomaly_counts: BTreeMap<Anomaly, usize> = BTreeMap::new();
+            let mut anomalies: Vec<(Timestamp, Anomaly)> = Vec::new();
             for (at, kinds) in &readings.anomalies {
                 if period.contains(*at) {
                     for kind in kinds {
                         *anomaly_counts.entry(*kind).or_default() += 1;
+                        anomalies.push((*at, *kind));
                     }
                 }
             }
@@ -89,6 +197,7 @@ pub fn period_values(readings: &Readings, bill_end_day: i8) -> Vec<PeriodValues>
                 max_kva: peak(&rows, |r| r.kva, |r| r.kw, false),
                 max_kva_nop: peak(&rows, |r| r.kva, |r| r.kw, true),
                 anomaly_counts,
+                anomalies,
                 source: readings.source.clone(),
                 period,
             }
@@ -145,6 +254,7 @@ mod test {
     use crate::hydro_bill::BILL_END_DAY;
     use crate::time::local_hour;
     use jiff::civil::date;
+    use std::collections::BTreeSet;
 
     /// [`period_values`] on Toronto Hydro's own billing calendar, which is the only one these
     /// tests care about; they are about the peaks, not about where a period ends.
@@ -290,5 +400,58 @@ mod test {
         assert_eq!(values[0].interval_count, 3);
         assert_eq!(values[1].period.ending, date(2026, 7, 23));
         assert_eq!(values[1].interval_count, 1);
+    }
+
+    /// Each period keeps its own anomalies hour by hour, not merely tallied, and takes none from
+    /// the period next door.
+    ///
+    /// The count answers "how much of this feed is suspect". Only the hours answer "does any of it
+    /// bear on the figure in front of me", which is what a reader checking a demand charge against
+    /// the hour it was levied on is asking.
+    #[test]
+    fn each_period_keeps_the_hours_its_anomalies_fell_in() {
+        let start = local_hour(date(2026, 6, 23), 22);
+        let next_period = local_hour(date(2026, 6, 24), 1);
+        let mut readings = readings_from(start, &[(1, 1, 1); 4]);
+        readings.anomalies = BTreeMap::from([
+            (start, BTreeSet::from([Anomaly::MissingKw])),
+            (next_period, BTreeSet::from([Anomaly::MissingKva])),
+        ]);
+
+        let values = period_values_at(&readings);
+        assert_eq!(values[0].anomalies, [(start, Anomaly::MissingKw)]);
+        assert_eq!(values[1].anomalies, [(next_period, Anomaly::MissingKva)]);
+        // The tally still says the same thing, one period at a time.
+        assert_eq!(values[0].anomaly_counts[&Anomaly::MissingKw], 1);
+    }
+
+    /// The rendered section names the file even when nothing is wrong, and says nothing at all
+    /// when there is no file either -- which is what a figure that gave its notes up looks like.
+    #[test]
+    fn the_meter_section_names_its_file_and_is_silent_when_there_is_none() {
+        let quiet = MeterNotes {
+            source: Some(PathBuf::from("Usage.XML")),
+            anomalies: Vec::new(),
+        };
+        let text = quiet.to_markdown();
+        assert!(text.contains("Usage.XML"), "{text}");
+        assert!(!text.contains("judgement call"), "{text}");
+
+        assert!(MeterNotes::default().to_markdown().is_empty());
+    }
+
+    /// An hour that needed a judgement call is listed, in local time, with what it means.
+    #[test]
+    fn the_meter_section_lists_the_hours_in_local_time() {
+        let at = local_hour(date(2026, 6, 15), 12);
+        let notes = MeterNotes {
+            source: Some(PathBuf::from("Usage.XML")),
+            anomalies: vec![(at, Anomaly::MissingKw)],
+        };
+        let text = notes.to_markdown();
+        // 12:00 local, not the 16:00 the export timestamps it as.
+        assert!(text.contains("2026-06-15 12:00"), "{text}");
+        assert!(text.contains("MissingKw"), "{text}");
+        assert!(text.contains("no kW"), "the glossary is missing:\n{text}");
     }
 }

@@ -66,6 +66,7 @@ pub(crate) fn period_values_with_nop(
         max_kva: kva_at.map(|at| peak(at, Tou::MidPeak)),
         max_kva_nop: None,
         anomaly_counts: BTreeMap::new(),
+        anomalies: Vec::new(),
     }
 }
 

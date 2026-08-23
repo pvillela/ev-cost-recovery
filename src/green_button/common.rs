@@ -92,6 +92,34 @@ pub enum Anomaly {
 }
 
 impl Anomaly {
+    /// What the token means, in one clause, for a report's glossary.
+    ///
+    /// Separate from [`fmt::Display`], which writes the bare token: the token is what a workbook
+    /// cell holds and what [`Self::from_token`] reads back, and a cell full of prose would not
+    /// survive the round trip. This is for a reader who has met the token and wants to know what
+    /// it says.
+    pub fn description(&self) -> &'static str {
+        match self {
+            Self::MissingKwh => "the hour carried a kW or kVA reading but no kWh",
+            Self::MissingKw => "the hour carried a kWh or kVA reading but no kW",
+            Self::MissingKva => "the hour carried a kWh or kW reading but no kVA",
+            Self::MissingInterval => {
+                "no series carried this hour, though the hours around it imply it should exist"
+            }
+            Self::DuplicateInterval => {
+                "the same interval start appeared more than once within one series"
+            }
+            Self::MisalignedInterval => {
+                "the interval does not start on a whole hour, so it was left out of peak \
+                 selection and can never be a reported maximum"
+            }
+            Self::ImplausibleGap => {
+                "the hole before this hour was too large to be an outage, so it was left unfilled \
+                 rather than expanded into placeholder rows"
+            }
+        }
+    }
+
     /// The stable token written to the `anomalies` column. See the type-level note.
     pub fn as_str(&self) -> &'static str {
         match self {

@@ -22,7 +22,7 @@ use crate::time::Interval;
 // Re-exported because `peak_power` and `peak_power_cost` take them. `IntervalEstimates` is
 // deliberately not: it is inside `PowerEstimates` rather than named by the signature, and a reader
 // who probes that far can go to `session` for it.
-pub use crate::green_button::PeriodValues;
+pub use crate::green_button::{MeterNotes, PeriodValues};
 pub use crate::hydro_bill::HydroBill;
 pub use crate::session::RSession;
 use jiff::civil::Date;
@@ -39,6 +39,9 @@ pub struct PowerEstimates {
     /// each session's power and on exactly which records touch that hour, so none of the kinds is
     /// beside the point here. See [`AnomalyKind::bears_on_energy`](crate::session::AnomalyKind::bears_on_energy).
     pub notes: SessionNotes,
+
+    /// The same, for the meter export the two maxima were taken over.
+    pub meter: MeterNotes,
 }
 
 /// Breakdown of delivery cost attributable to EV sessions in a billing period.
@@ -91,6 +94,9 @@ pub struct DeliveryCost {
     /// What the figures were drawn from, and what was odd about it. Every kind, as
     /// [`PowerEstimates::notes`] carries.
     pub notes: SessionNotes,
+
+    /// The same, for the meter export the demand figures are maxima over.
+    pub meter: MeterNotes,
 }
 
 /// Why a billing period's figures cannot be turned into peak power estimates, or into the delivery
@@ -272,6 +278,7 @@ pub fn peak_power(
     let kva_estimates = estimates_from_report(kva_ioi, sources, sessions);
     Ok(PowerEstimates {
         notes: notes_for_hours(sessions, [&kw_estimates, &kva_estimates]),
+        meter: gb_period_values.notes(),
         kw_estimates,
         kva_estimates,
     })
@@ -369,6 +376,8 @@ pub fn peak_power_cost(
 
     // Each maximum is taken over the interval its own bill line is charged on. Reading all three
     // off one interval would price two of the lines against an hour they were never charged for.
+    // Taken before the maxima are read off, since those move `gb_period_values` field by field.
+    let meter = gb_period_values.notes();
     let kva_hour = estimates(gb_period_values.max_kva, "kVA")?;
     let kw_hour = estimates(gb_period_values.max_kw, "kW")?;
     let nop_hour = estimates(gb_period_values.max_kw_nop, "kW 7-7")?;
@@ -426,6 +435,7 @@ pub fn peak_power_cost(
         // credit.
         delivery_cost: charges + hst - ontario_electricity_rebate,
         notes: notes_for_hours(sessions, [&kva_hour, &kw_hour, &nop_hour]),
+        meter,
     })
 }
 
@@ -547,7 +557,8 @@ impl fmt::Display for DeliveryCost {
             ])
         )?;
         writeln!(f, "\n{}\n", rounding_note())?;
-        write!(f, "{}", self.notes.to_markdown())
+        writeln!(f, "{}", self.notes.to_markdown())?;
+        write!(f, "{}", self.meter.to_markdown())
     }
 }
 
