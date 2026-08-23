@@ -23,7 +23,7 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 /// What a log records: either it is empty, or every line is something that needs a reader.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct RunLog {
     /// Free-text lines, in the order they were found.
     entries: Vec<String>,
@@ -85,6 +85,51 @@ impl RunLog {
         let path = log_path(output, suffix);
         std::fs::write(&path, self.render(operation, output))?;
         Ok(path)
+    }
+}
+
+/// One source file's run log, held rather than written.
+///
+/// A reader produces this and hands it back; whether it reaches a file is the caller's to decide.
+/// That is the rule this crate follows for everything short of a halt: a function that can return
+/// what it found returns it, and only a function that cannot — a binary's `main`, which has
+/// nowhere left to return to — writes it out.
+///
+/// It carries `suffix` and `operation` because the reader knows them and the caller does not. A
+/// binary writing the logs it was handed should not have to know that a CSV read is called
+/// `csv.read` while a read-back from a workbook is called `xlsx.read`.
+#[derive(Debug, Clone)]
+pub struct SourceLog {
+    /// The file the log is about, and the file it is written beside.
+    pub source: PathBuf,
+    /// The log file's own suffix: `<stem>.<suffix>.log`.
+    pub suffix: &'static str,
+    /// What was run, for the log's header.
+    pub operation: &'static str,
+    /// What was found.
+    pub log: RunLog,
+}
+
+impl SourceLog {
+    /// Writes the log beside its source, returning where it went.
+    ///
+    /// # Errors
+    ///
+    /// Whatever the write failed with. Returned rather than swallowed, for the reason
+    /// [`RunLog::write_beside`] gives.
+    pub fn write(&self) -> Result<PathBuf, Box<dyn Error>> {
+        self.log
+            .write_beside(&self.source, self.suffix, self.operation)
+    }
+
+    /// Where [`Self::write`] would put it.
+    pub fn path(&self) -> PathBuf {
+        log_path(&self.source, self.suffix)
+    }
+
+    /// The log's text, as a file would hold it.
+    pub fn render(&self) -> String {
+        self.log.render(self.operation, &self.source)
     }
 }
 

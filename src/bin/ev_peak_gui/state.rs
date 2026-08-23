@@ -115,8 +115,14 @@ impl ConvertState {
             Ok(ConversionReport {
                 output_path,
                 anomalies,
-                log_path: _,
+                log,
             }) => {
+                // The app is the end of the line, so the log is written here. The library returns
+                // what it found and writes nothing; see `Sessions::logs`.
+                if let Err(e) = log.write() {
+                    self.error = Some(format!("{}: {e}", log.path().display()));
+                    return;
+                }
                 self.handoff = Some(output_path.clone());
                 self.outcome = Some(ConvertOutcome {
                     workbook: output_path,
@@ -214,6 +220,12 @@ impl EstimateState {
         self.carried_over = false;
         match session_list(&path) {
             Ok(report) => {
+                // Written here rather than by the reader, for the reason `convert` gives above.
+                if let Err(e) = report.write_logs() {
+                    self.workbook = None;
+                    self.error = Some(e.to_string());
+                    return;
+                }
                 let covers = covered_range(&report);
                 if let Some((first, _)) = covers {
                     self.set_date(first);

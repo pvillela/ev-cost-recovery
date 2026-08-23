@@ -14,7 +14,9 @@ use crate::hydro_bill::{
     NotABillingPeriodEnding, ZeroDenominator, billing_period_dates, billing_period_span,
 };
 use crate::markdown::{Left, Right, amounts, field, h1, h2, rounding_note, table};
-use crate::session::{Bracket, EstimateSet, IntervalEstimates, Sessions, estimates_from_report};
+use crate::session::{
+    Bracket, EstimateSet, IntervalEstimates, SessionNotes, Sessions, estimates_from_report,
+};
 use crate::time::Interval;
 
 // Re-exported because `peak_power` and `peak_power_cost` take them. `IntervalEstimates` is
@@ -31,6 +33,12 @@ use std::fmt;
 pub struct PowerEstimates {
     pub kw_estimates: IntervalEstimates,
     pub kva_estimates: IntervalEstimates,
+    /// What the estimates were drawn from, and what was odd about it.
+    ///
+    /// Every anomaly kind, unlike the consumption side's. An estimate over a single hour turns on
+    /// each session's power and on exactly which records touch that hour, so none of the kinds is
+    /// beside the point here. See [`AnomalyKind::bears_on_energy`](crate::session::AnomalyKind::bears_on_energy).
+    pub notes: SessionNotes,
 }
 
 /// Breakdown of delivery cost attributable to EV sessions in a billing period.
@@ -79,6 +87,10 @@ pub struct DeliveryCost {
 
     /// Total delivery cost attributable to EV sessions, net of HST and OER.
     pub delivery_cost: f64,
+
+    /// What the figures were drawn from, and what was odd about it. Every kind, as
+    /// [`PowerEstimates::notes`] carries.
+    pub notes: SessionNotes,
 }
 
 /// Why a billing period's figures cannot be turned into peak power estimates, or into the delivery
@@ -256,9 +268,12 @@ pub fn peak_power(
     // Both estimates come off the one report, so the two figures cannot be drawn from different
     // session data.
     let sources = sessions.sources.clone();
+    let kw_estimates = estimates_from_report(kw_ioi, sources.clone(), sessions);
+    let kva_estimates = estimates_from_report(kva_ioi, sources, sessions);
     Ok(PowerEstimates {
-        kw_estimates: estimates_from_report(kw_ioi, sources.clone(), sessions),
-        kva_estimates: estimates_from_report(kva_ioi, sources, sessions),
+        notes: notes_for_hours(sessions, [&kw_estimates, &kva_estimates]),
+        kw_estimates,
+        kva_estimates,
     })
 }
 
@@ -354,15 +369,12 @@ pub fn peak_power_cost(
 
     // Each maximum is taken over the interval its own bill line is charged on. Reading all three
     // off one interval would price two of the lines against an hour they were never charged for.
-    let demand_kva = energy_based(&estimates(gb_period_values.max_kva, "kVA")?, |e| {
-        e.energy_based_kva
-    });
-    let demand_kw = energy_based(&estimates(gb_period_values.max_kw, "kW")?, |e| {
-        e.energy_based_kw
-    });
-    let peak_7_7_kw = energy_based(&estimates(gb_period_values.max_kw_nop, "kW 7-7")?, |e| {
-        e.energy_based_kw
-    });
+    let kva_hour = estimates(gb_period_values.max_kva, "kVA")?;
+    let kw_hour = estimates(gb_period_values.max_kw, "kW")?;
+    let nop_hour = estimates(gb_period_values.max_kw_nop, "kW 7-7")?;
+    let demand_kva = energy_based(&kva_hour, |e| e.energy_based_kva);
+    let demand_kw = energy_based(&kw_hour, |e| e.energy_based_kw);
+    let peak_7_7_kw = energy_based(&nop_hour, |e| e.energy_based_kw);
 
     let days_in_period = bill.number_of_days;
     let days_adj_factor = f64::from(days_in_period) / BILLED_DAYS_PER_MONTH;
@@ -413,7 +425,33 @@ pub fn peak_power_cost(
         // rebate is held as a positive amount and subtracted, though the bill prints it as a
         // credit.
         delivery_cost: charges + hst - ontario_electricity_rebate,
+        notes: notes_for_hours(sessions, [&kva_hour, &kw_hour, &nop_hour]),
     })
+}
+
+/// The notes for a figure priced on particular hours: every anomaly kind, but only for the sessions
+/// that reach one of them.
+///
+/// Scoped that way because the figures are. A demand charge is levied on one hour's maximum, and
+/// what a session did in some other hour of the month cannot move it. Reporting the period's whole
+/// anomaly list beside an hour's figure buries the handful of rows that bear on it -- one real
+/// period turned up 139 sessions above the breaker rating, none of them in any of the three priced
+/// hours.
+///
+/// The kinds are not filtered, unlike the consumption side's. Within an hour that is priced, every
+/// kind bears on the estimate: it turns on each session's power and on exactly which records touch
+/// the hour. See [`AnomalyKind::bears_on_energy`](crate::session::AnomalyKind::bears_on_energy).
+fn notes_for_hours<'a>(
+    sessions: &Sessions,
+    hours: impl IntoIterator<Item = &'a IntervalEstimates>,
+) -> SessionNotes {
+    // `false` for the kinds, so this starts with the sources, the excluded sessions and the logs
+    // and none of the period-wide anomalies.
+    let mut notes = sessions.notes(|_| false);
+    for hour in hours {
+        notes.add_anomalies(hour.session_anomalies.iter().cloned());
+    }
+    notes
 }
 
 impl fmt::Display for DeliveryCost {
@@ -508,7 +546,8 @@ impl fmt::Display for DeliveryCost {
                 ("Delivery cost", self.delivery_cost),
             ])
         )?;
-        writeln!(f, "\n{}", rounding_note())
+        writeln!(f, "\n{}\n", rounding_note())?;
+        write!(f, "{}", self.notes.to_markdown())
     }
 }
 

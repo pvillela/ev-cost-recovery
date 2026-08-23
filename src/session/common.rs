@@ -1,3 +1,4 @@
+use crate::session::log::SourceLog;
 use crate::time::{Interval, duration, time_zone, truncate_to};
 
 use super::site_load::{Load, ev_load, ev_real_power_kw, transformer_load};
@@ -772,6 +773,32 @@ pub enum AnomalyKind {
 }
 
 impl AnomalyKind {
+    /// Whether this kind can move a figure that sums energy over a period.
+    ///
+    /// Reported by relevance rather than in full, because a list a reader learns to skip is worse
+    /// than no list. An energy figure spreads each session's kilowatt-hours over the time it was
+    /// connected and cuts the result at the period's boundaries; only three kinds bear on that:
+    ///
+    /// - [`Self::InconsistentDuration`] — the session is left out of the sum entirely.
+    /// - [`Self::DuplicateId`] — two records may be one session counted twice, or one id on two
+    ///   sessions; the energy differs by a whole session either way.
+    /// - [`Self::DstUnresolvable`] — the timestamps may be an hour out, which moves energy between
+    ///   time-of-use bands and can move it across the period's own boundary.
+    ///
+    /// The rest do not. [`Self::ZeroActiveChargeTime`] and [`Self::ExcessiveAvgKw`] are about
+    /// power, which is not what is summed; [`Self::DstAmbiguousDuplicated`] and
+    /// [`Self::DstGapShifted`] are folds and gaps already resolved; [`Self::OffGridTimes`] and
+    /// [`Self::WorkbookDiscrepancy`] are facts about the file rather than the session.
+    ///
+    /// The demand side reports every kind instead, since an estimate over a single hour turns on
+    /// each session's power and on exactly which records touch that hour.
+    pub fn bears_on_energy(&self) -> bool {
+        matches!(
+            self,
+            Self::InconsistentDuration | Self::DuplicateId | Self::DstUnresolvable
+        )
+    }
+
     /// The variant name, as written to the workbook's `anomalies` column. Deliberately distinct
     /// from [`fmt::Display`], which is free-form prose for humans and may be reworded at will;
     /// this is a wire format and must stay stable.
@@ -933,14 +960,17 @@ pub struct Sessions {
     /// nothing" is exactly what a reader checking a period against two monthly exports needs to be
     /// able to see.
     pub sources: Vec<PathBuf>,
-    /// Where the run logs were written, one per file read. Each always exists, and says either
-    /// that nothing was found or what was. Their contents depend on which reader produced this
-    /// report — see their docs.
+    /// The run logs, one per file read, each saying either that nothing was found or what was.
+    /// What they hold depends on which reader produced this report — see their docs.
+    ///
+    /// Held rather than written. A reader returns what it found and leaves writing it to whoever
+    /// asked, which for a `Vec<PathBuf>` of already-written files was impossible: by the time the
+    /// caller saw the paths the files were there. [`Sessions::write_logs`] is how a binary puts
+    /// them where a user can read them.
     ///
     /// A vector because a report can be built from several files at once — see
-    /// `Sessions::from_session_lists` — and each source file has a log of its own, written
-    /// beside it.
-    pub log_paths: Vec<PathBuf>,
+    /// [`Sessions::merge`] — and each source file has a log of its own.
+    pub logs: Vec<SourceLog>,
 }
 
 impl Sessions {
@@ -970,7 +1000,7 @@ impl Sessions {
     pub fn from_session_lists(
         session_lists: Vec<Vec<RSession>>,
         sources: Vec<PathBuf>,
-        log_paths: Vec<PathBuf>,
+        logs: Vec<SourceLog>,
     ) -> Self {
         let MergedSessions {
             sessions,
@@ -982,7 +1012,7 @@ impl Sessions {
             excluded: Vec::new(),
             anomalies,
             sources,
-            log_paths,
+            logs,
         };
         for session in sessions {
             if session
@@ -1012,30 +1042,35 @@ impl Sessions {
     /// concatenated: they are re-derived from the combined records, which finds every duplicate
     /// the separate reads found and the cross-file ones besides.
     ///
-    /// `sources` and `log_paths` are concatenated in the order given, so a file that contributed
-    /// no session is still named by the report it is part of.
-    pub(crate) fn merge(reports: Vec<Self>) -> Self {
+    /// `sources` and `logs` are concatenated in the order given, so a file that contributed no
+    /// session is still named by the report it is part of.
+    pub fn merge(reports: Vec<Self>) -> Self {
         let mut session_lists = Vec::with_capacity(reports.len());
         let mut sources = Vec::new();
-        let mut log_paths = Vec::new();
-        for report in reports {
-            sources.extend(report.sources.iter().cloned());
-            log_paths.extend(report.log_paths.iter().cloned());
-            session_lists.push(report.into_sessions());
+        let mut logs = Vec::new();
+        for mut report in reports {
+            sources.append(&mut report.sources);
+            logs.append(&mut report.logs);
+            let mut all = report.sessions;
+            all.extend(report.spikes);
+            all.extend(report.excluded);
+            session_lists.push(all);
         }
-        Self::from_session_lists(session_lists, sources, log_paths)
+        Self::from_session_lists(session_lists, sources, logs)
     }
 
-    /// Every session held, whichever bucket it is in, in bucket order.
+    /// Writes each source's log beside it, returning where they went in the same order.
     ///
-    /// The inverse of the bucketing [`Self::from_session_lists`] does, so that a report can be put
-    /// back through it. Bucketing is a function of a session's own anomalies alone, so what comes
-    /// out of a second pass is what went into the first.
-    fn into_sessions(self) -> Vec<RSession> {
-        let mut all = self.sessions;
-        all.extend(self.spikes);
-        all.extend(self.excluded);
-        all
+    /// For a binary, which has nowhere to return what it found. Nothing in the library calls this:
+    /// a reader returns its logs and a computation never has any.
+    ///
+    /// # Errors
+    ///
+    /// The first write that fails, with none of the later ones attempted. A log the user believes
+    /// exists and does not is worse than no log at all, so the failure is reported rather than
+    /// passed over.
+    pub fn write_logs(&self) -> Result<Vec<PathBuf>, Box<dyn std::error::Error>> {
+        self.logs.iter().map(SourceLog::write).collect()
     }
 
     /// The sessions whose energy may be placed on a timeline: [`Self::sessions`] and
@@ -1050,6 +1085,105 @@ impl Sessions {
     /// figures that divide by charge time have to hold one out.
     pub fn countable(&self) -> Vec<RSession> {
         self.sessions.iter().chain(&self.spikes).cloned().collect()
+    }
+
+    /// What a figure drawn from these sessions should say about them.
+    ///
+    /// `relevant` decides which anomaly kinds are worth a reader's attention for the figure being
+    /// produced — [`AnomalyKind::bears_on_energy`] for the consumption side, everything for the
+    /// demand side. Both the sessions' own anomalies and this report's are put through it, since a
+    /// duplicate id bears on a figure whichever list it was found in.
+    ///
+    /// Excluded sessions and sources are not filtered. A session left out of the figures is left
+    /// out whatever the figure is, and every file read is worth naming even when it contributed
+    /// nothing — that is the case a reader cannot tell from a wrong file otherwise.
+    pub fn notes(&self, relevant: fn(&AnomalyKind) -> bool) -> SessionNotes {
+        let own = self
+            .sessions
+            .iter()
+            .chain(&self.spikes)
+            .chain(&self.excluded)
+            .flat_map(|session| {
+                session.anomalies.iter().map(move |kind| Anomaly {
+                    session: session.clone(),
+                    kind: *kind,
+                })
+            });
+        SessionNotes {
+            sources: self.sources.clone(),
+            anomalies: own
+                .chain(self.anomalies.iter().cloned())
+                .filter(|a| relevant(&a.kind))
+                .collect(),
+            excluded: self.excluded.clone(),
+            logs: self.logs.clone(),
+        }
+    }
+}
+
+/// What a figure was drawn from, and what was odd about it.
+///
+/// Every result the API returns carries one. A figure a reader cannot check is a figure they have
+/// to take on trust, and the three things they need in order to check it — which files it came
+/// from, which records were left out, and what needed a judgement call — were until now reachable
+/// only from a log file written beside the input, or from nowhere at all.
+///
+/// The anomalies are filtered by what bears on the figure; see [`Sessions::notes`]. The sources and
+/// the excluded sessions are not.
+#[derive(Debug, Clone, Default)]
+pub struct SessionNotes {
+    /// Every file read, in the order read, including any that contributed no session.
+    pub sources: Vec<PathBuf>,
+    /// The anomalies that bear on this figure, both the sessions' own and the relations between
+    /// them.
+    pub anomalies: Vec<Anomaly>,
+    /// Sessions left out of the figures entirely, for [`AnomalyKind::InconsistentDuration`].
+    ///
+    /// Listed rather than counted. Such a record's own fields contradict each other, so nothing
+    /// short of the row itself lets a reader judge what happened.
+    pub excluded: Vec<RSession>,
+    /// The run logs of the files read, unwritten. See [`Sessions::logs`].
+    pub logs: Vec<SourceLog>,
+}
+
+impl SessionNotes {
+    /// Whether there is nothing to report: no anomalies and nothing excluded.
+    ///
+    /// Sources do not count. Every figure has those, and a report that named its files only when
+    /// something was wrong would read as an alarm.
+    pub fn is_clean(&self) -> bool {
+        self.anomalies.is_empty() && self.excluded.is_empty()
+    }
+
+    /// Adds anomalies not already held, keeping the order they arrive in.
+    ///
+    /// For a figure whose parts are scoped differently. The consumption side collects what bears
+    /// on energy across the whole period; the demand side collects every kind, but only for the
+    /// hours it prices. A figure built from both says both, and a session that is on both lists is
+    /// on it once.
+    ///
+    /// Sameness is the same session and the same kind, and the session is compared by identity
+    /// rather than by value: these all come from one [`Sessions`], where a record appears once.
+    pub fn add_anomalies(&mut self, anomalies: impl IntoIterator<Item = Anomaly>) {
+        for anomaly in anomalies {
+            let held = self.anomalies.iter().any(|a| {
+                a.kind == anomaly.kind && std::rc::Rc::ptr_eq(&a.session, &anomaly.session)
+            });
+            if !held {
+                self.anomalies.push(anomaly);
+            }
+        }
+    }
+
+    /// Writes each source's log beside it, returning where they went.
+    ///
+    /// For a binary. See [`Sessions::write_logs`], which this is the result-side counterpart of.
+    ///
+    /// # Errors
+    ///
+    /// The first write that fails, with none of the later ones attempted.
+    pub fn write_logs(&self) -> Result<Vec<PathBuf>, Box<dyn std::error::Error>> {
+        self.logs.iter().map(SourceLog::write).collect()
     }
 }
 
@@ -1159,5 +1293,107 @@ mod test {
         let merged = MergedSessions::merge_sessions(vec![sessions]);
         assert_eq!(ids(&merged.sessions), ["S1", "S2"]);
         assert!(merged.anomalies.is_empty());
+    }
+
+    /// Two reports become one, and the file that contributed nothing is still named.
+    ///
+    /// That last part is the point of keeping `sources` rather than deriving them from the
+    /// sessions: a month nobody charged in and a wrong file picked by mistake produce the same
+    /// figures, and only the list of files read tells them apart.
+    #[test]
+    fn merging_reports_keeps_every_file_that_was_read() {
+        let june = Sessions::from_session_lists(
+            vec![vec![session(
+                "June.csv",
+                2,
+                "S1",
+                "2026-06-01T12:00:00Z",
+                4.0,
+            )]],
+            vec![PathBuf::from("June.csv")],
+            Vec::new(),
+        );
+        let quiet = Sessions::from_session_lists(
+            vec![Vec::new()],
+            vec![PathBuf::from("May.csv")],
+            Vec::new(),
+        );
+
+        let merged = Sessions::merge(vec![quiet, june]);
+        assert_eq!(ids(&merged.sessions), ["S1"]);
+        assert_eq!(
+            merged.sources,
+            [PathBuf::from("May.csv"), PathBuf::from("June.csv")]
+        );
+    }
+
+    /// A duplicate id spanning two files is found by merging the reports, not by concatenating
+    /// what each of them found on its own.
+    #[test]
+    fn merging_reports_finds_the_duplicates_neither_file_could() {
+        let one = |file: &str, row, id: &str, start: &str| {
+            Sessions::from_session_lists(
+                vec![vec![session(file, row, id, start, 4.0)]],
+                vec![PathBuf::from(file)],
+                Vec::new(),
+            )
+        };
+        // The same id on two different sessions, a day apart, one in each file. Neither report can
+        // see it alone.
+        let may = one("May.csv", 2, "S1", "2026-05-30T12:00:00Z");
+        let june = one("June.csv", 2, "S1", "2026-06-01T12:00:00Z");
+        assert!(may.anomalies.is_empty() && june.anomalies.is_empty());
+
+        let merged = Sessions::merge(vec![may, june]);
+        assert_eq!(flagged(&merged.anomalies), [("S1", 2), ("S1", 2)]);
+    }
+
+    /// The consumption side is told only what can move a sum of kilowatt-hours; the demand side
+    /// takes everything. A list a reader learns to skip is worse than no list.
+    #[test]
+    fn notes_report_by_relevance() {
+        let mut over = session("June.csv", 2, "HOT", "2026-06-01T12:00:00Z", 4.0);
+        Rc::get_mut(&mut over)
+            .expect("sole owner")
+            .anomalies
+            .push(AnomalyKind::ExcessiveAvgKw);
+        let report = Sessions::from_session_lists(
+            vec![vec![over]],
+            vec![PathBuf::from("June.csv")],
+            Vec::new(),
+        );
+
+        assert!(
+            report
+                .notes(AnomalyKind::bears_on_energy)
+                .anomalies
+                .is_empty(),
+            "power above the breaker rating cannot move a sum of kilowatt-hours"
+        );
+        assert_eq!(report.notes(|_| true).anomalies.len(), 1);
+    }
+
+    /// An excluded session is listed whatever the figure, since its absence moves every figure and
+    /// appears in none of them.
+    #[test]
+    fn notes_list_what_was_left_out_whatever_the_figure() {
+        let mut broken = session("June.csv", 2, "BAD", "2026-06-01T12:00:00Z", 4.0);
+        Rc::get_mut(&mut broken)
+            .expect("sole owner")
+            .anomalies
+            .push(AnomalyKind::InconsistentDuration);
+        let report = Sessions::from_session_lists(
+            vec![vec![broken]],
+            vec![PathBuf::from("June.csv")],
+            Vec::new(),
+        );
+
+        for notes in [
+            report.notes(AnomalyKind::bears_on_energy),
+            report.notes(|_| true),
+        ] {
+            assert_eq!(notes.excluded.len(), 1, "{notes:?}");
+            assert!(!notes.is_clean());
+        }
     }
 }

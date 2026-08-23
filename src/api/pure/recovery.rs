@@ -14,7 +14,7 @@ use crate::hydro_bill::{
     BILL_END_DAY, BillingPeriod, NotABillingPeriodEnding, billing_period_dates, billing_period_span,
 };
 use crate::markdown::{Left, Right, amounts, field, h1, h2, rounding_note, table, wrap};
-use crate::session::{Sessions, tou_kwh};
+use crate::session::{AnomalyKind, SessionNotes, Sessions, tou_kwh};
 use crate::time::{Interval, local_midnight};
 use jiff::{Timestamp, civil::Date};
 use std::{error::Error, fmt};
@@ -84,7 +84,11 @@ impl CostRecoveryStretch {
 }
 
 /// Cost recovery allocated to a billing period.
-#[derive(Debug, Clone, PartialEq)]
+///
+/// Not `PartialEq`, unlike [`CostRecoveryStretch`]. It carries the anomalies its figures were
+/// arrived at despite, and those hold `Rc<Session>`s that no equality worth having is defined on.
+/// Compare the figures.
+#[derive(Debug, Clone)]
 pub struct CostRecovery {
     /// The billing period these figures are for, named by the date it closes on.
     pub billing_period_ending: Date,
@@ -109,6 +113,13 @@ pub struct CostRecovery {
 
     /// Total cost recovery allocated to the billing period.
     pub cost_recovery: f64,
+
+    /// What the figures were drawn from, and what was odd about it.
+    ///
+    /// The consumption side's selection, as [`Energy::notes`](super::energy::Energy::notes)
+    /// carries: recovery is a rate times kilowatt-hours, so what bears on it is what bears on the
+    /// kilowatt-hours.
+    pub notes: SessionNotes,
 }
 
 /// The EV cost recovery for the billing period, the hydro delivery and energy costs attributable
@@ -140,6 +151,13 @@ pub struct CostRecoverySurplus {
     /// is a subtraction reads as an arithmetic error. The three parts keep their own unrounded
     /// totals; only the difference taken here is to the cent.
     pub surplus: f64,
+
+    /// What all three parts were drawn from, and what was odd about it.
+    ///
+    /// Hoisted here rather than left to the three, which carry their own. The three read the same
+    /// records, so this is the widest of their selections — every kind — stated once. The report
+    /// prints it under the surplus and the three sub-reports print none of their own.
+    pub notes: SessionNotes,
 }
 
 // No per-band recovery for the whole period. A band's kilowatt-hours were charged at one rate in
@@ -392,6 +410,7 @@ pub fn cost_recovery(
         },
         cost_recovery: sum(CostRecoveryStretch::recovery),
         stretches,
+        notes: sessions.notes(AnomalyKind::bears_on_energy),
     })
 }
 
@@ -448,14 +467,27 @@ pub fn cost_recovery_surplus(
     // the recovery is called first, so that is where it surfaces.
     let billing_period_ending = bill.period_end_date();
 
-    let recovery = cost_recovery(
+    let mut recovery = cost_recovery(
         billing_period_ending,
         sessions,
         recovery_rates_at_start,
         recovery_rates_at_end,
     )?;
-    let delivery = peak_power_cost(bill, gb_period_values, sessions)?;
-    let energy = energy_cost(bill, sessions)?;
+    let mut delivery = peak_power_cost(bill, gb_period_values, sessions)?;
+    let mut energy = energy_cost(bill, sessions)?;
+
+    // Hoisted, so the three parts give theirs up. All three read the same records, so three lists
+    // would be one list printed three times with two of them shortened -- and a reader who saw the
+    // same row named three times would go looking for three faults.
+    //
+    // The union of two scopes rather than either. The consumption side collects what bears on
+    // energy across the whole period; the delivery side collects every kind, but only for the
+    // three hours it prices. Both bear on the subtraction, and neither contains the other.
+    let mut notes = sessions.notes(AnomalyKind::bears_on_energy);
+    notes.add_anomalies(delivery.notes.anomalies.iter().cloned());
+    recovery.notes = SessionNotes::default();
+    delivery.notes = SessionNotes::default();
+    energy.notes = SessionNotes::default();
 
     Ok(CostRecoverySurplus {
         surplus: to_the_cent(
@@ -463,6 +495,7 @@ pub fn cost_recovery_surplus(
                 - to_the_cent(delivery.delivery_cost)
                 - to_the_cent(energy.energy_cost),
         ),
+        notes,
         recovery,
         delivery,
         energy,
@@ -578,7 +611,8 @@ impl fmt::Display for CostRecovery {
                 )
             )?;
             writeln!(f, "{}\n", stretch_table(only))?;
-            return writeln!(f, "{}", rounding_note());
+            writeln!(f, "{}\n", rounding_note())?;
+            return write!(f, "{}", self.notes.to_markdown());
         };
 
         writeln!(f)?;
@@ -608,7 +642,8 @@ impl fmt::Display for CostRecovery {
         rows.push(("Cost recovery".to_owned(), self.cost_recovery));
         let rows: Vec<(&str, f64)> = rows.iter().map(|(l, a)| (l.as_str(), *a)).collect();
         writeln!(f, "{}", amounts(&rows))?;
-        writeln!(f, "\n{}", rounding_note())
+        writeln!(f, "\n{}\n", rounding_note())?;
+        write!(f, "{}", self.notes.to_markdown())
     }
 }
 
@@ -649,6 +684,10 @@ impl fmt::Display for CostRecoverySurplus {
                 "",
             )
         )?;
+
+        // Once, above the three parts rather than inside each. They are drawn from the same
+        // records, so what is odd about those records is odd about all three figures.
+        writeln!(f, "{}", self.notes.to_markdown())?;
 
         // The three parts in full, under their own headings. The figure above is a subtraction of
         // three numbers, and none of them can be checked without the report it came from.
@@ -992,6 +1031,68 @@ mod test {
                     - to_the_cent(delivery.delivery_cost)
                     - to_the_cent(energy.energy_cost)
             )
+        );
+    }
+
+    /// The surplus states what its figures rest on once, and its three parts state it not at all.
+    ///
+    /// Three lists would be one list printed three times with two of them shortened, and a reader
+    /// meeting the same row three times would go looking for three faults.
+    #[test]
+    fn the_surplus_states_its_session_notes_once() {
+        let rates = flat(date(2026, 5, 1), 0.10);
+        let s = cost_recovery_surplus(&bill(), peaks(), &two_reports(), rates, None)
+            .expect("the fixture bill closes a billing period and has all three maxima");
+
+        assert_eq!(s.notes.sources.len(), 2, "{:?}", s.notes.sources);
+        for part in [
+            s.recovery.notes.to_markdown(),
+            s.energy.notes.to_markdown(),
+            s.delivery.notes.to_markdown(),
+        ] {
+            assert!(part.is_empty(), "a sub-report kept its own notes:\n{part}");
+        }
+        let printed = s.to_string();
+        assert_eq!(
+            printed.matches("Session data").count(),
+            1,
+            "the section should appear exactly once:\n{printed}"
+        );
+    }
+
+    /// The hoisted notes are the union of two scopes, not either one.
+    ///
+    /// The consumption side collects what bears on energy over the whole period; the delivery side
+    /// collects every kind, but only for the three hours it prices. A session flagged
+    /// `ExcessiveAvgKw` inside a priced hour is on the second list and not the first, and the
+    /// surplus rests on both.
+    #[test]
+    fn the_hoisted_notes_take_in_both_scopes() {
+        let mut hot = session("June.csv", 7, "HOT", KW_PEAK_HOUR, 60, 6.0);
+        std::rc::Rc::get_mut(&mut hot)
+            .expect("sole owner")
+            .anomalies
+            .push(crate::session::AnomalyKind::ExcessiveAvgKw);
+        let mut sessions = crate::api::pure::test_support::two_report_sessions();
+        sessions.push(hot);
+        let sessions = as_report(sessions);
+
+        let rates = flat(date(2026, 5, 1), 0.10);
+        let s = cost_recovery_surplus(&bill(), peaks(), &sessions, rates, None)
+            .expect("the fixture bill closes a billing period and has all three maxima");
+
+        assert!(
+            !sessions
+                .notes(crate::session::AnomalyKind::bears_on_energy)
+                .anomalies
+                .iter()
+                .any(|a| a.session.id == "HOT"),
+            "the consumption side does not collect this kind"
+        );
+        assert!(
+            s.notes.anomalies.iter().any(|a| a.session.id == "HOT"),
+            "the hoisted notes dropped what only the delivery side saw: {:?}",
+            s.notes.anomalies
         );
     }
 

@@ -15,7 +15,7 @@ use crate::{
         billing_period_dates, billing_period_span,
     },
     markdown::{Left, Right, amounts, field, h1, h2, rounding_note, table},
-    session::{Sessions, tou_kwh},
+    session::{AnomalyKind, SessionNotes, Sessions, tou_kwh},
     time::Interval,
 };
 
@@ -39,6 +39,8 @@ pub struct Energy {
     pub billing_period_ending: Date,
     /// EV energy used by TOU.
     pub kwh: TouKwh,
+    /// What the figure was drawn from, and what was odd about it.
+    pub notes: SessionNotes,
 }
 
 /// Breakdown of energy costs attributable to EV sessions in a billing period.
@@ -78,6 +80,9 @@ pub struct EnergyCost {
 
     /// Total energy cost attributable to EV sessions, net of HST and OER.
     pub energy_cost: f64,
+
+    /// What the figures were drawn from, and what was odd about it.
+    pub notes: SessionNotes,
 }
 
 /// Why a billing period's sessions cannot be turned into an energy attribution, or into the cost
@@ -188,6 +193,7 @@ pub fn energy(billing_period_ending: Date, sessions: &Sessions) -> Result<Energy
     Ok(Energy {
         billing_period_ending,
         kwh: tou_kwh(time_range, &sessions.countable()),
+        notes: sessions.notes(AnomalyKind::bears_on_energy),
     })
 }
 
@@ -238,7 +244,7 @@ pub fn energy_cost(bill: &HydroBill, sessions: &Sessions) -> Result<EnergyCost, 
     // refused rather than estimated from, because `energy` sums over a period this does not model.
     // The check is `energy`'s own; there is no second one here.
     let billing_period_ending = bill.period_end_date();
-    let kwh = energy(billing_period_ending, sessions)?.kwh;
+    let Energy { kwh, notes, .. } = energy(billing_period_ending, sessions)?;
 
     let loss_factor_adjustment = bill.loss_factor_adjustment;
     let adjusted_kwh = TouKwh {
@@ -282,6 +288,7 @@ pub fn energy_cost(bill: &HydroBill, sessions: &Sessions) -> Result<EnergyCost, 
         // rebate is held as a positive amount and subtracted, though the bill prints it as a
         // credit.
         energy_cost: charges + hst - ontario_electricity_rebate,
+        notes,
     })
 }
 
@@ -319,7 +326,8 @@ impl fmt::Display for Energy {
             field("Period", &billing_period_span(self.billing_period_ending))
         )?;
         writeln!(f, "{}\n", table(&["TOU", "kWh"], &rows, &[Left, Right]))?;
-        writeln!(f, "{}", rounding_note())
+        writeln!(f, "{}\n", rounding_note())?;
+        write!(f, "{}", self.notes.to_markdown())
     }
 }
 
@@ -408,7 +416,8 @@ impl fmt::Display for EnergyCost {
                 ("Energy cost", self.energy_cost),
             ])
         )?;
-        writeln!(f, "\n{}", rounding_note())
+        writeln!(f, "\n{}\n", rounding_note())?;
+        write!(f, "{}", self.notes.to_markdown())
     }
 }
 

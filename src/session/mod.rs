@@ -12,7 +12,7 @@ pub mod excel;
 pub use excel::ConversionReport;
 
 mod log;
-pub use log::RunLog;
+pub use log::{RunLog, SourceLog};
 
 mod ioi;
 pub use ioi::*;

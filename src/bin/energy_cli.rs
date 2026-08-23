@@ -60,9 +60,11 @@ fn run(ending: &str, session_csv1: &Path, session_csv2: &Path) -> Result<(), Box
         format!("cannot read \"{ending}\" as the billing period's closing date, YYYY-MM-DD: {e}")
     })?;
 
-    print!(
-        "{}",
-        energy(billing_period_ending, session_csv1, session_csv2)?
-    );
+    let energy = energy(billing_period_ending, session_csv1, session_csv2)?;
+    // The library hands its run logs back rather than writing them; a binary is where they land.
+    // Written before the report is printed, so a failure to write one is not buried under it.
+    energy.notes.write_logs()?;
+
+    print!("{energy}");
     Ok(())
 }

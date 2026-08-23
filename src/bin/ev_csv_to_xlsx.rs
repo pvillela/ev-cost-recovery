@@ -32,6 +32,12 @@ fn main() -> ExitCode {
         match session_csv_to_xlsx(path) {
             Ok(report) => {
                 println!("{}", report.output_path.display());
+                // The library returns its log rather than writing it, so this is where it lands.
+                // A binary is the end of the line: there is nowhere left to return a finding to.
+                if let Err(e) = report.log.write() {
+                    eprintln!("{}: {e}", report.log.path().display());
+                    failed = true;
+                }
                 for anomaly in &report.anomalies {
                     eprintln!("{}: {anomaly}", path.display());
                 }

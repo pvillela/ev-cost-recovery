@@ -20,7 +20,7 @@
 //! than two that could drift.
 
 use super::{
-    Anomaly, AnomalyKind, Bracket, IntervalEstimates, Segment, Session,
+    Anomaly, AnomalyKind, Bracket, IntervalEstimates, RSession, Segment, Session, SessionNotes,
     site_load::{
         BREAKER_COUNT, BREAKER_RATING_A, CONTINUOUS_DUTY_DERATE, PANEL_VOLTAGE_V, XFMR_RATING_KVA,
         ev_load, ev_pilot_current_a, loading_ratio, site_load,
@@ -29,6 +29,7 @@ use super::{
 use crate::markdown::{Align, Left, Right, h1, h2, table, wrap};
 use crate::time::{Interval, time_zone};
 use jiff::{Timestamp, Zoned};
+use std::collections::BTreeMap;
 use std::fmt;
 
 fn local(ts: Timestamp) -> Zoned {
@@ -114,6 +115,142 @@ fn glossary(kinds: impl IntoIterator<Item = AnomalyKind>, out: &mut Vec<String>)
             out.push(wrap(&format!("- {} - {}.", kind.as_str(), kind), "  "));
         }
     }
+}
+
+impl SessionNotes {
+    /// Renders what a figure was drawn from as markdown that also reads as plain text.
+    ///
+    /// Three parts, and each is omitted when it has nothing to say — except the sources, which are
+    /// always named. A period's figures rest on two monthly reports, and which two is the first
+    /// thing a reader checking a number wants to know.
+    ///
+    /// Grouped by source file throughout. A row number means nothing without the file it is a row
+    /// of, and a reader who has spotted something goes to one file to look it up.
+    ///
+    /// Written here rather than beside each result type, because every one of them would render it
+    /// the same way and the sections are about sessions rather than about money.
+    pub fn to_markdown(&self) -> String {
+        // Nothing at all, not even a heading. A sub-report inside a surplus gives its notes up to
+        // the hoisted section at the top, and an empty section under an empty heading would read
+        // as a claim that there was nothing to say.
+        if self.sources.is_empty() && self.is_clean() {
+            return String::new();
+        }
+
+        let mut out: Vec<String> = Vec::new();
+
+        out.push(h2("Session data"));
+        out.push(String::new());
+        for source in &self.sources {
+            out.push(format!("- {}", source.display()));
+        }
+        out.push(String::new());
+        if self.sources.len() > 1 {
+            out.push(wrap(
+                "A billing period straddles two calendar months and a session report covers one, \
+                 so two are read. A file naming no rows below contributed no session the figures \
+                 needed -- which is what a month nobody charged in looks like, and also what the \
+                 wrong file looks like.",
+                "",
+            ));
+            out.push(String::new());
+        }
+
+        self.push_excluded(&mut out);
+        self.push_anomalies(&mut out);
+        out.join("\n")
+    }
+
+    /// The sessions left out of the figures entirely, listed in full.
+    ///
+    /// Counted would not do. Such a record's start, end and duration contradict each other, so the
+    /// only way to judge what happened is to read the row -- and its absence moves every figure
+    /// drawn from these sessions without appearing in any of them.
+    fn push_excluded(&self, out: &mut Vec<String>) {
+        if self.excluded.is_empty() {
+            return;
+        }
+        out.push(h2("Sessions left out"));
+        out.push(String::new());
+        out.push(wrap(
+            "These records' reported start, end and duration contradict each other, so they \
+             cannot be placed on a timeline and take no part in any figure above. Every one of \
+             them is energy the chargers may have drawn and none of the figures counts.",
+            "",
+        ));
+        out.push(String::new());
+        out.push(by_source_table(
+            self.excluded.iter().map(|s| (s.clone(), None)),
+        ));
+        out.push(String::new());
+    }
+
+    /// What needed a judgement call, filtered to what bears on the figure. See [`Sessions::notes`].
+    fn push_anomalies(&self, out: &mut Vec<String>) {
+        if self.anomalies.is_empty() {
+            return;
+        }
+        out.push(h2("Sessions needing a look"));
+        out.push(String::new());
+        out.push(wrap(
+            "These sessions count towards the figures above, and something about them needed a \
+             judgement call. Only what bears on these figures is listed.",
+            "",
+        ));
+        out.push(String::new());
+        out.push(by_source_table(
+            self.anomalies
+                .iter()
+                .map(|a| (a.session.clone(), Some(a.kind))),
+        ));
+        out.push(String::new());
+        glossary(self.anomalies.iter().map(|a| a.kind), out);
+        out.push(String::new());
+    }
+}
+
+/// Rows grouped under the file they came from, as one table with a `File` column.
+///
+/// One table rather than one per file. The lists are ordinarily short -- a period with nothing
+/// wrong in it renders neither section at all -- and a single table lines its columns up across
+/// files, which several tables of two rows each would not.
+fn by_source_table(rows: impl IntoIterator<Item = (RSession, Option<AnomalyKind>)>) -> String {
+    let mut by_file: BTreeMap<String, Vec<Vec<String>>> = BTreeMap::new();
+    for (session, kind) in rows {
+        let flags = match kind {
+            Some(kind) => kind.as_str().to_owned(),
+            // No kind given means the whole row is the point: list what it carries.
+            None => session
+                .anomalies
+                .iter()
+                .map(AnomalyKind::as_str)
+                .collect::<Vec<_>>()
+                .join(", "),
+        };
+        by_file.entry(file_name(&session)).or_default().push(vec![
+            file_name(&session),
+            session.row.to_string(),
+            session.id.clone(),
+            flags,
+        ]);
+    }
+    let rows: Vec<Vec<String>> = by_file.into_values().flatten().collect();
+    table(
+        &["File", "Row", "Session", "Anomaly"],
+        &rows,
+        &[Left, Right, Left, Left],
+    )
+}
+
+/// The source file's name alone, without its directory.
+///
+/// The full paths are listed once at the head of the section; repeating a directory on every row
+/// would push the columns that matter off the width a plain-text reader has.
+fn file_name(session: &Session) -> String {
+    session.path.file_name().map_or_else(
+        || session.path.display().to_string(),
+        |n| n.to_string_lossy().into_owned(),
+    )
 }
 
 const ESTIMATE_HEADERS: [&str; 5] = ["Estimate", "Unit", "Min", "Max", "Segment"];

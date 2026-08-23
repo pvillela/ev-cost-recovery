@@ -14,7 +14,7 @@ use crate::time::{
 };
 
 use super::csv::{self, SessionRows};
-use super::{Anomaly, AnomalyKind, RSession, RunLog, Session, Sessions};
+use super::{Anomaly, AnomalyKind, RSession, RunLog, Session, Sessions, SourceLog};
 use jiff::Timestamp;
 use std::{
     collections::HashMap,
@@ -38,9 +38,11 @@ pub struct ConversionReport {
     pub output_path: PathBuf,
     /// Rows that needed a judgement call. Empty for a clean conversion.
     pub anomalies: Vec<Anomaly>,
-    /// Where the run log was written. It always exists, and says either that nothing was found or
-    /// what was.
-    pub log_path: PathBuf,
+    /// The run log, which says either that nothing was found or what was.
+    ///
+    /// Held rather than written, for the reason [`Sessions::logs`] gives. Write it with
+    /// [`SourceLog::write`].
+    pub log: SourceLog,
 }
 
 /// How an output column is populated.
@@ -169,14 +171,18 @@ fn convert_session_csv(path: &Path) -> Result<ConversionReport, Box<dyn Error>> 
 
     umya_spreadsheet::writer::xlsx::write(&book, &output_path)?;
 
-    let log_path =
-        rows.log
-            .write_beside(&output_path, "convert", "Converted from session report")?;
+    let log = SourceLog {
+        // Beside the workbook rather than the CSV, because that is what this run produced.
+        source: output_path.clone(),
+        suffix: "convert",
+        operation: "Converted from session report",
+        log: rows.log,
+    };
 
     Ok(ConversionReport {
         output_path,
         anomalies: rows.anomalies,
-        log_path,
+        log,
     })
 }
 
@@ -599,12 +605,17 @@ fn read_session_list(path: &Path) -> Result<Sessions, Box<dyn Error>> {
         sessions.push(session);
     }
 
-    let log_path = log.write_beside(path, "xlsx.read", "Read back from workbook")?;
+    let log = SourceLog {
+        source: path.to_path_buf(),
+        suffix: "xlsx.read",
+        operation: "Read back from workbook",
+        log,
+    };
 
     // Through the merge for the same reason `csv::session_list` is: it is where a shared
     // `Charge_Session_ID` is noticed, and one file can carry one as readily as two can.
     let mut report =
-        Sessions::from_session_lists(vec![sessions], vec![path.to_path_buf()], vec![log_path]);
+        Sessions::from_session_lists(vec![sessions], vec![path.to_path_buf()], vec![log]);
     report.anomalies.extend(discrepancies);
     Ok(report)
 }
@@ -1219,7 +1230,7 @@ CKT-7,,Toronto,,Station-7,Evolute Inc.,FLO,G5,S00002,,2026-06-03 10:00,2026-06-0
             "the stored value overruled the recomputed one"
         );
 
-        let log = fs::read_to_string(&report.log_paths[0]).unwrap();
+        let log = report.logs[0].render();
         assert!(
             log.contains("adj_conn_end_utc"),
             "the discrepancy was not logged:\n{log}"
@@ -1278,7 +1289,7 @@ CKT-7,,Toronto,,Station-7,Evolute Inc.,FLO,G5,S00002,,2026-06-03 10:00,2026-06-0
             "a freshly written workbook reported a discrepancy: {:?}",
             report.anomalies
         );
-        let log = fs::read_to_string(&report.log_paths[0]).unwrap();
+        let log = report.logs[0].render();
         assert!(
             !log.contains("nothing to check"),
             "the unevaluated-formula note survived:\n{log}"
@@ -1293,7 +1304,7 @@ CKT-7,,Toronto,,Station-7,Evolute Inc.,FLO,G5,S00002,,2026-06-03 10:00,2026-06-0
         // Beside the workbook, under its own suffix, so it cannot collide with the convert log or
         // with the CSV reader's.
         assert_eq!(
-            report.log_paths[0],
+            report.logs[0].path(),
             xlsx.with_file_name("Session_Report_Test.xlsx.read.log")
         );
 

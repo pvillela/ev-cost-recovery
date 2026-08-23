@@ -69,7 +69,12 @@ fn run(
     let PowerEstimates {
         kw_estimates,
         kva_estimates,
+        notes,
     } = peak_power(billing_period_ending, gb_xml, session_csv1, session_csv2)?;
+
+    // The library hands its run logs back rather than writing them; a binary is where they land.
+    // Written before the reports are printed, so a failure to write one is not buried under them.
+    notes.write_logs()?;
 
     // Each report carries its own heading, so the label above it says only which of the two it is.
     println!("Billing period ending {billing_period_ending} -- interval maximizing kW\n");

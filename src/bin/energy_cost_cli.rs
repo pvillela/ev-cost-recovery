@@ -57,6 +57,11 @@ fn main() -> ExitCode {
 }
 
 fn run(bill_pdf: &Path, session_csv1: &Path, session_csv2: &Path) -> Result<(), Box<dyn Error>> {
-    print!("{}", energy_cost(bill_pdf, session_csv1, session_csv2)?);
+    let cost = energy_cost(bill_pdf, session_csv1, session_csv2)?;
+    // The library hands its run logs back rather than writing them; a binary is where they land.
+    // Written before the report is printed, so a failure to write one is not buried under it.
+    cost.notes.write_logs()?;
+
+    print!("{cost}");
     Ok(())
 }

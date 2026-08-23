@@ -22,7 +22,7 @@ use crate::time::{is_on_grid, local_datetime, time_zone, wall_clock_instant};
 
 use super::TIME_GRID_STEP;
 use super::{
-    Anomaly, AnomalyKind, BREAKER_RATING_KW, RSession, RunLog, Session, Sessions,
+    Anomaly, AnomalyKind, BREAKER_RATING_KW, RSession, RunLog, Session, Sessions, SourceLog,
     duration_is_consistent,
 };
 use jiff::{
@@ -77,9 +77,10 @@ const REQUIRED_HEADERS: &[&str] = &[
 /// `Sessions::from_session_lists`, which carries the rules. Every session in the file reaches one
 /// of them; none is dropped.
 ///
-/// A `<stem>.csv.read.log` is written beside the input, holding the anomalies found and the
-/// off-grid warning if it applies — the same content [`super::excel::session_csv_to_xlsx`] writes
-/// to `<stem>.convert.log`, because the two run the same parse.
+/// The anomalies found, and the off-grid warning if it applies, are returned on
+/// [`Sessions::logs`] as a `csv.read` log — the same content [`super::excel::session_csv_to_xlsx`]
+/// puts in its `convert` log, because the two run the same parse. Nothing is written here.
+/// [`Sessions::write_logs`] is what puts it beside the input, and only a binary calls it.
 ///
 /// # Errors
 ///
@@ -98,9 +99,12 @@ pub fn session_list(path: &Path) -> Result<Sessions, Box<dyn Error>> {
 
 fn read_session_list(path: &Path) -> Result<Sessions, Box<dyn Error>> {
     let rows = session_rows(path)?;
-    let log_path = rows
-        .log
-        .write_beside(path, "csv.read", "Read from session report")?;
+    let log = SourceLog {
+        source: path.to_path_buf(),
+        suffix: "csv.read",
+        operation: "Read from session report",
+        log: rows.log,
+    };
     // One list, so there is nothing to collapse across files -- but it still goes through the
     // merge, because that is where a shared `Charge_Session_ID` is noticed, and one file can carry
     // one as readily as two can.
@@ -108,7 +112,7 @@ fn read_session_list(path: &Path) -> Result<Sessions, Box<dyn Error>> {
     Ok(Sessions::from_session_lists(
         vec![sessions],
         vec![path.to_path_buf()],
-        vec![log_path],
+        vec![log],
     ))
 }
 
@@ -993,10 +997,11 @@ S3,2026-06-03 09:00,2026-06-03 09:00,0:00:00,0:00:00,4.2
 
         // Beside the CSV, under its own suffix, so it cannot collide with the workbook's logs.
         assert_eq!(
-            report.log_paths[0],
+            report.logs[0].path(),
             dir.join("Session_Report_Test.csv.read.log")
         );
-        let log = fs::read_to_string(&report.log_paths[0]).unwrap();
+        // The log's text, not a file: the reader no longer writes one. See `Sessions::logs`.
+        let log = report.logs[0].render();
         assert!(
             log.contains("InconsistentDuration") || log.contains("contradict"),
             "{log}"
