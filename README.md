@@ -100,10 +100,13 @@ silent.
 
 **Linux.** Mark it executable once (`chmod +x ev_cost_recovery`) and run it.
 
-**From a checkout**, `cargo run --bin ev_cost_recovery`. The app opens files through `rfd`, whose
-default backend needs a session bus; where a desktop portal is installed the GTK stack starts one
-itself, so nothing has to be arranged. Where no portal is reachable the dialogs fail *silently* —
-which is easy to misdiagnose as a bug in the app — and
+**From a checkout**, `cargo run --bin ev_cost_recovery`. Nothing under `data/` is in the repository
+— `data/.gitignore` is `*` — so the bills, the meter export and the session reports have to be
+brought to the checkout before there is anything to run it against.
+
+The app opens files through `rfd`, whose default backend needs a session bus; where a desktop portal
+is installed the GTK stack starts one itself, so nothing has to be arranged. Where no portal is
+reachable the dialogs fail *silently* — which is easy to misdiagnose as a bug in the app — and
 [`scripts/run-gui.sh`](scripts/run-gui.sh) is the fallback for that. See
 [`docs/session/Devcontainer_GUI_Options.md`](docs/session/Devcontainer_GUI_Options.md) for the
 container setup.

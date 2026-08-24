@@ -3,6 +3,10 @@
 Every figure and message below was produced by running the real files in `data/`. If yours differ,
 something has changed.
 
+**You need those files first.** `data/.gitignore` is `*`, so nothing under `data/` is in the
+repository — a fresh clone has none of it. The bills, the meter export and the session reports have
+to be brought to the checkout by hand.
+
 ## Launching it
 
 ```sh
@@ -16,9 +20,8 @@ this image installs, the GTK stack starts a bus itself when none is set, and it 
 Checked by killing every `dbus-daemon`, running the binary bare, and clicking *Choose…* — the
 chooser opened, and two buses appeared that had not been there before.
 
-`bash scripts/run-gui.sh` wraps the same command in an explicit `dbus-run-session`. It is a fallback
-for an environment without those packages, where the pickers fail **silently** — clicking *Choose…*
-does nothing at all, with no error and no panic. You should not need it here.
+If a picker ever does nothing at all when clicked, run `bash scripts/run-gui.sh` instead; it says
+what it is for and why you should not have needed it.
 
 ## The one run that works end to end
 
@@ -147,3 +150,80 @@ diff /tmp/cli.md /tmp/gui.md
 
 `diff` must print nothing. The Peak power detail tab has no command-line equivalent to compare
 against.
+
+## Running the released Windows build
+
+For someone with no Rust and no clone of this repository — the path the app is actually distributed
+by. The figures, the errors and the two tabs are all the same as above; what differs is getting the
+program and getting the files to it.
+
+### Getting it
+
+The Windows build is produced by `.github/workflows/release-build.yaml`, which runs when a tag
+matching `v*` is pushed. It is a **workflow artifact**, not a GitHub Release:
+
+1. Open the repository on GitHub, then **Actions** → the **Release Binaries** run for that tag.
+2. Under **Artifacts**, download **`binary-x86_64-pc-windows-msvc`**.
+3. It arrives as a `.zip`. Extract it — Windows will otherwise run the program from inside the
+   archive, where it behaves oddly.
+
+Two things about artifacts: you must be signed in to GitHub to download one, and they expire (90
+days by default). If the download is not there, the tag build needs re-running.
+
+Extracting gives four files:
+
+| File | What it is |
+|:---|:---|
+| `ev_cost_recovery.exe` | The program. Nothing else is needed to run it |
+| `THIRD-PARTY-NOTICES.md` | Licences of every crate linked in. Also readable inside the app, under **About** |
+| `LICENSE-MIT`, `LICENSE-APACHE` | This program's own terms |
+
+No installer, no runtime to put on the machine first, and nothing is written to the registry. To
+uninstall, delete the folder.
+
+### Starting it
+
+Double-click `ev_cost_recovery.exe`.
+
+The first launch shows SmartScreen's **"Windows protected your PC"**, because the binary is not
+code-signed. Choose **More info**, then **Run anyway**. Later launches are silent.
+
+**There is no console window**, and that is deliberate: the release build sets
+`windows_subsystem = "windows"`. Nothing the program might print is visible, so every failure it can
+report is shown inside the window instead, in a bordered red block beside the control that caused
+it. A window that never appears at all is the one case with nothing to read — and that means the
+`.exe` did not start, not that a step failed.
+
+### Getting the files to it
+
+Put the bill, the meter export and the two session reports somewhere writable — your Documents
+folder or the Desktop, not `C:\Program Files` and not a folder still inside the downloaded zip.
+
+Writable matters. Every run writes a `.csv.read.log` beside each session report it reads. If that
+folder is read-only the run reports it and stops before showing any figures, which reads as a
+failure of the calculation when it is a failure to write a log.
+
+The two session reports must keep the names Evolute gave them —
+`Session_Report_June_1_2026-June_30_2026.csv` and the like. The name is the only thing that says
+which month a file holds, and the app refuses one that does not say, at the moment you pick it. The
+bill and the meter export can be named anything.
+
+### What to check
+
+Everything from **The one run that works end to end** onwards applies. The four pickers, the rates,
+the expected surplus of **−155.22**, the rate variations and the errors worth provoking are all the
+same — the figures come from the files, not from the platform. Ignore the `data/` prefix in those
+tables; it is where the files sit on a development machine, and yours are wherever you put them.
+Only the file names matter, and only for the two session reports.
+
+Two things from above do **not** apply:
+
+- **Checking it against the command line.** The artifact contains the app and nothing else — no
+  `cost_recovery_surplus_cli` — so there is nothing on that machine to diff against. Do that check
+  on a development machine.
+- **The bad-name test** needs a copy under a name without dates. In File Explorer: copy the CSV,
+  paste it in the same folder, and rename the copy to `sessions.csv`.
+
+To see the run logs, open the folder holding the session reports and look at the **Date modified**
+column on the two `.csv.read.log` files. Both should change on every run, whether or not you save
+anything.
