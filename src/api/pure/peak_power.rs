@@ -1,8 +1,18 @@
-//! The EV share of the hours a billing period peaked in, and what that share cost.
+//! The EV share of the intervals a billing period peaked in, and what that share cost.
 //!
-//! [`fn@peak_power`] answers the first: the site's maximum demand happened in some hour, and the
-//! chargers account for part of it. [`peak_power_cost`] prices that share against the bill, over
-//! the three hours the three demand-priced delivery lines are each charged on.
+//! [`fn@peak_power`] answers the first: the site's maximum demand happened in some interval, and
+//! the chargers account for part of it. [`peak_power_cost`] prices that share against the bill,
+//! over the three intervals the three demand-priced delivery lines are each charged on.
+//!
+//! How long one of those intervals is comes from the meter feed rather than from here: it is a
+//! [`METER_INTERVAL`], and a feed stating demand every quarter-hour would shorten it without
+//! changing anything below, since every figure is derived through the session module's estimate
+//! over whatever interval it is handed.
+//!
+//! That is a separate question from what a demand charge is levied on, which is the highest
+//! 15-minute average within the interval -- one
+//! [`Segment`](crate::session::Segment), the length of which does not move with the feed. A
+//! [`METER_INTERVAL`] holds four of them today; a quarter-hourly feed would make it exactly one.
 //!
 //! One module rather than two, because the cost is the estimate priced. Both read the same meter
 //! figures over the same intervals, both build one [`Sessions`] from the same records by the
@@ -20,8 +30,8 @@ use crate::session::{
 use crate::time::Interval;
 
 // Re-exported because `peak_power` and `peak_power_cost` take them. `IntervalEstimates` is
-// deliberately not: it is inside `PowerEstimates` rather than named by the signature, and a reader
-// who probes that far can go to `session` for it.
+// deliberately not: it is inside `PowerEstimates` and `PricedInterval` rather than named by either
+// signature, and a reader who probes that far can go to `session` for it.
 pub use crate::green_button::{MeterNotes, PeriodValues};
 pub use crate::hydro_bill::HydroBill;
 pub use crate::session::RSession;
@@ -35,13 +45,36 @@ pub struct PowerEstimates {
     pub kva_estimates: IntervalEstimates,
     /// What the estimates were drawn from, and what was odd about it.
     ///
-    /// Every anomaly kind, unlike the consumption side's. An estimate over a single hour turns on
-    /// each session's power and on exactly which records touch that hour, so none of the kinds is
+    /// Every anomaly kind, unlike the consumption side's. An estimate over a single interval turns
+    /// on each session's power and on exactly which records touch it, so none of the kinds is
     /// beside the point here. See [`AnomalyKind::bears_on_energy`](crate::session::AnomalyKind::bears_on_energy).
     pub notes: SessionNotes,
 
     /// The same, for the meter export the two maxima were taken over.
     pub meter: MeterNotes,
+}
+
+/// One demand-priced delivery line's interval of interest, and the EV estimate over it.
+///
+/// The estimate is kept whole rather than reduced to the one figure the charge was computed from.
+/// That figure is the mid-point of an energy-based bracket over the
+/// [`Segment`](crate::session::Segment) within the interval that maximizes it, and which interval,
+/// which segment and which sessions reached it are not recoverable from an `f64`.
+///
+/// Two maxima, not one, and they are found from different sources: which interval is the one the
+/// *building* peaked in, read from the meter export, while which segment within it is the one the
+/// *chargers* peaked in, read from the session records.
+///
+/// How long the interval is comes from the meter feed, not from here: [`Self::estimates`] carries
+/// it as [`IntervalEstimates::interval`](crate::session::IntervalEstimates::interval).
+#[derive(Debug)]
+pub struct PricedInterval {
+    /// The demand basis the line is levied on: `"kVA"`, `"kW"` or `"kW 7-7"`. The spelling the
+    /// charges table's `Basis` column uses, and the one [`PeakPowerError::NoPeak`] names.
+    pub unit: &'static str,
+
+    /// The EV estimate over the interval the building's maximum in that unit fell in.
+    pub estimates: IntervalEstimates,
 }
 
 /// Breakdown of delivery cost attributable to EV sessions in a billing period.
@@ -70,6 +103,17 @@ pub struct DeliveryCost {
     /// Mid-point of energy-based bracket of EV kW from sessions
     /// for Peak 7-7 kW interval of interest.
     pub peak_7_7_kw: f64,
+
+    /// The three intervals of interest the demand figures above were estimated over, in the order
+    /// the charges table lists them: kVA, then kW, then kW 7-7.
+    ///
+    /// Always three. All three are read before any charge is computed, so a period missing one of
+    /// the maxima is refused with [`PeakPowerError::NoPeak`] rather than costed with a gap in it.
+    ///
+    /// Not rendered by [`fmt::Display`]. This report is a page of money and each of these renders as
+    /// a page of sessions; a caller wanting them renders each through
+    /// [`IntervalEstimates::to_markdown`](crate::session::IntervalEstimates::to_markdown).
+    pub priced_intervals: [PricedInterval; 3],
 
     /// Days in billing period, as the bill counts them.
     pub days_in_period: u8,
@@ -127,12 +171,12 @@ pub enum PeakPowerError {
     /// The meter figures do not cover the whole billing period.
     ///
     /// Every figure produced here is a maximum over the period, and a maximum over part of one is
-    /// not a smaller answer to the same question — it is an answer to a different one. The hour the
-    /// site actually peaked in may be among the missing ones, and nothing in the result would say
-    /// so.
+    /// not a smaller answer to the same question — it is an answer to a different one. The interval
+    /// the site actually peaked in may be among the missing ones, and nothing in the result would
+    /// say so.
     ///
-    /// `intervals` counts the hours that carried data; placeholder rows standing in for a gap are
-    /// not among them. See [`PeriodValues::is_complete`].
+    /// `intervals` counts the meter intervals that carried data; placeholder rows standing in for a
+    /// gap are not among them. See [`PeriodValues::is_complete`].
     PeriodNotFullyCovered {
         period_ending: Date,
         intervals: i64,
@@ -181,7 +225,7 @@ impl fmt::Display for PeakPowerError {
                 expected,
             } => write!(
                 f,
-                "the meter data covers {intervals} of the {expected} hours in the billing period \
+                "the meter data covers {intervals} of the {expected} intervals in the billing period \
                  ending {period_ending}, so its maxima are not the period's"
             ),
             Self::ZeroDenominator(e) => e.fmt(f),
@@ -206,15 +250,15 @@ impl Error for PeakPowerError {
 /// these arguments come from. This is everything that call does once the meter export and the
 /// session reports have been read.
 ///
-/// The two intervals are the hours the *building* peaked in, taken from `gb_period_values`, and
-/// each estimate says how much of that hour's demand the chargers can account for. They are usually
-/// different hours, and occasionally the same one.
+/// The two intervals are the ones the *building* peaked in, taken from `gb_period_values`, and each
+/// estimate says how much of that interval's demand the chargers can account for. They are usually
+/// different intervals, and occasionally the same one.
 ///
-/// Each interval is a whole metering hour, because that is the resolution the Green Button feed
-/// states demand at. The estimate within it is still a 15-minute figure: an
-/// [`IntervalEstimates`](crate::session::IntervalEstimates) reports the highest of the hour's four segments,
-/// which is the basis the demand charge is billed on. See docs/session/README.md, "Interval of
-/// interest boundaries".
+/// Each is one whole metering interval, because that is the resolution the feed states demand at.
+/// The estimate within it is still a 15-minute figure: an
+/// [`IntervalEstimates`](crate::session::IntervalEstimates) reports the highest of the interval's
+/// segments, which is the basis the demand charge is billed on. A [`METER_INTERVAL`] holds four of
+/// them today. See docs/session/README.md, "Interval of interest boundaries".
 ///
 /// The maxima used are the period's unrestricted ones — what an invoice bills as `Demand kW` and
 /// `Demand kVA` — not the 07:00-19:00 figures it reports as `Peak kW 7-7`.
@@ -253,7 +297,8 @@ impl Error for PeakPowerError {
 /// and [`PeakPowerError::NoPeak`] if the period carries no reading in one of the two series.
 ///
 /// [`PeakPowerError::ValuesAreForAnotherPeriod`] if `gb_period_values` describes some other period,
-/// and [`PeakPowerError::PeriodNotFullyCovered`] if it is missing hours of the one asked for. Both
+/// and [`PeakPowerError::PeriodNotFullyCovered`] if it is missing intervals of the one asked for.
+/// Both
 /// estimates rest on a maximum over the whole period, so a partial one is refused rather than
 /// estimated from.
 ///
@@ -277,7 +322,7 @@ pub fn peak_power(
     let kw_estimates = estimates_from_report(kw_ioi, sources.clone(), sessions);
     let kva_estimates = estimates_from_report(kva_ioi, sources, sessions);
     Ok(PowerEstimates {
-        notes: notes_for_hours(sessions, [&kw_estimates, &kva_estimates]),
+        notes: notes_for_intervals(sessions, [&kw_estimates, &kva_estimates]),
         meter: gb_period_values.notes(),
         kw_estimates,
         kva_estimates,
@@ -302,9 +347,9 @@ const BILLED_DAYS_PER_MONTH: f64 = 30.0;
 ///
 /// | Bill line | Levied on | Interval of interest |
 /// |---|---|---|
-/// | Distribution Charges | `Adj. kVA` | the hour the site's kVA peaked in |
-/// | Transmission Connection Charge | `Adj. kW` | the hour its kW peaked in |
-/// | Transmission Network Charge | `Adj. Peak kW 7-7` | the hour its kW peaked in within 07:00-19:00 |
+/// | Distribution Charges | `Adj. kVA` | the interval the site's kVA peaked in |
+/// | Transmission Connection Charge | `Adj. kW` | the interval its kW peaked in |
+/// | Transmission Network Charge | `Adj. Peak kW 7-7` | the interval its kW peaked in within 07:00-19:00 |
 ///
 /// For each, the EV share of that same interval is estimated the way [`fn@peak_power`] estimates
 /// it, prorated to a 30-day month as the bill prorates its own figure, and priced at the bill's
@@ -350,7 +395,8 @@ const BILLED_DAYS_PER_MONTH: f64 = 30.0;
 /// carries no reading in one of the three series.
 ///
 /// [`PeakPowerError::ValuesAreForAnotherPeriod`] if `gb_period_values` describes some other period,
-/// and [`PeakPowerError::PeriodNotFullyCovered`] if it is missing hours of the one the bill covers.
+/// and [`PeakPowerError::PeriodNotFullyCovered`] if it is missing intervals of the one the bill
+/// covers.
 /// Every figure here rests on a maximum over the whole period, so a partial one is refused rather
 /// than estimated from.
 pub fn peak_power_cost(
@@ -365,25 +411,31 @@ pub fn peak_power_cost(
     billing_period_dates(billing_period_ending)?;
     check_period_covered(billing_period_ending, &gb_period_values)?;
 
-    let estimates = |peak, unit| {
+    let priced_interval = |peak, unit| {
         let ioi = peak_interval(peak, unit, billing_period_ending)?;
-        Ok::<_, PeakPowerError>(estimates_from_report(
-            ioi,
-            sessions.sources.clone(),
-            sessions,
-        ))
+        Ok::<_, PeakPowerError>(PricedInterval {
+            unit,
+            estimates: estimates_from_report(ioi, sessions.sources.clone(), sessions),
+        })
     };
 
-    // Each maximum is taken over the interval its own bill line is charged on. Reading all three
-    // off one interval would price two of the lines against an hour they were never charged for.
+    // Each maximum is taken over the interval its own bill line is charged on. Reading all three off
+    // one interval would price two of the lines against an interval they were never charged for.
     // Taken before the maxima are read off, since those move `gb_period_values` field by field.
     let meter = gb_period_values.notes();
-    let kva_hour = estimates(gb_period_values.max_kva, "kVA")?;
-    let kw_hour = estimates(gb_period_values.max_kw, "kW")?;
-    let nop_hour = estimates(gb_period_values.max_kw_nop, "kW 7-7")?;
-    let demand_kva = energy_based(&kva_hour, |e| e.energy_based_kva);
-    let demand_kw = energy_based(&kw_hour, |e| e.energy_based_kw);
-    let peak_7_7_kw = energy_based(&nop_hour, |e| e.energy_based_kw);
+    let kva_ioi = priced_interval(gb_period_values.max_kva, "kVA")?;
+    let kw_ioi = priced_interval(gb_period_values.max_kw, "kW")?;
+    let kw_nop_ioi = priced_interval(gb_period_values.max_kw_nop, "kW 7-7")?;
+    let demand_kva = energy_based(&kva_ioi.estimates, |e| e.energy_based_kva);
+    let demand_kw = energy_based(&kw_ioi.estimates, |e| e.energy_based_kw);
+    let peak_7_7_kw = energy_based(&kw_nop_ioi.estimates, |e| e.energy_based_kw);
+
+    // Before the three move into the result: a struct literal evaluates its fields in source order,
+    // so leaving this call among them would borrow what `priced_intervals` has already taken.
+    let notes = notes_for_intervals(
+        sessions,
+        [&kva_ioi.estimates, &kw_ioi.estimates, &kw_nop_ioi.estimates],
+    );
 
     let days_in_period = bill.number_of_days;
     let days_adj_factor = f64::from(days_in_period) / BILLED_DAYS_PER_MONTH;
@@ -423,6 +475,7 @@ pub fn peak_power_cost(
         demand_kva,
         demand_kw,
         peak_7_7_kw,
+        priced_intervals: [kva_ioi, kw_ioi, kw_nop_ioi],
         days_in_period,
         days_adj_factor,
         distribution_charges,
@@ -434,32 +487,33 @@ pub fn peak_power_cost(
         // rebate is held as a positive amount and subtracted, though the bill prints it as a
         // credit.
         delivery_cost: charges + hst - ontario_electricity_rebate,
-        notes: notes_for_hours(sessions, [&kva_hour, &kw_hour, &nop_hour]),
+        notes,
         meter,
     })
 }
 
-/// The notes for a figure priced on particular hours: every anomaly kind, but only for the sessions
-/// that reach one of them.
+/// The notes for a figure priced on particular intervals: every anomaly kind, but only for the
+/// sessions that reach one of them.
 ///
-/// Scoped that way because the figures are. A demand charge is levied on one hour's maximum, and
-/// what a session did in some other hour of the month cannot move it. Reporting the period's whole
-/// anomaly list beside an hour's figure buries the handful of rows that bear on it -- one real
+/// Scoped that way because the figures are. A demand charge is levied on one interval's maximum,
+/// and what a session did elsewhere in the month cannot move it. Reporting the period's whole
+/// anomaly list beside an interval's figure buries the handful of rows that bear on it -- one real
 /// period turned up 139 sessions above the breaker rating, none of them in any of the three priced
-/// hours.
+/// intervals.
 ///
-/// The kinds are not filtered, unlike the consumption side's. Within an hour that is priced, every
-/// kind bears on the estimate: it turns on each session's power and on exactly which records touch
-/// the hour. See [`AnomalyKind::bears_on_energy`](crate::session::AnomalyKind::bears_on_energy).
-fn notes_for_hours<'a>(
+/// The kinds are not filtered, unlike the consumption side's. Within an interval that is priced,
+/// every kind bears on the estimate: it turns on each session's power and on exactly which records
+/// touch the interval. See
+/// [`AnomalyKind::bears_on_energy`](crate::session::AnomalyKind::bears_on_energy).
+fn notes_for_intervals<'a>(
     sessions: &Sessions,
-    hours: impl IntoIterator<Item = &'a IntervalEstimates>,
+    intervals: impl IntoIterator<Item = &'a IntervalEstimates>,
 ) -> SessionNotes {
     // `false` for the kinds, so this starts with the sources, the excluded sessions and the logs
     // and none of the period-wide anomalies.
     let mut notes = sessions.notes(|_| false);
-    for hour in hours {
-        notes.add_anomalies(hour.session_anomalies.iter().cloned());
+    for ioi in intervals {
+        notes.add_anomalies(ioi.session_anomalies.iter().cloned());
     }
     notes
 }
@@ -584,16 +638,17 @@ fn energy_based(
 /// Coverage is the only question. An export ordinarily holds many periods — the one this project
 /// reads spans nineteen months — and [`PeriodValues`] is one period's row picked out of it, so the
 /// file carrying other periods is expected and means nothing here. What matters is that the row is
-/// this period's and that no hour of it is missing.
+/// this period's and that no interval of it is missing.
 ///
 /// [`period_values_xml`](crate::green_button::period_values_xml) returns a period the feed covers
 /// only partly rather than refusing it, on the grounds that which discrepancies matter is the
 /// caller's judgement. This is that judgement, for both entry points: nothing here can be estimated
 /// from a partial period.
 ///
-/// Every figure either function produces is a maximum over the billing period — the hour the site
-/// peaked in, and the EV share of that hour. A gap in the feed does not make the maximum smaller
-/// but still true; it makes it a maximum over some other set of hours, and the real peak may be in
+/// Every figure either function produces is a maximum over the billing period — the interval the
+/// site peaked in, and the EV share of that interval. A gap in the feed does not make the maximum
+/// smaller but still true; it makes it a maximum over some other set of intervals, and the real
+/// peak may be in
 /// the gap. Nothing downstream could detect that, because the estimate is drawn from the sessions
 /// and the sessions are complete.
 fn check_period_covered(
@@ -617,7 +672,7 @@ fn check_period_covered(
     Ok(())
 }
 
-/// The metering hour a peak occurred in, as an interval of interest.
+/// The metering interval a peak occurred in, as an interval of interest.
 ///
 /// # Errors
 ///
@@ -695,6 +750,28 @@ mod test {
             &bill(),
             period_values_with_nop(Some(KW_PEAK_HOUR), Some(KVA_PEAK_HOUR), Some(NOP_PEAK_HOUR)),
             &two_reports(),
+        )
+        .expect("the bill closes a billing period and it has all three maxima")
+    }
+
+    /// The same cost, with one session in the kW interval carrying an anomaly.
+    ///
+    /// `ExcessiveAvgKw` because the consumption side does not collect that kind, so a test using it
+    /// is asking about the delivery side alone. It sits in the kW interval and in neither of the
+    /// other two.
+    fn hot_cost() -> DeliveryCost {
+        let mut hot = session("June.csv", 7, "HOT", KW_PEAK_HOUR, 60, 6.0);
+        std::rc::Rc::get_mut(&mut hot)
+            .expect("sole owner")
+            .anomalies
+            .push(AnomalyKind::ExcessiveAvgKw);
+        let mut sessions = two_report_sessions();
+        sessions.push(hot);
+
+        peak_power_cost(
+            &bill(),
+            period_values_with_nop(Some(KW_PEAK_HOUR), Some(KVA_PEAK_HOUR), Some(NOP_PEAK_HOUR)),
+            &as_report(sessions),
         )
         .expect("the bill closes a billing period and it has all three maxima")
     }
@@ -1121,5 +1198,124 @@ mod test {
             matches!(err, PeakPowerError::NotABillingPeriodEnding(_)),
             "{err}"
         );
+    }
+
+    /// Each kept estimate is the one its own scalar was read from, and the three are in the order
+    /// the charges table lists them.
+    ///
+    /// The three fixture intervals hold different sessions, so a pair swapped between them shows as
+    /// a wrong number rather than as a coincidence.
+    #[test]
+    fn each_priced_interval_holds_the_estimate_its_own_figure_was_taken_from() {
+        let cost = cost();
+        let expected = [
+            (KVA_PEAK_HOUR, cost.demand_kva),
+            (KW_PEAK_HOUR, cost.demand_kw),
+            (NOP_PEAK_HOUR, cost.peak_7_7_kw),
+        ];
+        let read = [
+            |e: &EstimateSet| e.energy_based_kva,
+            |e: &EstimateSet| e.energy_based_kw,
+            |e: &EstimateSet| e.energy_based_kw,
+        ];
+
+        for (i, ((at, figure), read)) in expected.into_iter().zip(read).enumerate() {
+            let kept = &cost.priced_intervals[i];
+            assert_eq!(kept.estimates.interval.start, ts(at), "{}", kept.unit);
+            assert_eq!(
+                kept.estimates.interval.duration, METER_INTERVAL,
+                "{}",
+                kept.unit
+            );
+            assert_eq!(
+                read(&kept.estimates.energy_based_seg_estimate.1).mid(),
+                figure,
+                "{} was priced off some other interval",
+                kept.unit
+            );
+        }
+    }
+
+    /// The kept intervals name their bill line's demand basis the way the charges table prints it.
+    ///
+    /// Two copies of these three strings exist -- here and in `Display` -- so that retaining an
+    /// estimate cannot change a rendered report. This is what keeps them the same.
+    #[test]
+    fn the_priced_intervals_name_the_basis_the_charges_table_prints() {
+        let cost = cost();
+        assert_eq!(
+            cost.priced_intervals.each_ref().map(|p| p.unit),
+            ["kVA", "kW", "kW 7-7"]
+        );
+
+        let report = cost.to_string();
+        for unit in cost.priced_intervals.each_ref().map(|p| p.unit) {
+            assert!(
+                report.contains(&format!("| {unit} ")),
+                "the charges table has no {unit} row:\n{report}"
+            );
+        }
+    }
+
+    /// Retaining the estimates is not rendering them. The delivery report is a page of money, and
+    /// each estimate would add a page of sessions to it.
+    #[test]
+    fn the_delivery_report_says_nothing_about_the_intervals_it_kept() {
+        let report = cost().to_string();
+        for heading in [
+            "EV Peak Power Contribution",
+            "Segment membership",
+            "Segments",
+        ] {
+            assert!(
+                !report.contains(heading),
+                "the delivery report has grown a {heading} section:\n{report}"
+            );
+        }
+    }
+
+    /// An anomaly is listed against the interval it reaches and against no other.
+    ///
+    /// A demand charge is levied on one interval's maximum, so what a session did elsewhere in the
+    /// month cannot move it. Listing it anyway is what buries the rows that do bear on the figure.
+    #[test]
+    fn each_priced_interval_lists_only_the_anomalies_that_reached_it() {
+        let cost = hot_cost();
+        let reached = |i: usize| {
+            cost.priced_intervals[i]
+                .estimates
+                .session_anomalies
+                .iter()
+                .any(|a| a.session.id == "HOT")
+        };
+        // Index 1 is the kW interval, which is the one `HOT` was placed in.
+        assert!(
+            reached(1),
+            "the kW interval did not pick up its own session"
+        );
+        assert!(!reached(0), "the kVA interval picked up another's session");
+        assert!(!reached(2), "the 7-7 interval picked up another's session");
+    }
+
+    /// Every anomaly on a kept interval is in the cost's own notes, so a caller rendering the
+    /// intervals can never show a row the summary left out.
+    #[test]
+    fn the_notes_are_the_anomalies_of_the_intervals_the_cost_keeps() {
+        let cost = hot_cost();
+        let mut checked = 0;
+        for kept in &cost.priced_intervals {
+            for anomaly in &kept.estimates.session_anomalies {
+                assert!(
+                    cost.notes.anomalies.iter().any(|listed| {
+                        std::rc::Rc::ptr_eq(&listed.session, &anomaly.session)
+                            && listed.kind == anomaly.kind
+                    }),
+                    "{} holds an anomaly the notes do not: {anomaly:?}",
+                    kept.unit
+                );
+                checked += 1;
+            }
+        }
+        assert!(checked > 0, "the fixture raised no anomaly to compare");
     }
 }

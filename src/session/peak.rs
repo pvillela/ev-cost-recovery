@@ -8,6 +8,12 @@ use std::{
 };
 
 /// Estimates for an interval of interest.
+///
+/// `Debug` prints every segment and every session, which is a great deal of output. It is derived
+/// because callers holding one inside a result of their own need it —
+/// [`DeliveryCost`](crate::pure::peak_power::DeliveryCost) does — and because `Result::expect_err`
+/// requires it of any such result.
+#[derive(Debug)]
 pub struct IntervalEstimates {
     /// Files the sessions were read from, in the order they were read. Held so the report is
     /// self-describing: it can be stored or rendered later without a caller having to remember what
@@ -70,6 +76,7 @@ impl IntervalEstimates {
 /// count-based pair reads how many of them were charging against the per-EV rating of the
 /// infrastructure. Each is a [`Bracket`], because the reported session times are stated only to the
 /// minute and the overlap they imply is therefore a range rather than a number.
+#[derive(Debug)]
 pub struct EstimateSet {
     pub energy_based_kw: Bracket<f64>,
     pub energy_based_kva: Bracket<f64>,

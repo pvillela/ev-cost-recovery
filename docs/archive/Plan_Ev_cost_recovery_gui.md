@@ -69,7 +69,14 @@ matching `src/session/csv.rs:80-83`:
 
 ---
 
-## Commit 2 — The library keeps the three priced hours
+## Commit 2 — The library keeps the three priced intervals
+
+The vocabulary here is deliberately "interval of interest", not "hour". How long one is comes from
+the meter feed: `METER_INTERVAL` today, and Toronto Hydro has a second feed reporting every quarter
+hour. Nothing in the pure API should have to change when that arrives. Separately, and not to be
+confused with it, a demand charge is levied on the highest 15-minute `Segment` *within* the
+interval — that length does not move with the feed. Two maxima, from two sources: which interval is
+read from the meter, which segment within it from the sessions.
 
 ### `src/api/pure/peak_power.rs`
 
@@ -79,7 +86,7 @@ no new literal:
 
 ```rust
 #[derive(Debug)]
-pub struct PricedHour {
+pub struct PricedInterval {
     pub unit: &'static str,          // "kVA", "kW", "kW 7-7" -- the charges table's Basis column
     pub estimates: IntervalEstimates,
 }
@@ -89,7 +96,7 @@ New field on `DeliveryCost`, after `peak_7_7_kw` (:72), because field order in t
 the report and this is the provenance of the three scalars above it:
 
 ```rust
-pub priced_hours: [PricedHour; 3],
+pub priced_intervals: [PricedInterval; 3],
 ```
 
 An array, not three named fields: a caller showing all three in report order would otherwise have
@@ -98,13 +105,13 @@ arithmetic, so a returned `DeliveryCost` always has all three, and a missing max
 `PeakPowerError::NoPeak`.
 
 In `peak_power_cost` (:369-386, :418-434): the `estimates` closure becomes `priced_hour`, the
-three `energy_based` calls take `.estimates`, and the `notes_for_hours` call moves **out** of the
+three `energy_based` calls take `.estimates`, and the `notes_for_intervals` call moves **out** of the
 struct literal into a local. That hoist is required, not cosmetic — literal fields evaluate in
-source order, so leaving it inline would borrow values already moved into `priced_hours`.
+source order, so leaving it inline would borrow values already moved into `priced_intervals`.
 
-`notes_for_hours` (:454-465) keeps its signature.
+`notes_for_intervals` (:454-465) keeps its signature.
 
-Widen the comment at :22-24 — `IntervalEstimates` is now inside `PricedHour` as well as
+Widen the comment at :22-24 — `IntervalEstimates` is now inside `PricedInterval` as well as
 `PowerEstimates`.
 
 ### `src/session/peak.rs`
@@ -119,9 +126,9 @@ the `Rc::ptr_eq` identity matching in `SessionNotes::add_anomalies`
 
 `Display for DeliveryCost` (:467-563) and `Display for CostRecoverySurplus`
 (`src/api/pure/recovery.rs:656-705`) are **not touched**. Neither reads the new field. In
-particular `Display` must not start reading `PricedHour::unit` for its `Basis` column even though
+particular `Display` must not start reading `PricedInterval::unit` for its `Basis` column even though
 the strings are identical — provably unchanged source is worth more here than one fewer literal,
-and a test pins the equality instead. No `Display` on `PricedHour`; `IntervalEstimates` already
+and a test pins the equality instead. No `Display` on `PricedInterval`; `IntervalEstimates` already
 has one, and `docs/maintenance-manual.md:315` says there is one rendering.
 
 ### The notes hoist needs no change
@@ -133,44 +140,44 @@ estimates. They come through intact, which is what the detail tab needs.
 
 `session_anomalies` is already built per-interval by `collect_session_anomalies`
 (`peak.rs:135`), so "anomalies to the extent they impact these three intervals" needs no
-filtering. And the two tabs cannot disagree: `notes_for_hours` folds these same three lists into
+filtering. And the two tabs cannot disagree: `notes_for_intervals` folds these same three lists into
 `delivery.notes`, which `cost_recovery_surplus` then unions into `surplus.notes`.
 
 **Run logs.** A `CostRecoverySurplus` will hold the same `Vec<SourceLog>` in four places —
-`notes.logs` plus three `priced_hours[i].estimates.logs`. Not new: `PowerEstimates` already ships
+`notes.logs` plus three `priced_intervals[i].estimates.logs`. Not new: `PowerEstimates` already ships
 three copies and `peak_power_cli.rs:78` writes only `notes.write_logs()`. Nothing renders logs, so
 drawing the detail tab writes nothing. Leave the copies; clearing them would make
-`priced_hours[0].estimates.write_logs()` a silent no-op on a value a caller legitimately holds.
+`priced_intervals[0].estimates.write_logs()` a silent no-op on a value a caller legitimately holds.
 
 ### No new re-export
 
 `src/api/mod.rs` states the rule: field types are excluded, because reading a field never requires
-naming it. `PricedHour` is a field type of `DeliveryCost`, exactly as `IntervalEstimates` is of
-`PowerEstimates`. The GUI reaches both through `pure::peak_power::PricedHour` and
+naming it. `PricedInterval` is a field type of `DeliveryCost`, exactly as `IntervalEstimates` is of
+`PowerEstimates`. The GUI reaches both through `pure::peak_power::PricedInterval` and
 `session::IntervalEstimates`.
 
 ### Tests
 
 In `peak_power.rs`:
 
-- `each_priced_hour_holds_the_estimate_its_own_figure_was_taken_from` — interval start matches the
+- `each_priced_interval_holds_the_estimate_its_own_figure_was_taken_from` — interval start matches the
   fixture peak hour, and `energy_based(...).mid()` equals the matching scalar. The three fixture
   hours hold different sessions, so a swap shows as a wrong number.
-- `the_priced_hours_name_the_basis_the_charges_table_prints` — `["kVA", "kW", "kW 7-7"]`, and each
+- `the_priced_intervals_name_the_basis_the_charges_table_prints` — `["kVA", "kW", "kW 7-7"]`, and each
   appears in the corresponding `Display` row. This is what lets `Display` keep its own literals.
 - `the_delivery_report_says_nothing_about_the_hours_it_kept` — retaining is not rendering.
-- `each_priced_hour_lists_only_the_anomalies_that_reached_it` — a hot session in the kW peak hour
+- `each_priced_interval_lists_only_the_anomalies_that_reached_it` — a hot session in the kW peak hour
   appears in that hour's list and neither other.
 - `the_notes_are_the_anomalies_of_the_hours_the_cost_keeps` — the detail tab can never show a row
   the summary omits.
 
 In `recovery.rs`:
 
-- `the_surplus_keeps_the_three_priced_hours_the_delivery_cost_was_drawn_from`
-- `hoisting_the_notes_leaves_each_priced_hours_own_lists_alone` — catches someone "tidying up" by
+- `the_surplus_keeps_the_three_priced_intervals_the_delivery_cost_was_drawn_from`
+- `hoisting_the_notes_leaves_each_priced_intervals_own_lists_alone` — catches someone "tidying up" by
   clearing the estimates in the hoist and silently emptying the detail tab.
-- `the_surplus_names_one_place_to_write_the_run_logs`
-- `the_surplus_report_is_unchanged_by_the_hours_it_now_keeps`
+- `the_kept_intervals_describe_the_same_read_as_the_summary`
+- `the_surplus_report_is_unchanged_by_the_intervals_it_now_keeps`
 
 **One gap worth knowing:** there is no golden file for the surplus report. The only goldens are
 `tests/fixtures/sessions/*.report.md`, covering `IntervalEstimates::to_markdown` and the site-load
@@ -251,7 +258,7 @@ Cost-recovery rates
 
 ### The Peak power detail tab
 
-Three collapsing sections, one per `PricedHour`, headed by unit and the hour in local time, each
+Three collapsing sections, one per `PricedInterval`, headed by unit and the interval in local time, each
 body `estimates.to_markdown()` in `widgets::monospace_block`. Its own Save button.
 
 Anomalies appear here per-interval (already in `to_markdown`) *and* in the surplus report's hoisted

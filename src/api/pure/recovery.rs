@@ -1321,4 +1321,136 @@ mod test {
             "{s}"
         );
     }
+
+    /// The surplus carries the three intervals its delivery cost was drawn from, unchanged by the
+    /// journey.
+    ///
+    /// Compared against a delivery cost computed on its own from the same inputs, the way
+    /// `the_surplus_is_the_recovery_less_the_two_costs` recomputes its parts.
+    #[test]
+    fn the_surplus_keeps_the_three_priced_intervals_the_delivery_cost_was_drawn_from() {
+        let s = cost_recovery_surplus(
+            &bill(),
+            peaks(),
+            &two_reports(),
+            flat(date(2026, 5, 1), 0.10),
+            None,
+        )
+        .expect("the fixture bill closes a billing period and has all three maxima");
+        let alone = crate::api::pure::peak_power_cost(&bill(), peaks(), &two_reports())
+            .expect("the same inputs give the same cost");
+
+        for (kept, own) in s
+            .delivery
+            .priced_intervals
+            .iter()
+            .zip(&alone.priced_intervals)
+        {
+            assert_eq!(kept.unit, own.unit);
+            assert_eq!(
+                kept.estimates.interval, own.estimates.interval,
+                "{}",
+                own.unit
+            );
+            assert_eq!(
+                kept.estimates.session_anomalies.len(),
+                own.estimates.session_anomalies.len(),
+                "{}",
+                own.unit
+            );
+            assert_eq!(
+                kept.estimates.excluded_sessions.len(),
+                own.estimates.excluded_sessions.len(),
+                "{}",
+                own.unit
+            );
+        }
+    }
+
+    /// Hoisting the notes empties the three sub-reports' own note sections and must not reach the
+    /// intervals kept beside them.
+    ///
+    /// This is the test that fails if someone tidies up by clearing the estimates in the hoist: the
+    /// summary would still read correctly and the interval detail would silently go blank.
+    #[test]
+    fn hoisting_the_notes_leaves_each_priced_intervals_own_lists_alone() {
+        let mut hot = session("June.csv", 7, "HOT", KW_PEAK_HOUR, 60, 6.0);
+        std::rc::Rc::get_mut(&mut hot)
+            .expect("sole owner")
+            .anomalies
+            .push(crate::session::AnomalyKind::ExcessiveAvgKw);
+        let mut sessions = crate::api::pure::test_support::two_report_sessions();
+        sessions.push(hot);
+
+        let s = cost_recovery_surplus(
+            &bill(),
+            peaks(),
+            &as_report(sessions),
+            flat(date(2026, 5, 1), 0.10),
+            None,
+        )
+        .expect("the fixture bill closes a billing period and has all three maxima");
+
+        assert!(
+            s.delivery.notes.to_markdown().is_empty(),
+            "the delivery cost kept a notes section of its own"
+        );
+        // Index 1 is the kW interval, which is where `HOT` sits.
+        assert!(
+            s.delivery.priced_intervals[1]
+                .estimates
+                .session_anomalies
+                .iter()
+                .any(|a| a.session.id == "HOT"),
+            "the hoist emptied the interval's own anomaly list"
+        );
+    }
+
+    /// The kept intervals describe the same read as the summary does: the same files, and the same
+    /// run logs.
+    ///
+    /// Which is why a binary writes [`SessionNotes::write_logs`] once and loses nothing. The
+    /// fixture builds its sessions in memory and so carries no logs; what it can show is that the
+    /// two lists agree rather than diverge.
+    #[test]
+    fn the_kept_intervals_describe_the_same_read_as_the_summary() {
+        let s = cost_recovery_surplus(
+            &bill(),
+            peaks(),
+            &two_reports(),
+            flat(date(2026, 5, 1), 0.10),
+            None,
+        )
+        .expect("the fixture bill closes a billing period and has all three maxima");
+
+        assert_eq!(
+            s.notes.sources.len(),
+            2,
+            "the fixture spans two session reports"
+        );
+        for kept in &s.delivery.priced_intervals {
+            assert_eq!(kept.estimates.sources, s.notes.sources, "{}", kept.unit);
+            assert_eq!(
+                kept.estimates.logs.len(),
+                s.notes.logs.len(),
+                "{}",
+                kept.unit
+            );
+        }
+    }
+
+    /// Keeping the intervals did not put them in the report. The summary is a page of money.
+    #[test]
+    fn the_surplus_report_is_unchanged_by_the_intervals_it_now_keeps() {
+        let s = cost_recovery_surplus(
+            &bill(),
+            peaks(),
+            &two_reports(),
+            flat(date(2026, 5, 1), 0.10),
+            None,
+        )
+        .expect("the fixture bill closes a billing period and has all three maxima")
+        .to_string();
+        assert!(!s.contains("EV Peak Power Contribution"), "{s}");
+    }
 }
