@@ -1,0 +1,101 @@
+//! The window: the tab bar and which tab is drawn.
+
+use crate::state::{AppState, Tab};
+use crate::{about, detail, surplus, theme};
+use eframe::egui;
+
+pub const APP_NAME: &str = "EV Cost Recovery";
+
+/// The window and taskbar icon.
+///
+/// Falling back to an empty icon is right if it ever fails to decode: an app without an icon is a
+/// great deal better than an app that will not start.
+pub fn icon() -> egui::IconData {
+    eframe::icon_data::from_png_bytes(include_bytes!("../../../assets/icon.png"))
+        .unwrap_or_default()
+}
+
+#[derive(Default)]
+pub struct App {
+    state: AppState,
+    /// Window chrome rather than workflow state, so it sits here and not in `AppState`: opening the
+    /// About window is not a step in the work and must not survive as one.
+    about_open: bool,
+}
+
+impl eframe::App for App {
+    fn ui(&mut self, root_ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        // The tab strip sits on its own surface, a shade off the panel below it and closed by a
+        // line in the app's colour, so the chrome is visibly chrome.
+        let bar = {
+            let visuals = root_ui.visuals();
+            egui::Frame::new()
+                .fill(visuals.window_fill)
+                .inner_margin(egui::Margin::symmetric(8, 6))
+        };
+        egui::Panel::top("tabs")
+            .frame(bar)
+            .show_separator_line(false)
+            .show(root_ui, |ui| {
+                ui.horizontal(|ui| {
+                    // One run fills both tabs, so the second is offered only once there is
+                    // something behind it. Greyed rather than hidden: a tab that appears partway
+                    // through would move the one beside it under the pointer.
+                    let ready = self.state.detail_ready();
+                    for (tab, label, enabled) in [
+                        (Tab::Surplus, "Cost recovery", true),
+                        (Tab::Detail, "Peak power detail", ready),
+                    ] {
+                        let selected = self.state.tab == tab;
+                        let text = egui::RichText::new(label).strong();
+                        let text = if selected {
+                            text.color(theme::accent(ui))
+                        } else {
+                            text
+                        };
+                        if ui
+                            .add_enabled(enabled, egui::Button::selectable(selected, text))
+                            .clicked()
+                        {
+                            self.state.tab = tab;
+                        }
+                    }
+                    // Pushed to the far end, away from the tabs: About is not a third place to
+                    // work, and reads as chrome only if it does not sit in their row.
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.button("About").clicked() {
+                            self.about_open = true;
+                        }
+                    });
+                });
+                let rect = ui.max_rect();
+                let y = rect.bottom() + 6.0;
+                ui.painter()
+                    .hline(rect.x_range(), y, egui::Stroke::new(2.0, theme::accent(ui)));
+            });
+
+        // A run cleared by a changed input takes the detail tab's contents with it, so the tab it
+        // is showing has to give way too.
+        if self.state.tab == Tab::Detail && !self.state.detail_ready() {
+            self.state.tab = Tab::Surplus;
+        }
+
+        egui::CentralPanel::default().show(root_ui, |ui| {
+            // One scroll area for the whole tab: a long report scrolls together with the controls
+            // that produced it, rather than being clipped into a panel of its own.
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, false])
+                .show(ui, |ui| match self.state.tab {
+                    Tab::Surplus => {
+                        surplus::ui(ui, &mut self.state.surplus, &mut self.state.working_dir)
+                    }
+                    Tab::Detail => {
+                        detail::ui(ui, &mut self.state.surplus, &mut self.state.working_dir)
+                    }
+                });
+        });
+
+        // After the panels, so it is drawn over whichever tab is open.
+        about::window(root_ui.ctx(), &mut self.about_open);
+    }
+}
