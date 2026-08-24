@@ -14,9 +14,15 @@ FROM mcr.microsoft.com/devcontainers/base:jammy
 # container but reuses this layer, instead of re-downloading a few hundred MB over the network.
 #
 # The package set is copied verbatim from docs/Devcontainer_GUI_Options.md, where it was verified
-# working on 2026-07-26, with `openbox` added (see start-xvfb.sh). `--no-install-recommends` is
-# deliberately NOT used: the portal packages below pull working defaults through recommends, and
-# trimming them is exactly the kind of change that turns into a silently broken file dialog.
+# working on 2026-07-26, with `openbox` added (see start-xvfb.sh) and GTK's development files
+# after that. `--no-install-recommends` is deliberately NOT used: the portal packages below pull
+# working defaults through recommends, and trimming them is exactly the kind of change that turns
+# into a silently broken file dialog.
+#
+# `libgtk-3-dev` and `pkg-config` are build requirements, not runtime ones: the app opens files
+# through rfd's GTK backend (see Cargo.toml), which compiles against GTK's headers. Without them
+# `cargo build` fails outright rather than degrading, so they belong in the image alongside what
+# the app needs to run. The release workflow installs the same pair on its Ubuntu runner.
 RUN export DEBIAN_FRONTEND=noninteractive \
     && apt-get update -qq \
     && apt-get install -y -qq \
@@ -26,6 +32,7 @@ RUN export DEBIAN_FRONTEND=noninteractive \
         libgl1 libegl1 libgl1-mesa-dri libvulkan1 mesa-vulkan-drivers \
         fonts-dejavu-core \
         dbus-x11 xdg-desktop-portal xdg-desktop-portal-gtk \
+        pkg-config libgtk-3-dev \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 

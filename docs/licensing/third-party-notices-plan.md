@@ -25,6 +25,14 @@ Today the release archives contain a bare binary and nothing else.
 No forced copyleft exists in the graph. The only GPL/LGPL appearances
 (`self_cell`, `r-efi`) are `OR` alternatives with permissive options.
 
+> **Footnote, added later.** That sentence is about the *crate* graph, and stays
+> true. It is not the whole picture, and reading it as one would be a mistake: the
+> Linux binary links LGPL system libraries that were never crates and so were never
+> in the graph `cargo-about` walks. glibc has been among them since the first Linux
+> build; GTK 3 and its stack joined when the file dialogs moved off the XDG desktop
+> portal. Both are covered by a hand-written section at the end of `about.md.hbs`,
+> which is the one part of the notices `cargo-about` does not produce.
+
 **Decided against:** a rust-style `COPYRIGHT` file (its licensing-statement and
 in-tree-exception roles are already covered, and this tree has no exceptions),
 per-file SPDX headers, and a root `NOTICE` file.

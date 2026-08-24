@@ -15,13 +15,10 @@ cargo run --bin ev_cost_recovery
 
 In the devcontainer the display is already set (`DISPLAY=:99`).
 
-The file pickers need a session bus, but you do not have to arrange one: with the portal packages
-this image installs, the GTK stack starts a bus itself when none is set, and it exits with the app.
-Checked by killing every `dbus-daemon`, running the binary bare, and clicking *Choose…* — the
-chooser opened, and two buses appeared that had not been there before.
-
-If a picker ever does nothing at all when clicked, run `bash scripts/run-gui.sh` instead; it says
-what it is for and why you should not have needed it.
+The file pickers need nothing arranged. They are GTK dialogs opened in the app's own process, so
+there is no desktop portal in the way and no session bus to start. Checked by killing every
+`dbus-daemon`, running the binary with `DBUS_SESSION_BUS_ADDRESS` unset, and clicking *Choose…* —
+the chooser opened and no bus appeared.
 
 ## The one run that works end to end
 

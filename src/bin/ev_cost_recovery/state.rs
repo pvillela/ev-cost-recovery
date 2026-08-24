@@ -92,10 +92,14 @@ impl Input {
 
     /// What the file dialog filters on: the description, then the extensions.
     pub fn filter(self) -> (&'static str, &'static [&'static str]) {
+        // Each extension in both cases. A Linux dialog turns an extension into the shell glob
+        // `*.<ext>` and matches that against the file name, so `*.xml` alone leaves a Green Button
+        // export invisible in the chooser: Toronto Hydro names it `.XML`. Windows and macOS
+        // disregard case already and neither minds the extra entry.
         match self {
-            Self::Bill => ("Hydro bill", &["pdf"]),
-            Self::Meter => ("Green Button export", &["xml"]),
-            Self::Sessions1 | Self::Sessions2 => ("Session report", &["csv"]),
+            Self::Bill => ("Hydro bill", &["pdf", "PDF"]),
+            Self::Meter => ("Green Button export", &["xml", "XML"]),
+            Self::Sessions1 | Self::Sessions2 => ("Session report", &["csv", "CSV"]),
         }
     }
 

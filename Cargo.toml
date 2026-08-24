@@ -15,7 +15,6 @@ jiff = "0.2.35"
 # sits, which plain-text extraction discards. Also carries the ToUnicode CMap decoding the bills
 # need -- their fonts are subset Identity-H, where a glyph code means nothing without it.
 lopdf = { version = "0.44.0", default-features = false }
-rfd = "0.17.2"
 # Whole-document tree rather than a streaming reader: the ESPI join needs random access, since an
 # IntervalBlock resolves to its ReadingType only through a MeterReading entry that may appear
 # anywhere in the feed.
@@ -24,6 +23,20 @@ roxmltree = "0.21.1"
 # reproduce the reference workbook exactly. rust_xlsxwriter models both as whole pixels and cannot
 # represent the template's 13.8pt rows or 1.39-wide spacers.
 umya-spreadsheet = "3.0.1"
+
+# The file dialogs. Everywhere but Linux the default backend is the native one and there is
+# nothing to choose.
+[target."cfg(not(target_os = \"linux\"))".dependencies]
+rfd = "0.17.2"
+
+# On Linux the default backend is the XDG desktop portal, which cannot open a dialog in a chosen
+# folder: `OpenFile` gained a `current_folder` option only in xdg-desktop-portal 1.17, and on
+# anything older -- Ubuntu 22.04 ships 1.14, as this project's devcontainer and its release runner
+# both do -- the folder is dropped before any dialog sees it. Talking to GTK directly settles it
+# for every release, at the cost of `libgtk-3-dev` to build and `libgtk-3-0` to run. Both are
+# already present wherever a GTK desktop is, which is where this app runs.
+[target."cfg(target_os = \"linux\")".dependencies]
+rfd = { version = "0.17.2", default-features = false, features = ["gtk3"] }
 
 [build-dependencies]
 # Verifies that the generated third-party notices match the dependency graph they were made from.

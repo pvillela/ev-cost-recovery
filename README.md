@@ -104,10 +104,12 @@ silent.
 — `data/.gitignore` is `*` — so the bills, the meter export and the session reports have to be
 brought to the checkout before there is anything to run it against.
 
-The app opens files through `rfd`, whose default backend needs a session bus; where a desktop portal
-is installed the GTK stack starts one itself, so nothing has to be arranged. Where no portal is
-reachable the dialogs fail *silently* — which is easy to misdiagnose as a bug in the app — and
-[`scripts/run-gui.sh`](scripts/run-gui.sh) is the fallback for that. See
+The app opens files through `rfd`, configured in `Cargo.toml` to use GTK directly on Linux rather
+than the desktop portal `rfd` would reach for by default. The dialogs are therefore ordinary GTK
+windows in the app's own process: nothing has to be arranged, and no session bus has to be running.
+Building on Linux needs `libgtk-3-dev` and `pkg-config`; running needs the GTK 3 runtime, which
+any GTK desktop already has (`libgtk-3-0` on Ubuntu 22.04, renamed `libgtk-3-0t64` by the 64-bit
+`time_t` transition in 24.04 and later). See
 [`docs/session/Devcontainer_GUI_Options.md`](docs/session/Devcontainer_GUI_Options.md) for the
 container setup.
 

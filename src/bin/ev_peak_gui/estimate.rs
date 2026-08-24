@@ -48,7 +48,9 @@ fn workbook_row(ui: &mut egui::Ui, state: &mut EstimateState, working: &mut Work
     ui.horizontal(|ui| {
         if ui.button("Select workbook…").clicked()
             && let Some(path) = widgets::dialog(working)
-                .add_filter("Session report workbook", &["xlsx"])
+                // Both cases: a Linux dialog matches the extension as the glob `*.xlsx`, which a
+                // `.XLSX` file does not answer to.
+                .add_filter("Session report workbook", &["xlsx", "XLSX"])
                 .pick_file()
         {
             working.remember(&path);

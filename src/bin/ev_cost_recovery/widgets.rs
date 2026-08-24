@@ -10,23 +10,16 @@ use eframe::egui;
 use std::path::Path;
 
 /// A file dialog that opens where the user last was, rather than wherever the system would put it.
-///
-/// `set_directory` is the whole story on Windows and macOS. On Linux it is not: `rfd` has two
-/// backends there and neither is reliable about it. The XDG portal passes the folder as
-/// `current_folder`, which the spec marks as a hint that implementations *may* ignore — GNOME's
-/// does, for open dialogs. The zenity fallback never reads the folder at all; the only thing it
-/// passes is `--filename`. So on Linux the folder is given twice, the second time as a file name
-/// with a trailing separator, which is what zenity starts in. The portal's `OpenFileOptions` has no
-/// file-name field, so that second attempt cannot disturb it.
 pub fn dialog(working: &WorkingDir) -> rfd::FileDialog {
+    // `set_directory` and nothing besides. It holds on Linux only because `Cargo.toml` picks
+    // rfd's GTK backend there; reached through the XDG desktop portal the folder is discarded on
+    // every version before 1.17. Do not pass the folder a second time as a file name to
+    // compensate: GTK reads a file name as a file to select, and a folder is not one.
     let dialog = rfd::FileDialog::new();
-    let Some(dir) = working.get() else {
-        return dialog;
-    };
-    let dialog = dialog.set_directory(dir);
-    #[cfg(target_os = "linux")]
-    let dialog = dialog.set_file_name(format!("{}{}", dir.display(), std::path::MAIN_SEPARATOR));
-    dialog
+    match working.get() {
+        Some(dir) => dialog.set_directory(dir),
+        None => dialog,
+    }
 }
 
 /// A tab's title, in the app's colour. Headings are the one place colour does structural work:

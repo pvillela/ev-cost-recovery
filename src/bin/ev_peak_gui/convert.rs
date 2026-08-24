@@ -18,7 +18,9 @@ pub fn ui(ui: &mut egui::Ui, state: &mut ConvertState, working: &mut WorkingDir)
     ui.horizontal(|ui| {
         if ui.button("Select CSV…").clicked()
             && let Some(path) = widgets::dialog(working)
-                .add_filter("Session report", &["csv"])
+                // Both cases: a Linux dialog matches the extension as the glob `*.csv`, which a
+                // `.CSV` file does not answer to.
+                .add_filter("Session report", &["csv", "CSV"])
                 .pick_file()
         {
             working.remember(&path);
