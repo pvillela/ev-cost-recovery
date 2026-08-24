@@ -98,7 +98,10 @@ impl Error for ReadError {
 /// their file names before anything is read. Which is given first makes no difference; the names
 /// say what each holds.
 ///
-/// Reading a report writes a `.csv.read.log` beside it, as [`csv::session_list`] always does.
+/// Nothing here writes. Each report read returns its `csv.read` log unwritten on the result's
+/// `notes` -- see [`csv::session_list`] -- and
+/// [`SessionNotes::write_logs`](crate::session::SessionNotes::write_logs) is what a binary calls
+/// to put one beside its input.
 ///
 /// # Errors
 ///
@@ -153,7 +156,10 @@ pub fn peak_power(
 /// The two reports must cover the billing period completely between them, checked from their file
 /// names. Which is given first makes no difference; the names say what each holds.
 ///
-/// Reading a report writes a `.csv.read.log` beside it, as [`csv::session_list`] always does.
+/// Nothing here writes. Each report read returns its `csv.read` log unwritten on the result's
+/// `notes` -- see [`csv::session_list`] -- and
+/// [`SessionNotes::write_logs`](crate::session::SessionNotes::write_logs) is what a binary calls
+/// to put one beside its input.
 ///
 /// # Errors
 ///
@@ -211,7 +217,10 @@ pub fn peak_power_cost(
 /// [`pure::energy`](fn@super::pure::energy) sums whatever it is given, so a month's report missing
 /// from the call yields a total that is simply too low, with nothing in the figures to say so.
 ///
-/// Reading a report writes a `.csv.read.log` beside it, as [`csv::session_list`] always does.
+/// Nothing here writes. Each report read returns its `csv.read` log unwritten on the result's
+/// `notes` -- see [`csv::session_list`] -- and
+/// [`SessionNotes::write_logs`](crate::session::SessionNotes::write_logs) is what a binary calls
+/// to put one beside its input.
 ///
 /// # Errors
 ///
@@ -250,7 +259,10 @@ pub fn energy(
 /// The two reports must cover the billing period completely between them, checked from their file
 /// names. Which is given first makes no difference; the names say what each holds.
 ///
-/// Reading a report writes a `.csv.read.log` beside it, as [`csv::session_list`] always does.
+/// Nothing here writes. Each report read returns its `csv.read` log unwritten on the result's
+/// `notes` -- see [`csv::session_list`] -- and
+/// [`SessionNotes::write_logs`](crate::session::SessionNotes::write_logs) is what a binary calls
+/// to put one beside its input.
 ///
 /// # Errors
 ///
@@ -300,7 +312,10 @@ pub fn energy_cost(
 /// [`energy`]: the recovery is a sum over whatever it is given, so a month's report missing from
 /// the call yields a figure that is simply too low, with nothing in it to say so.
 ///
-/// Reading a report writes a `.csv.read.log` beside it, as [`csv::session_list`] always does.
+/// Nothing here writes. Each report read returns its `csv.read` log unwritten on the result's
+/// `notes` -- see [`csv::session_list`] -- and
+/// [`SessionNotes::write_logs`](crate::session::SessionNotes::write_logs) is what a binary calls
+/// to put one beside its input.
 ///
 /// # Errors
 ///
@@ -347,7 +362,10 @@ pub fn cost_recovery(
 /// The two reports must cover the billing period completely between them, checked from their file
 /// names. Which is given first makes no difference; the names say what each holds.
 ///
-/// Reading a report writes a `.csv.read.log` beside it, as [`csv::session_list`] always does.
+/// Nothing here writes. Each report read returns its `csv.read` log unwritten on the result's
+/// `notes` -- see [`csv::session_list`] -- and
+/// [`SessionNotes::write_logs`](crate::session::SessionNotes::write_logs) is what a binary calls
+/// to put one beside its input.
 ///
 /// # Errors
 ///

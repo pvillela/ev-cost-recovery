@@ -161,13 +161,13 @@ With Option A (Xvfb):
 
 ```bash
 export DISPLAY=:99
-cargo run --bin ev_cost_recovery
+cargo run --bin ev_peak_gui
 ```
 
 For file dialogs to work, wrap in a DBus session (see Part 4):
 
 ```bash
-dbus-run-session -- cargo run --bin ev_cost_recovery
+dbus-run-session -- cargo run --bin ev_peak_gui
 ```
 
 Agent-style capture-and-drive loop:
@@ -215,7 +215,7 @@ This is easy to misdiagnose as an application bug.
 The packages in Part 1 fix it with no code change, provided the app runs under a DBus session:
 
 ```bash
-XDG_CURRENT_DESKTOP=GNOME dbus-run-session -- cargo run --bin ev_cost_recovery
+XDG_CURRENT_DESKTOP=GNOME dbus-run-session -- cargo run --bin ev_peak_gui
 ```
 
 Verified: the GTK file chooser opens with the `.xlsx/.xls/.xlsm` filter applied. A harmless

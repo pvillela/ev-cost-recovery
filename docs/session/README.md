@@ -36,7 +36,7 @@ The same work is available two ways: a desktop app covering the whole workflow, 
 
 ### Desktop app
 
-`ev_cost_recovery` is a single self-contained binary — no installer, no runtime to put on the machine first. It opens on a choice of the two jobs, and neither is entered until it is asked for:
+`ev_peak_gui` is a single self-contained binary — no installer, no runtime to put on the machine first. It opens on a choice of the two jobs, and neither is entered until it is asked for:
 
 - **Convert** — pick an Evolute session report CSV; the workbook is written beside it, and the rows that needed a judgement call are listed. Converting over an existing workbook asks first.
 - **Estimate** — pick a workbook, choose the interval of interest, read the figures. The report is shown in full, and can be copied or saved.
@@ -45,7 +45,7 @@ The interval is chosen from controls rather than typed, and they offer only inte
 
 The two DST transitions appear where they matter and nowhere else. On the night the clocks go forward, the skipped hour is simply absent from the hour list. On the night they go back, choosing the repeated hour asks which of the two is meant, and Estimate stays disabled until that is answered.
 
-**Running it.** On Windows, double-click `ev_cost_recovery.exe`. It is not code-signed, so the first run shows SmartScreen's "Windows protected your PC" — choose *More info* then *Run anyway*; later runs are silent. On Linux, mark it executable once (`chmod +x ev_cost_recovery`) and run it.
+**Running it.** On Windows, double-click `ev_peak_gui.exe`. It is not code-signed, so the first run shows SmartScreen's "Windows protected your PC" — choose *More info* then *Run anyway*; later runs are silent. On Linux, mark it executable once (`chmod +x ev_peak_gui`) and run it.
 
 ### Command line
 

@@ -50,7 +50,7 @@ still to be written.
 ## Building and running
 
 ```sh
-cargo build --release      # the desktop app, ev_cost_recovery
+cargo build --release      # the desktop app, ev_peak_gui
 cargo test                 # everything
 cargo run --example sessions -- <workbook.xlsx>
 ```
