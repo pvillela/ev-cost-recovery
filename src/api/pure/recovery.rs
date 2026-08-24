@@ -772,6 +772,21 @@ mod test {
         rates(effective, rate, rate, rate)
     }
 
+    /// The fixture sessions, plus one in the kW interval carrying an anomaly.
+    ///
+    /// `ExcessiveAvgKw` because the consumption side does not collect that kind, so a test using it
+    /// is asking about the delivery side alone.
+    fn sessions_with_hot() -> Vec<RSession> {
+        let mut hot = session("June.csv", 7, "HOT", KW_PEAK_HOUR, 60, 6.0);
+        std::rc::Rc::get_mut(&mut hot)
+            .expect("sole owner")
+            .anomalies
+            .push(crate::session::AnomalyKind::ExcessiveAvgKw);
+        let mut sessions = crate::api::pure::test_support::two_report_sessions();
+        sessions.push(hot);
+        sessions
+    }
+
     /// The ordinary case: one schedule, one stretch, and the recovery is the rate times what was
     /// drawn.
     #[test]
@@ -1075,14 +1090,7 @@ mod test {
     /// surplus rests on both.
     #[test]
     fn the_hoisted_notes_take_in_both_scopes() {
-        let mut hot = session("June.csv", 7, "HOT", KW_PEAK_HOUR, 60, 6.0);
-        std::rc::Rc::get_mut(&mut hot)
-            .expect("sole owner")
-            .anomalies
-            .push(crate::session::AnomalyKind::ExcessiveAvgKw);
-        let mut sessions = crate::api::pure::test_support::two_report_sessions();
-        sessions.push(hot);
-        let sessions = as_report(sessions);
+        let sessions = as_report(sessions_with_hot());
 
         let rates = flat(date(2026, 5, 1), 0.10);
         let s = cost_recovery_surplus(&bill(), peaks(), &sessions, rates, None)
@@ -1374,18 +1382,10 @@ mod test {
     /// summary would still read correctly and the interval detail would silently go blank.
     #[test]
     fn hoisting_the_notes_leaves_each_priced_intervals_own_lists_alone() {
-        let mut hot = session("June.csv", 7, "HOT", KW_PEAK_HOUR, 60, 6.0);
-        std::rc::Rc::get_mut(&mut hot)
-            .expect("sole owner")
-            .anomalies
-            .push(crate::session::AnomalyKind::ExcessiveAvgKw);
-        let mut sessions = crate::api::pure::test_support::two_report_sessions();
-        sessions.push(hot);
-
         let s = cost_recovery_surplus(
             &bill(),
             peaks(),
-            &as_report(sessions),
+            &as_report(sessions_with_hot()),
             flat(date(2026, 5, 1), 0.10),
             None,
         )
@@ -1437,6 +1437,55 @@ mod test {
                 kept.unit
             );
         }
+    }
+
+    /// The whole surplus report, byte for byte.
+    ///
+    /// Layout is the thing under test, and layout is only judged by looking at it, so the
+    /// expectation is a file that can be read rather than a list of assertions about substrings.
+    /// The other tests here check that a figure is right; this one checks that a column has not
+    /// moved, a decimal place has not changed and a section has not gone missing. It is the only
+    /// check the four sub-reports' rendering has as a whole, since `Display` for the surplus prints
+    /// all of them.
+    ///
+    /// The fixture is deliberately the busiest shape the report has: two rate schedules, so the
+    /// stretches table has more than one row, and a session anomaly and a meter anomaly, so both
+    /// notes sections are rendered rather than skipped. Each of those is a section that returns an
+    /// empty string when there is nothing to say, and a golden built from a clean run would pin
+    /// none of them.
+    ///
+    /// Unlike the goldens in `tests/`, this one is not among the failures the constant-change check
+    /// expects. Its figures are the bill's and the sessions' own energy, and the fixture sessions
+    /// sit below the breaker threshold on either side of the change that check makes. A constant
+    /// moved far enough to cross it would show up here too, and regenerating would be right; see
+    /// `docs/maintenance-manual.md`, "Which constants are free, and which are derived".
+    ///
+    /// To regenerate after an intended change, having read the diff:
+    ///
+    /// ```sh
+    /// UPDATE_REPORT_GOLDEN=1 cargo test --lib recovery
+    /// ```
+    #[test]
+    fn the_surplus_report_matches_its_golden_file() {
+        // The meter side of the notes, which a fixture built in memory otherwise says nothing
+        // about: a file it was read from, and one interval that needed a judgement call.
+        let mut meter = peaks();
+        meter.source = Some(std::path::PathBuf::from("TH_Electric_Usage.XML"));
+        meter.anomalies = vec![(
+            KVA_PEAK_HOUR.parse().expect("an RFC 3339 timestamp"),
+            crate::green_button::Anomaly::MissingKva,
+        )];
+
+        let s = cost_recovery_surplus(
+            &bill(),
+            meter,
+            &as_report(sessions_with_hot()),
+            flat(date(2026, 5, 1), 0.10),
+            Some(flat(date(2026, 6, 1), 0.12)),
+        )
+        .expect("the fixture bill closes a billing period and has all three maxima");
+
+        crate::golden::check("api/EV_Cost_Recovery_Surplus.report.md", &s.to_string());
     }
 
     /// Keeping the intervals did not put them in the report. The summary is a page of money.

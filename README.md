@@ -14,8 +14,8 @@ Three read a source of data. The fourth is the calendar they all run on.
 | Module | Reads | Answers |
 |---|---|---|
 | [`green_button`](docs/green_button/README.md) | Toronto Hydro's Green Button export, an ESPI XML feed of hourly meter readings | When did the building peak, and at what kW and kVA? Which billing period was that in? |
-| [`sessions`](docs/sessions/README.md) | The Evolute monthly session report, a CSV of charging sessions | Over a chosen interval, how much of the demand was EV charging — as a bracket, not a point? |
-| [`hydro_bills`](docs/hydro_bills/) | The PDF invoices Toronto Hydro issues | What did the utility charge, and on what terms? |
+| [`sessions`](docs/session/README.md) | The Evolute monthly session report, a CSV of charging sessions | Over a chosen interval, how much of the demand was EV charging — as a bracket, not a point? |
+| [`hydro_bills`](docs/hydro_bill/) | The PDF invoices Toronto Hydro issues | What did the utility charge, and on what terms? |
 | [`time`](docs/time/README.md) | Nothing of its own — the other three call it | What does a timestamp mean here, and what does the Ontario calendar say about it? |
 
 `time` is a module rather than a scattering of helpers because the same calendar has to be applied
@@ -25,7 +25,7 @@ here would catch.
 `sessions` reports a **bracket** rather than a single number, and that is deliberate. Session start
 and end times are reported only to the minute, so a session's true extent is known to within a
 minute at each end. Every figure therefore runs from what the reported times least support to what
-they most support. See [`docs/sessions/time-reporting-uncertainty.md`](docs/sessions/time-reporting-uncertainty.md)
+they most support. See [`docs/session/time-reporting-uncertainty.md`](docs/session/time-reporting-uncertainty.md)
 for the derivation.
 
 `hydro_bills` is the least complete of the four. It reads a bill and it defines the billing period
@@ -34,17 +34,19 @@ still to be written.
 
 ## Documentation
 
-- [`docs/sessions/README.md`](docs/sessions/README.md) — the estimation logic, the workbook, the
+- [`docs/ev_cost_recovery/README.md`](docs/ev_cost_recovery/README.md) — the desktop app: what it
+  asks for, what its two tabs show, what it writes
+- [`docs/session/README.md`](docs/session/README.md) — the estimation logic, the workbook, the
   interval-of-interest rules
 - [`docs/green_button/README.md`](docs/green_button/README.md) — the ESPI feed, the peak values, the
   workbook layout
-- [`docs/hydro_bills/green-button-vs-bills.md`](docs/hydro_bills/green-button-vs-bills.md) — the
+- [`docs/hydro_bill/green-button-vs-bills.md`](docs/hydro_bill/green-button-vs-bills.md) — the
   export checked against every invoice, period by period
 - [`docs/time/README.md`](docs/time/README.md) — the two clocks and which is for what, the DST fold
   and how it is resolved, the time grid
 - [`docs/maintenance-manual.md`](docs/maintenance-manual.md) — what to check before changing a
   constant, how to regenerate the golden files, the invariants nothing enforces
-- [`docs/sessions/time-reporting-uncertainty.md`](docs/sessions/time-reporting-uncertainty.md) — the
+- [`docs/session/time-reporting-uncertainty.md`](docs/session/time-reporting-uncertainty.md) — the
   specification the consistency checks are derived from
 
 ## Building and running
@@ -61,7 +63,8 @@ rates; no closing date, because the bill says which period it covers. It shows t
 recovery** is the surplus report, byte-for-byte what `cost_recovery_surplus_cli` prints. **Peak
 power detail** is the three intervals of interest the delivery cost was priced on — the ones the
 building peaked in, in kVA, in kW, and in kW within the 07:00-19:00 window — each with the segment
-and the sessions behind its figure. That second document has no command-line equivalent.
+and the sessions behind its figure. That second document has no command-line equivalent. See
+[`docs/ev_cost_recovery/README.md`](docs/ev_cost_recovery/README.md).
 
 The command-line tools are `ev_csv_to_xlsx` (session report to workbook), `ev_peak_cli` (estimate
 over an interval), `gb_peak_values` (Green Button feed to workbook) and `hydro_bill_dump` (a bill
