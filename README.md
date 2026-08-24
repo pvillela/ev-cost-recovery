@@ -100,11 +100,13 @@ silent.
 
 **Linux.** Mark it executable once (`chmod +x ev_cost_recovery`) and run it.
 
-**From a checkout**, use [`scripts/run-gui.sh`](scripts/run-gui.sh) rather than a bare `cargo run`.
-The app opens files through `rfd`, whose default backend needs a desktop portal; with none reachable
-the dialogs fail *silently*, which is easy to misdiagnose as a bug in the app. The script supplies a
-DBus session. See [`docs/session/Devcontainer_GUI_Options.md`](docs/session/Devcontainer_GUI_Options.md)
-for the container setup.
+**From a checkout**, `cargo run --bin ev_cost_recovery`. The app opens files through `rfd`, whose
+default backend needs a session bus; where a desktop portal is installed the GTK stack starts one
+itself, so nothing has to be arranged. Where no portal is reachable the dialogs fail *silently* —
+which is easy to misdiagnose as a bug in the app — and
+[`scripts/run-gui.sh`](scripts/run-gui.sh) is the fallback for that. See
+[`docs/session/Devcontainer_GUI_Options.md`](docs/session/Devcontainer_GUI_Options.md) for the
+container setup.
 
 The code is `src/bin/ev_cost_recovery/`. Every decision lives in `state.rs`, which has no `egui` in
 it, so what could be *wrong* rather than merely ugly is unit-tested without a window. The widget

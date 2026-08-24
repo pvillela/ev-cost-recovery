@@ -212,14 +212,27 @@ for judging animation smoothness or frame rate.
 **silently** — clicking a file-picker button does nothing at all, with no error and no panic.
 This is easy to misdiagnose as an application bug.
 
-The packages in Part 1 fix it with no code change, provided the app runs under a DBus session:
+The packages in Part 1 fix it with no code change, and no DBus session has to be arranged: the GTK
+stack starts one itself when `DBUS_SESSION_BUS_ADDRESS` is unset, and it exits with the app. A bare
+run is enough.
+
+```bash
+cargo run --bin ev_cost_recovery
+```
+
+Verified twice over. First that the chooser opens at all — it does, with the picker's own filter
+applied, so choosing the bill offers `Hydro bill`. Then that no bus is needed: every `dbus-daemon`
+was killed, the binary run directly with `DBUS_SESSION_BUS_ADDRESS` unset, and the chooser still
+opened, with two buses present afterwards that had not been there before.
+
+`dbus-run-session` is therefore belt and braces here, and `scripts/run-gui.sh` supplies it for an
+environment where the Part 1 packages are missing:
 
 ```bash
 XDG_CURRENT_DESKTOP=GNOME dbus-run-session -- cargo run --bin ev_cost_recovery
 ```
 
-Verified: the GTK file chooser opens with the picker's own filter applied — choosing the bill offers
-`Hydro bill`. A harmless warning is logged and can be ignored:
+A harmless warning is logged either way and can be ignored:
 
 ```
 WARNING **: Unhandled parent window type

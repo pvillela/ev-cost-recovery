@@ -6,14 +6,19 @@ something has changed.
 ## Launching it
 
 ```sh
-bash scripts/run-gui.sh
+cargo run --bin ev_cost_recovery
 ```
 
-Use the script rather than `cargo run`. The file pickers need a desktop portal, and without one they
-fail **silently** — clicking *Choose…* does nothing at all, with no error and no panic.
+In the devcontainer the display is already set (`DISPLAY=:99`).
 
-In the devcontainer the display is already set (`DISPLAY=:99`). Add `--release` after the script name
-for a release build.
+The file pickers need a session bus, but you do not have to arrange one: with the portal packages
+this image installs, the GTK stack starts a bus itself when none is set, and it exits with the app.
+Checked by killing every `dbus-daemon`, running the binary bare, and clicking *Choose…* — the
+chooser opened, and two buses appeared that had not been there before.
+
+`bash scripts/run-gui.sh` wraps the same command in an explicit `dbus-run-session`. It is a fallback
+for an environment without those packages, where the pickers fail **silently** — clicking *Choose…*
+does nothing at all, with no error and no panic. You should not need it here.
 
 ## The one run that works end to end
 
