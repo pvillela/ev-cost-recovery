@@ -3,7 +3,7 @@
 //! Unit tests in `session::excel` already pin the predicate. This pins the *consequence*: which
 //! sessions reach an estimate and which are put aside. Nothing did that before, which is how commit
 //! `1d99e29` moved the band by a whole `TIME_GRID_STEP` — excluding 116 of the 238 sessions in the
-//! real June report — with the whole suite green. See `docs/merger-review-findings.md`, finding 1.
+//! real June report — with the whole suite green. See `docs/archive/merger-review-findings.md`, finding 1.
 //!
 //! # The arithmetic every record here is one second away from
 //!

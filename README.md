@@ -63,9 +63,6 @@ power detail** is the three intervals of interest the delivery cost was priced o
 building peaked in, in kVA, in kW, and in kW within the 07:00-19:00 window — each with the segment
 and the sessions behind its figure. That second document has no command-line equivalent.
 
-`ev_peak_gui` is the older app, covering conversion and a single interval of interest. It still
-builds, and is not distributed.
-
 The command-line tools are `ev_csv_to_xlsx` (session report to workbook), `ev_peak_cli` (estimate
 over an interval), `gb_peak_values` (Green Button feed to workbook) and `hydro_bill_dump` (a bill
 PDF's figures). Each prints its usage when run with no arguments.

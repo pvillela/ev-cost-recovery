@@ -170,23 +170,25 @@ Change one free constant, run the suite, and confirm only the golden-fixture tes
 
 ```sh
 # In src/session/site_load.rs, temporarily: BREAKER_RATING_A = 40.0 -> 32.0
-cargo test
-# Expect exactly three failures, all golden-file comparisons:
+cargo test --no-fail-fast
+# Expect failures only from golden-file comparisons:
 #   session::report_rendering::rendered_reports_match_their_golden_files
 #   session::report_rendering::the_site_load_table_matches_its_golden_file
-#   ev_peak_gui state::test::the_app_produces_the_same_report_as_the_command_line
 # Then revert.
 ```
 
-Run it with `--no-fail-fast`, or the first failing target hides the others.
+`--no-fail-fast` matters. Each target — the library, each binary, each file under `tests/` — runs as
+its own executable, and without it the first one to fail hides whatever the others would have said.
 
-`ev_cost_recovery` has a test of that same name and it is *not* among the three. It compares the
-app's text against the library's own rendering of the same value rather than against a stored file,
-so a changed constant moves both sides together. What it catches is the app assembling a report of
-its own; what the golden files catch is a figure changing.
+The test to expect here is one that checks a rendered report against a stored file. A test that
+compares two figures both computed from the constant is not one: `ev_cost_recovery`'s
+`the_app_produces_the_same_report_as_the_command_line` asserts that the app's text is the library's
+own rendering of the same value, so a changed constant moves both sides together and it passes. What
+it catches is the app assembling a report of its own; what the golden files catch is a figure
+changing.
 
-Anything else failing is a test that has acquired a dependency on the value, and should be
-reformulated rather than updated.
+Anything failing that is not a golden-file comparison is a test that has acquired a dependency on
+the value, and should be reformulated rather than updated.
 
 ## Boundaries and the time grid
 
@@ -319,9 +321,9 @@ Both are pinned by tests in `src/session/peak.rs`:
 table are rendered there, and `examples/site_load_report.rs` is one `print!` over
 `site_load_report()`.
 
-This is not tidiness. A report saved from the GUI is byte-for-byte what the command line prints,
-and README says so; that holds only because there is one rendering rather than two that could
-drift. If you find yourself formatting a figure anywhere else — in a binary, in an example, in a
+This is not tidiness. A report saved from `ev_cost_recovery` is byte-for-byte what the command line
+prints, and README says so; that holds only because there is one rendering rather than two that
+could drift. If you find yourself formatting a figure anywhere else — in a binary, in an example, in a
 test helper — that is the thing to reconsider.
 
 `ev_cost_recovery`'s Peak power detail tab is the case that looks like an exception and is not. It

@@ -161,13 +161,13 @@ With Option A (Xvfb):
 
 ```bash
 export DISPLAY=:99
-cargo run --bin ev_peak_gui
+cargo run --bin ev_cost_recovery
 ```
 
 For file dialogs to work, wrap in a DBus session (see Part 4):
 
 ```bash
-dbus-run-session -- cargo run --bin ev_peak_gui
+dbus-run-session -- cargo run --bin ev_cost_recovery
 ```
 
 Agent-style capture-and-drive loop:
@@ -209,17 +209,17 @@ for judging animation smoothness or frame rate.
 ## Part 4 — File dialogs (`rfd`)
 
 `rfd` 0.17 defaults to the `xdg-portal` backend. With no portal running, dialogs fail
-**silently** — clicking "Select Excel File..." does nothing at all, with no error and no panic.
+**silently** — clicking a file-picker button does nothing at all, with no error and no panic.
 This is easy to misdiagnose as an application bug.
 
 The packages in Part 1 fix it with no code change, provided the app runs under a DBus session:
 
 ```bash
-XDG_CURRENT_DESKTOP=GNOME dbus-run-session -- cargo run --bin ev_peak_gui
+XDG_CURRENT_DESKTOP=GNOME dbus-run-session -- cargo run --bin ev_cost_recovery
 ```
 
-Verified: the GTK file chooser opens with the `.xlsx/.xls/.xlsm` filter applied. A harmless
-warning is logged and can be ignored:
+Verified: the GTK file chooser opens with the picker's own filter applied — choosing the bill offers
+`Hydro bill`. A harmless warning is logged and can be ignored:
 
 ```
 WARNING **: Unhandled parent window type
