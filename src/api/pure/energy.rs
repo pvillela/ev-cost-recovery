@@ -390,17 +390,11 @@ impl fmt::Display for EnergyCost {
                 &format!("{:.4}", self.loss_factor_adjustment)
             )
         )?;
-        writeln!(
-            f,
-            "{}\n",
-            table(
-                &["TOU", "kWh", "Adj. kWh", "TH blended rate", "Cost"],
-                &rows,
-                &[Left, Right, Right, Right, Right],
-            )
-        )?;
-
-        writeln!(f, "{}\n", h2("EV Energy Cost (after HST & OER)"))?;
+        // The figure the surplus is built from comes first, and the band-by-band working that
+        // produced it after. A reader arrives wanting the cost; the bands are what they turn to
+        // only once they want to check it. The order also decides what a collapsible heading can
+        // put away in the app, where the sections below a heading fold and the text above it
+        // cannot -- so the working folds and the answer stays out.
         writeln!(
             f,
             "{}",
@@ -416,7 +410,20 @@ impl fmt::Display for EnergyCost {
                 ("Energy cost", self.energy_cost),
             ])
         )?;
+        // Above the working rather than at the foot of it. The caveat is needed most by the table
+        // just printed, whose own column does not add by the figures shown.
         writeln!(f, "\n{}\n", rounding_note())?;
+
+        writeln!(f, "{}\n", h2("Energy charges by time of use"))?;
+        writeln!(
+            f,
+            "{}\n",
+            table(
+                &["TOU", "kWh", "Adj. kWh", "TH blended rate", "Cost"],
+                &rows,
+                &[Left, Right, Right, Right, Right],
+            )
+        )?;
         write!(f, "{}", self.notes.to_markdown())
     }
 }

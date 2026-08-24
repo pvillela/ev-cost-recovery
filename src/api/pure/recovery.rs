@@ -622,19 +622,10 @@ impl fmt::Display for CostRecovery {
         };
 
         writeln!(f)?;
-        for s in &self.stretches {
-            writeln!(
-                f,
-                "{}\n",
-                h2(&format!(
-                    "EV rates effective {}  ({} - {})",
-                    s.rates.effective_date, s.from, s.to
-                ))
-            )?;
-            writeln!(f, "{}\n", stretch_table(s))?;
-        }
 
-        writeln!(f, "{}\n", h2("EV Cost Recovery Total"))?;
+        // The total first, then the schedule that produced each line of it, for the reason given
+        // in `EnergyCost`'s rendering: the answer is what a reader came for, and the working is
+        // what they turn to only when they want to check it.
         let mut rows: Vec<(String, f64)> = self
             .stretches
             .iter()
@@ -649,6 +640,19 @@ impl fmt::Display for CostRecovery {
         let rows: Vec<(&str, f64)> = rows.iter().map(|(l, a)| (l.as_str(), *a)).collect();
         writeln!(f, "{}", amounts(&rows))?;
         writeln!(f, "\n{}\n", rounding_note())?;
+
+        for s in &self.stretches {
+            writeln!(
+                f,
+                "{}\n",
+                h2(&format!(
+                    "EV rates effective {}  ({} - {})",
+                    s.rates.effective_date, s.from, s.to
+                ))
+            )?;
+            writeln!(f, "{}\n", stretch_table(s))?;
+        }
+
         write!(f, "{}", self.notes.to_markdown())
     }
 }
@@ -1010,8 +1014,9 @@ mod test {
         assert!(one.contains("EV Cost Recovery"), "{one}");
         assert!(one.contains("0.10000"), "{one}");
         assert!(one.contains("effective 2026-05-01"), "{one}");
-        // With one schedule there is no per-stretch section and no total section repeating it.
-        assert!(!one.contains("EV Cost Recovery Total"), "{one}");
+        // With one schedule there is nothing to add up, so no per-schedule section and no total
+        // table breaking the recovery down by schedule.
+        assert!(!one.contains("At rates effective"), "{one}");
 
         let two = cost_recovery(
             ending(),
@@ -1023,8 +1028,17 @@ mod test {
         .to_string();
         assert!(two.contains("EV rates effective 2026-05-01"), "{two}");
         assert!(two.contains("EV rates effective 2026-06-01"), "{two}");
-        assert!(two.contains("EV Cost Recovery Total"), "{two}");
+        assert!(two.contains("At rates effective 2026-05-01"), "{two}");
         assert!(two.contains("| Cost recovery"), "{two}");
+
+        // The total is stated before the schedules that produced it, not after them. The app gives
+        // each schedule a heading that folds away, and folding away the answer is what the order
+        // exists to prevent.
+        let total = two.find("| Cost recovery").expect("the total is printed");
+        let working = two
+            .find("EV rates effective 2026-05-01")
+            .expect("the first schedule has a section of its own");
+        assert!(total < working, "{two}");
     }
 
     /// The surplus is a subtraction and nothing else: each part equals what its own function

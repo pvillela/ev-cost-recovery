@@ -577,24 +577,9 @@ impl fmt::Display for DeliveryCost {
                 )
             )
         )?;
-        writeln!(
-            f,
-            "{}\n",
-            table(
-                &[
-                    "Delivery charges component",
-                    "Basis",
-                    "EV demand",
-                    "Adj. demand",
-                    "TH blended rate",
-                    "Charge",
-                ],
-                &rows,
-                &[Left, Left, Right, Right, Right, Right],
-            )
-        )?;
-
-        writeln!(f, "{}\n", h2("EV Delivery Cost (after HST & OER)"))?;
+        // The figure the surplus is built from comes first, and the line-by-line working that
+        // produced it after, for the reason given in `EnergyCost`'s rendering: the answer is what
+        // a reader came for, and the working is what they turn to only when they want to check it.
         writeln!(
             f,
             "{}",
@@ -611,6 +596,24 @@ impl fmt::Display for DeliveryCost {
             ])
         )?;
         writeln!(f, "\n{}\n", rounding_note())?;
+
+        writeln!(f, "{}\n", h2("Delivery charges by component"))?;
+        writeln!(
+            f,
+            "{}\n",
+            table(
+                &[
+                    "Delivery charges component",
+                    "Basis",
+                    "EV demand",
+                    "Adj. demand",
+                    "TH blended rate",
+                    "Charge",
+                ],
+                &rows,
+                &[Left, Left, Right, Right, Right, Right],
+            )
+        )?;
         writeln!(f, "{}", self.notes.to_markdown())?;
         write!(f, "{}", self.meter.to_markdown())
     }

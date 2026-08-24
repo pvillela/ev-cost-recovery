@@ -18,9 +18,10 @@ pub fn ui(ui: &mut egui::Ui, state: &mut SurplusState, working: &mut WorkingDir)
     widgets::heading(ui, "Peak power detail");
     widgets::note(
         ui,
-        "Each demand-priced delivery line is levied on one interval of interest — the one the \
-         building peaked in, in that line's own unit. These are the three the surplus was priced \
-         on, and the sessions behind each.",
+        "Three delivery charges are priced on peak power demand rather than on energy. One is \
+         based on kVA, another on kW, and a third on 7-7 kW. Below is the relevant interval for \
+         each charge, what the EV sessions are estimated to have contributed to it, and the \
+         sessions running at the time.",
     );
     ui.add_space(12.0);
 

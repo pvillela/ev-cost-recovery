@@ -368,43 +368,76 @@ fn file_stem(path: &Path) -> String {
 // --------------------------------------------------------------------------------------------
 // Reading the report back
 
-/// One titled part of the report, as the report itself divides them.
+/// One titled part of the report, with whatever the report nests inside it.
 pub struct Section {
     pub title: String,
     pub body: String,
+    pub subsections: Vec<Section>,
 }
 
 /// Splits the report text into its sections, so each can be given its own collapsible heading.
 ///
-/// The report is written to read as plain text, and a section title there is a line underlined by
-/// dashes of its own length — which a table's `|:---|` separator is not, so tables inside a section
-/// stay inside it. The preamble before the first such title is dropped: what it states is shown
-/// above these sections as headings in their own right.
+/// The report is written to read as plain text, so a title there is a line underlined to its own
+/// length: `=` for a section and `-` for one nested inside it. A table's `|:---|` separator row is
+/// neither, so tables stay inside the section they belong to. The preamble before the first title
+/// is dropped: what it states is shown above these sections as headings in their own right.
 pub fn report_sections(text: &str) -> Vec<Section> {
     let lines: Vec<&str> = text.lines().collect();
-    let underlined = |i: usize| {
-        i + 1 < lines.len()
-            && !lines[i].trim().is_empty()
-            && !lines[i + 1].is_empty()
-            && lines[i + 1].chars().all(|c| c == '-')
-            && lines[i + 1].len() == lines[i].len()
+
+    // The depth of the title starting at `i`, or `None` where no title starts there.
+    let level = |i: usize| -> Option<u8> {
+        let (title, rule) = (lines.get(i)?, lines.get(i + 1)?);
+        if title.trim().is_empty() || rule.len() != title.len() {
+            return None;
+        }
+        // The first character is taken before `all` is asked, which every character of an empty
+        // line vacuously satisfies.
+        match rule.chars().next()? {
+            '=' if rule.chars().all(|c| c == '=') => Some(1),
+            '-' if rule.chars().all(|c| c == '-') => Some(2),
+            _ => None,
+        }
     };
 
-    let starts: Vec<usize> = (0..lines.len()).filter(|&i| underlined(i)).collect();
-    starts
-        .iter()
-        .enumerate()
-        .map(|(k, &start)| {
-            let end = starts.get(k + 1).copied().unwrap_or(lines.len());
-            Section {
-                title: lines[start].to_owned(),
-                body: lines[start + 2..end]
-                    .join("\n")
-                    .trim_matches('\n')
-                    .to_owned(),
-            }
-        })
-        .collect()
+    let heads: Vec<(usize, u8)> = (0..lines.len())
+        .filter_map(|i| level(i).map(|depth| (i, depth)))
+        .collect();
+
+    let mut roots: Vec<Section> = Vec::new();
+    // The depth each root was found at. The sections do not carry it: it decides where the next
+    // title goes and is of no use to a caller rendering them.
+    let mut root_depths: Vec<u8> = Vec::new();
+
+    for (k, &(start, depth)) in heads.iter().enumerate() {
+        // A section runs to the next title of any depth, so one that nests others keeps only the
+        // text above the first of them.
+        let end = heads.get(k + 1).map_or(lines.len(), |&(next, _)| next);
+        let section = Section {
+            title: lines[start].to_owned(),
+            body: lines[start + 2..end]
+                .join("\n")
+                .trim_matches('\n')
+                .to_owned(),
+            subsections: Vec::new(),
+        };
+
+        // A nested title belongs to the section above it, and only where there is one to belong
+        // to. A report of nested titles alone -- which is how every report looked to this function
+        // before top-level titles were recognised -- yields them all as sections, rather than
+        // burying each one in the one before it.
+        if depth == 2 && root_depths.last() == Some(&1) {
+            roots
+                .last_mut()
+                .expect("a depth is recorded for every root")
+                .subsections
+                .push(section);
+        } else {
+            roots.push(section);
+            root_depths.push(depth);
+        }
+    }
+
+    roots
 }
 
 #[cfg(test)]
@@ -602,6 +635,10 @@ mod test {
     }
 
     /// The report divides itself by underlined titles, and a table's separator row is not one.
+    ///
+    /// Nothing here is underlined with `=`, so every title stands on its own. That is what the
+    /// whole report looked like to this function before top-level titles were recognised, and it
+    /// still has to divide the same way.
     #[test]
     fn the_report_splits_on_its_own_titles_and_not_on_its_tables() {
         let text = "Preamble\n\nFirst\n-----\nbody one\n\n| a | b |\n|:---|:---|\n| 1 | 2 |\n\nSecond\n------\nbody two\n";
@@ -612,7 +649,31 @@ mod test {
             sections[0].body.contains("|:---|"),
             "the table was split off"
         );
+        assert!(sections[0].subsections.is_empty());
         assert_eq!(sections[1].title, "Second");
         assert_eq!(sections[1].body, "body two");
+    }
+
+    /// A `-` title under an `=` title is nested in it, and the `=` title keeps only what sits above
+    /// the first one. This is the shape the surplus report has: three top-level sections after the
+    /// summary, two of them with a nested one.
+    #[test]
+    fn a_dashed_title_nests_under_the_equals_title_above_it() {
+        let text = "\
+Top\n===\nabove the nested part\n\nNested\n------\nnested body\n\nNext Top\n========\nsecond body\n";
+        let sections = report_sections(text);
+        assert_eq!(sections.len(), 2, "two top-level sections");
+
+        assert_eq!(sections[0].title, "Top");
+        assert_eq!(sections[0].body, "above the nested part");
+        assert_eq!(sections[0].subsections.len(), 1);
+        assert_eq!(sections[0].subsections[0].title, "Nested");
+        assert_eq!(sections[0].subsections[0].body, "nested body");
+
+        // The nested section ends where the next top-level title begins, rather than swallowing
+        // it. Swallowing it is exactly what buried three sections before this was fixed.
+        assert_eq!(sections[1].title, "Next Top");
+        assert_eq!(sections[1].body, "second body");
+        assert!(sections[1].subsections.is_empty());
     }
 }

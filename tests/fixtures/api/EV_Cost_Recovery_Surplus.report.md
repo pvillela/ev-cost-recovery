@@ -24,9 +24,7 @@ Session data
 - June.csv
 
 A billing period straddles two calendar months and a session report covers
-one, so two are read. A file naming no rows below contributed no session the
-figures needed -- which is what a month nobody charged in looks like, and
-also what the wrong file looks like.
+one, so two are read.
 
 Sessions needing a look
 -----------------------
@@ -64,6 +62,16 @@ EV Cost Recovery
 
 Period       2026-05-24 - 2026-06-23  (31 days)
 
+| Item                          | Amount |
+|:------------------------------|-------:|
+| At rates effective 2026-05-01 |   0.20 |
+| At rates effective 2026-06-01 |   2.04 |
+| Cost recovery                 |   2.24 |
+
+Note: figures are rounded for display. A column can therefore differ by a
+cent, or by a thousandth of a kilowatt-hour, from the total stated for it,
+which is computed from the unrounded values.
+
 EV rates effective 2026-05-01  (2026-05-24 - 2026-05-31)
 --------------------------------------------------------
 
@@ -84,35 +92,12 @@ EV rates effective 2026-06-01  (2026-06-01 - 2026-06-23)
 | Off-peak |  1.000 | 0.12000 |     0.12 |
 | Total    | 17.000 |         |     2.04 |
 
-EV Cost Recovery Total
-----------------------
-
-| Item                          | Amount |
-|:------------------------------|-------:|
-| At rates effective 2026-05-01 |   0.20 |
-| At rates effective 2026-06-01 |   2.04 |
-| Cost recovery                 |   2.24 |
-
-Note: figures are rounded for display. A column can therefore differ by a
-cent, or by a thousandth of a kilowatt-hour, from the total stated for it,
-which is computed from the unrounded values.
-
 
 EV Energy Cost
 ==============
 
 Period       2026-05-24 - 2026-06-23  (31 days)
 Loss factor  1.0295
-
-| TOU                    |    kWh | Adj. kWh | TH blended rate | Cost |
-|:-----------------------|-------:|---------:|----------------:|-----:|
-| On-peak                | 15.803 |   16.269 |         0.15385 | 2.50 |
-| Mid-peak               |  2.197 |    2.262 |         0.12500 | 0.28 |
-| Off-peak               |  1.000 |    1.030 |         0.07556 | 0.08 |
-| Total before HST & OER | 19.000 |   19.561 |                 | 2.86 |
-
-EV Energy Cost (after HST & OER)
---------------------------------
 
 | Item                       | Amount |
 |:---------------------------|-------:|
@@ -125,21 +110,22 @@ Note: figures are rounded for display. A column can therefore differ by a
 cent, or by a thousandth of a kilowatt-hour, from the total stated for it,
 which is computed from the unrounded values.
 
+Energy charges by time of use
+-----------------------------
+
+| TOU                    |    kWh | Adj. kWh | TH blended rate | Cost |
+|:-----------------------|-------:|---------:|----------------:|-----:|
+| On-peak                | 15.803 |   16.269 |         0.15385 | 2.50 |
+| Mid-peak               |  2.197 |    2.262 |         0.12500 | 0.28 |
+| Off-peak               |  1.000 |    1.030 |         0.07556 | 0.08 |
+| Total before HST & OER | 19.000 |   19.561 |                 | 2.86 |
+
 
 EV Delivery Cost
 ================
 
 Period       2026-05-24 - 2026-06-23  (31 days)
 Days adj.    31/30 = 1.0333
-
-| Delivery charges component     | Basis  | EV demand | Adj. demand | TH blended rate | Charge |
-|:-------------------------------|:-------|----------:|------------:|----------------:|-------:|
-| Distribution Charges           | kVA    |     4.817 |       4.977 |         10.0000 |  49.77 |
-| Transmission Connection Charge | kW     |    20.466 |      21.148 |          3.0000 |  63.45 |
-| Transmission Network Charge    | kW 7-7 |     4.355 |       4.500 |          5.0000 |  22.50 |
-
-EV Delivery Cost (after HST & OER)
-----------------------------------
 
 | Item                       | Amount |
 |:---------------------------|-------:|
@@ -151,5 +137,14 @@ EV Delivery Cost (after HST & OER)
 Note: figures are rounded for display. A column can therefore differ by a
 cent, or by a thousandth of a kilowatt-hour, from the total stated for it,
 which is computed from the unrounded values.
+
+Delivery charges by component
+-----------------------------
+
+| Delivery charges component     | Basis  | EV demand | Adj. demand | TH blended rate | Charge |
+|:-------------------------------|:-------|----------:|------------:|----------------:|-------:|
+| Distribution Charges           | kVA    |     4.817 |       4.977 |         10.0000 |  49.77 |
+| Transmission Connection Charge | kW     |    20.466 |      21.148 |          3.0000 |  63.45 |
+| Transmission Network Charge    | kW 7-7 |     4.355 |       4.500 |          5.0000 |  22.50 |
 
 

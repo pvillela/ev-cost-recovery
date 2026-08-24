@@ -148,9 +148,7 @@ impl SessionNotes {
         if self.sources.len() > 1 {
             out.push(wrap(
                 "A billing period straddles two calendar months and a session report covers one, \
-                 so two are read. A file naming no rows below contributed no session the figures \
-                 needed -- which is what a month nobody charged in looks like, and also what the \
-                 wrong file looks like.",
+                 so two are read.",
                 "",
             ));
             out.push(String::new());

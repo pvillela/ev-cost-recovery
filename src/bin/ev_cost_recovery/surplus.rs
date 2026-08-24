@@ -1,6 +1,6 @@
 //! The Cost recovery tab: four files and a rate schedule in, the surplus report out.
 
-use crate::state::{Input, RatesForm, SurplusState, WorkingDir, report_sections};
+use crate::state::{Input, RatesForm, Section, SurplusState, WorkingDir, report_sections};
 use crate::{theme, widgets};
 use eframe::egui;
 use egui_extras::DatePickerButton;
@@ -187,11 +187,44 @@ fn results(ui: &mut egui::Ui, state: &mut SurplusState, working: &mut WorkingDir
     export_row(ui, state, working, &text, &default_name);
     ui.add_space(10.0);
 
-    for section in &report_sections(&text) {
-        egui::CollapsingHeader::new(&section.title)
-            .default_open(true)
-            .show(ui, |ui| widgets::monospace_block(ui, &section.body));
+    for section in sections_to_show(report_sections(&text)) {
+        section_ui(ui, &section);
     }
+}
+
+/// The report's sections as this tab shows them.
+///
+/// The report opens with its own summary — the period line and the four amounts — which the tab
+/// has already drawn above by hand. Repeating it would state the answer twice, so that section
+/// stands down and the sections nested in it take its place at the top, which is where they read
+/// from. Everything after it is shown whole.
+fn sections_to_show(mut sections: Vec<Section>) -> Vec<Section> {
+    if sections.is_empty() {
+        return sections;
+    }
+    let summary = sections.remove(0);
+    let mut shown = summary.subsections;
+    shown.extend(sections);
+    shown
+}
+
+/// One section and everything nested in it, each with a heading that collapses.
+///
+/// Open to begin with, at every depth: a reader who has just asked for the figures wants to see
+/// what they were drawn from, and collapsing is for putting a part away once it has been read.
+fn section_ui(ui: &mut egui::Ui, section: &Section) {
+    egui::CollapsingHeader::new(&section.title)
+        .default_open(true)
+        .show(ui, |ui| {
+            // A section that nests others can hold nothing of its own, and an empty block would
+            // draw a gap above the first subsection for no reason.
+            if !section.body.is_empty() {
+                widgets::monospace_block(ui, &section.body);
+            }
+            for sub in &section.subsections {
+                section_ui(ui, sub);
+            }
+        });
 }
 
 /// The four amounts of the subtraction, in the order the report's summary table states them, so the
