@@ -34,7 +34,7 @@ This is the typical workflow used with this software to estimate the impact of E
 
 Two command-line binaries, one per workflow step.
 
-The desktop app, `ev_cost_recovery`, does not cover these two steps. It answers the billing-period question — what EV cost-recovery rates recover against a bill — and reads the session reports as CSV without a workbook in between. See [`docs/ev_cost_recovery/README.md`](../ev_cost_recovery/README.md).
+The desktop app, `ev_cost_recovery`, does not cover these two steps. It answers the billing-period question — what EV cost-recovery rates recover against a bill — and reads the session reports as CSV without a workbook in between. See the top-level [README](../../README.md), "The app".
 
 ### Command line
 
