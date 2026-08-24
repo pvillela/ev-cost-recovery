@@ -50,10 +50,21 @@ still to be written.
 ## Building and running
 
 ```sh
-cargo build --release      # the desktop app, ev_peak_gui
+cargo build --release      # the desktop app, ev_cost_recovery
 cargo test                 # everything
 cargo run --example sessions -- <workbook.xlsx>
 ```
+
+`ev_cost_recovery` is the desktop app, and the only binary a release ships. It asks for a bill, a
+Green Button export and the two session reports spanning the period, and for the cost-recovery
+rates; no closing date, because the bill says which period it covers. It shows two documents. **Cost
+recovery** is the surplus report, byte-for-byte what `cost_recovery_surplus_cli` prints. **Peak
+power detail** is the three intervals of interest the delivery cost was priced on — the ones the
+building peaked in, in kVA, in kW, and in kW within the 07:00-19:00 window — each with the segment
+and the sessions behind its figure. That second document has no command-line equivalent.
+
+`ev_peak_gui` is the older app, covering conversion and a single interval of interest. It still
+builds, and is not distributed.
 
 The command-line tools are `ev_csv_to_xlsx` (session report to workbook), `ev_peak_cli` (estimate
 over an interval), `gb_peak_values` (Green Button feed to workbook) and `hydro_bill_dump` (a bill
