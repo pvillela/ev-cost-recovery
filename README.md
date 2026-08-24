@@ -137,6 +137,8 @@ still to be written.
 
 ## Documentation
 
+- [`docs/app-cheat-sheet.md`](docs/app-cheat-sheet.md) — trying the app against the files in `data/`:
+  which to pick, what to expect, and the errors worth provoking
 - [`docs/session/README.md`](docs/session/README.md) — the estimation logic, the workbook, the
   interval-of-interest rules
 - [`docs/green_button/README.md`](docs/green_button/README.md) — the ESPI feed, the peak values, the
