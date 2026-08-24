@@ -16,6 +16,7 @@
 mod about;
 mod app;
 mod detail;
+mod reimbursement;
 mod state;
 mod surplus;
 mod theme;

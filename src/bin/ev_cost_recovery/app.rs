@@ -1,7 +1,7 @@
 //! The window: the tab bar and which tab is drawn.
 
 use crate::state::{AppState, Tab};
-use crate::{about, detail, surplus, theme};
+use crate::{about, detail, reimbursement, surplus, theme};
 use eframe::egui;
 
 pub const APP_NAME: &str = "EV Cost Recovery";
@@ -64,13 +64,16 @@ impl eframe::App for App {
             .show_separator_line(false)
             .show(root_ui, |ui| {
                 ui.horizontal(|ui| {
-                    // One run fills both tabs, so the second is offered only once there is
-                    // something behind it. Greyed rather than hidden: a tab that appears partway
-                    // through would move the one beside it under the pointer.
+                    // One run fills the first two tabs, so the second is offered only once there
+                    // is something behind it. Greyed rather than hidden: a tab that appears
+                    // partway through would move the one beside it under the pointer.
                     let ready = self.state.detail_ready();
                     for (tab, label, enabled) in [
                         (Tab::Surplus, "Cost recovery", true),
                         (Tab::Detail, "Peak power detail", ready),
+                        // Always offered. It reads its own report and answers on its own, so
+                        // nothing on the other two tabs has to have happened first.
+                        (Tab::Reimbursement, "Evolute reimbursement", true),
                     ] {
                         let selected = self.state.tab == tab;
                         let text = egui::RichText::new(label).strong();
@@ -124,6 +127,11 @@ impl eframe::App for App {
                     Tab::Detail => {
                         detail::ui(ui, &mut self.state.surplus, &mut self.state.working_dir)
                     }
+                    Tab::Reimbursement => reimbursement::ui(
+                        ui,
+                        &mut self.state.reimbursement,
+                        &mut self.state.working_dir,
+                    ),
                 });
         });
 

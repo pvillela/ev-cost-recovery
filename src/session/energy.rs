@@ -5,6 +5,15 @@ use crate::{
     time::{Interval, Tou, tou_partition},
 };
 
+/// Energy split across the three Ontario time-of-use bands, in kilowatt-hours.
+///
+/// The three are disjoint and, over any interval this crate produces one for, exhaustive: every
+/// hour of the year falls in exactly one band, so [`Self::total_kwh`] is the whole of the energy
+/// and not a subset of it.
+///
+/// A band's figure is what was drawn *while that band was in force*, not what a session drawing
+/// across a boundary is nominally assigned to — see [`tou_kwh`], which cuts sessions at the
+/// boundary rather than filing each one under a single band.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TouKwh {
     pub on_peak: f64,
@@ -13,11 +22,33 @@ pub struct TouKwh {
 }
 
 impl TouKwh {
+    /// The energy across all three bands.
     pub fn total_kwh(&self) -> f64 {
         self.on_peak + self.mid_peak + self.off_peak
     }
 }
 
+/// The energy `sessions` drew within `time_range`, split by time-of-use band.
+///
+/// Each session is spread evenly over its own span and the part lying inside `time_range` is kept,
+/// then divided among the bands that part covers. So a session is cut twice — once at the
+/// interval's edges and once at each price-period boundary it crosses — and a session running from
+/// off-peak into mid-peak contributes to both, in proportion to the time it spent in each. Nothing
+/// is filed whole under the band it started in.
+///
+/// Evenly, because a session report states energy and duration and nothing about how the draw was
+/// shaped in between. That is an assumption, and it is the only one the data supports; it is also
+/// why a figure over a short interval is worth less than the same figure over a long one.
+///
+/// The span a session is spread over is its *adjusted* one — [`Session::adj_conn_start`] to
+/// [`Session::adj_conn_end`] — which is the tightest span guaranteed to contain the real
+/// connection. Reported times are stated only to the minute, so the adjusted end pads the reported
+/// one out to the time grid, and a session's energy is therefore spread a little more thinly than
+/// its reported duration alone would suggest.
+///
+/// Sessions wholly outside `time_range` contribute nothing, so a caller may hand over more than the
+/// interval needs. A session whose adjusted span is empty is skipped rather than dividing by zero;
+/// see the comment on that branch for why nothing this crate calls with can be in that state.
 pub fn tou_kwh(time_range: Interval, sessions: &[impl Deref<Target = Session>]) -> TouKwh {
     let mut on_peak_kwh = 0.0;
     let mut mid_peak_kwh = 0.0;

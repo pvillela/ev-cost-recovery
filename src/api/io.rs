@@ -19,6 +19,7 @@ use std::path::{Path, PathBuf};
 pub use crate::api::error::{
     ApiError, CostRecoveryError, CostRecoverySurplusError, EnergyError, PeakPowerError,
 };
+pub use crate::api::pure::additional::{ReimbursementError, ReimbursementReconciliation};
 pub use crate::api::pure::energy::{Energy, EnergyCost, TouKwh};
 pub use crate::api::pure::peak_power::{DeliveryCost, PowerEstimates};
 pub use crate::api::pure::recovery::{
@@ -457,6 +458,53 @@ fn bill_source(cause: &EnergyError, bill_pdf: Option<&Path>) -> Option<PathBuf> 
         | EnergyError::NoRate { .. }
         | EnergyError::ZeroDenominator(_) => bill_pdf.map(Path::to_path_buf),
     }
+}
+
+/// Reconciles what Evolute reimbursed for a calendar month against what the cost-recovery rates
+/// come to over the same month.
+///
+/// Reads the one session report and hands it to
+/// [`pure::reconcile_evolute_reimbursement`](fn@super::pure::reconcile_evolute_reimbursement),
+/// which states how the figures are arrived at.
+///
+/// Independent of the surplus the rest of this module computes, and not a part of it. That asks
+/// whether our rates cover Toronto Hydro's bill over a billing period running from the 24th; this
+/// asks whether Evolute paid what those rates earned over a calendar month. No bill and no meter
+/// export are read, because neither counterparty's figures depend on them.
+///
+/// # Arguments
+///
+/// - `session_csv` - the Evolute session report for the month. One report, and its file name is
+///   what says which month this is.
+/// - `charges_report_kwh` - the kilowatt-hours Evolute's Charges Report states for the month. A
+///   value rather than a path: that document is not one this crate reads.
+/// - `reimbursement` - what Evolute actually paid for the month, in dollars.
+/// - `cost_recovery_rates` - the rates in effect over the month, as values rather than a path, for
+///   the reason [`cost_recovery`] takes them that way: nothing in this crate writes them down.
+///
+/// Nothing here writes. The report's `csv.read` log comes back unwritten on the result's `notes` --
+/// see [`csv::session_list`] -- and
+/// [`SessionNotes::write_logs`](crate::session::SessionNotes::write_logs) is what a binary calls to
+/// put it beside its input.
+///
+/// # Errors
+///
+/// See [`ApiError`]. The file is opened before the month is read off its name, unlike
+/// [`cost_recovery`]: there is only one report here, so a name that says nothing and a file that
+/// cannot be read are the same trip to the disk either way.
+pub fn reconcile_evolute_reimbursement(
+    session_csv: &Path,
+    charges_report_kwh: f64,
+    reimbursement: f64,
+    cost_recovery_rates: CostRecoveryRates,
+) -> Result<ReimbursementReconciliation, ApiError> {
+    let sessions = read_sessions(&[session_csv])?;
+    Ok(pure::reconcile_evolute_reimbursement(
+        &sessions,
+        charges_report_kwh,
+        reimbursement,
+        cost_recovery_rates,
+    )?)
 }
 
 /// The named reports as one [`Sessions`].

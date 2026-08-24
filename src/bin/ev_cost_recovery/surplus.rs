@@ -1,9 +1,8 @@
 //! The Cost recovery tab: four files and a rate schedule in, the surplus report out.
 
-use crate::state::{Input, RatesForm, Section, SurplusState, WorkingDir, report_sections};
+use crate::state::{Input, SurplusState, WorkingDir, report_sections};
 use crate::{theme, widgets};
 use eframe::egui;
-use egui_extras::DatePickerButton;
 use ev_cost_recovery::io::CostRecoverySurplus;
 
 pub fn ui(ui: &mut egui::Ui, state: &mut SurplusState, working: &mut WorkingDir) {
@@ -93,7 +92,7 @@ fn rates(ui: &mut egui::Ui, state: &mut SurplusState) {
     );
     ui.add_space(6.0);
 
-    if schedule(ui, &mut state.rates_at_start, "start") {
+    if widgets::schedule(ui, &mut state.rates_at_start, "start") {
         state.rates_edited();
     }
 
@@ -110,55 +109,10 @@ fn rates(ui: &mut egui::Ui, state: &mut SurplusState) {
         ui.add_space(6.0);
         // The energy is split at local midnight on the second schedule's effective date, so that
         // date has to fall inside the period. The library says so if it does not.
-        if schedule(ui, &mut state.rates_at_end, "end") {
+        if widgets::schedule(ui, &mut state.rates_at_end, "end") {
             state.rates_edited();
         }
     }
-}
-
-/// One schedule's four fields. Returns whether any of them was edited this frame.
-fn schedule(ui: &mut egui::Ui, form: &mut RatesForm, salt: &str) -> bool {
-    let mut edited = false;
-    egui::Grid::new(format!("rates_{salt}"))
-        .spacing([12.0, 8.0])
-        .num_columns(2)
-        .show(ui, |ui| {
-            ui.label("Effective from");
-            let mut date = form.effective_date;
-            if ui
-                .add(DatePickerButton::new(&mut date).id_salt(&format!("effective_{salt}")))
-                .changed()
-                || date != form.effective_date
-            {
-                form.effective_date = date;
-                edited = true;
-            }
-            ui.end_row();
-
-            ui.label("Rates");
-            ui.horizontal(|ui| {
-                for (label, field) in [
-                    ("On-peak", &mut form.on_peak),
-                    ("Mid-peak", &mut form.mid_peak),
-                    ("Off-peak", &mut form.off_peak),
-                ] {
-                    ui.label(label);
-                    if ui
-                        .add(
-                            egui::TextEdit::singleline(field)
-                                .desired_width(72.0)
-                                .hint_text("0.0000"),
-                        )
-                        .changed()
-                    {
-                        edited = true;
-                    }
-                }
-                ui.weak("$/kWh");
-            });
-            ui.end_row();
-        });
-    edited
 }
 
 // --------------------------------------------------------------------------------------------
@@ -187,44 +141,9 @@ fn results(ui: &mut egui::Ui, state: &mut SurplusState, working: &mut WorkingDir
     export_row(ui, state, working, &text, &default_name);
     ui.add_space(10.0);
 
-    for section in sections_to_show(report_sections(&text)) {
-        section_ui(ui, &section);
+    for section in widgets::sections_to_show(report_sections(&text)) {
+        widgets::section_ui(ui, &section);
     }
-}
-
-/// The report's sections as this tab shows them.
-///
-/// The report opens with its own summary — the period line and the four amounts — which the tab
-/// has already drawn above by hand. Repeating it would state the answer twice, so that section
-/// stands down and the sections nested in it take its place at the top, which is where they read
-/// from. Everything after it is shown whole.
-fn sections_to_show(mut sections: Vec<Section>) -> Vec<Section> {
-    if sections.is_empty() {
-        return sections;
-    }
-    let summary = sections.remove(0);
-    let mut shown = summary.subsections;
-    shown.extend(sections);
-    shown
-}
-
-/// One section and everything nested in it, each with a heading that collapses.
-///
-/// Open to begin with, at every depth: a reader who has just asked for the figures wants to see
-/// what they were drawn from, and collapsing is for putting a part away once it has been read.
-fn section_ui(ui: &mut egui::Ui, section: &Section) {
-    egui::CollapsingHeader::new(&section.title)
-        .default_open(true)
-        .show(ui, |ui| {
-            // A section that nests others can hold nothing of its own, and an empty block would
-            // draw a gap above the first subsection for no reason.
-            if !section.body.is_empty() {
-                widgets::monospace_block(ui, &section.body);
-            }
-            for sub in &section.subsections {
-                section_ui(ui, sub);
-            }
-        });
 }
 
 /// The four amounts of the subtraction, in the order the report's summary table states them, so the
@@ -242,7 +161,7 @@ fn headline(ui: &mut egui::Ui, surplus: &CostRecoverySurplus) {
             ] {
                 let text = egui::RichText::new(label);
                 ui.label(if strong { text.strong() } else { text });
-                amount_label(ui, amount, strong, surplus.surplus);
+                widgets::amount_label(ui, amount, strong);
                 ui.end_row();
             }
         });
@@ -254,22 +173,6 @@ fn headline(ui: &mut egui::Ui, surplus: &CostRecoverySurplus) {
          service charge are counted on neither side, so a surplus of zero is not breaking even on \
          the whole invoice.",
     );
-}
-
-/// One amount. The surplus is coloured by its sign, since that is the one figure whose sign is the
-/// answer; the three it is made of are not.
-fn amount_label(ui: &mut egui::Ui, amount: f64, is_surplus: bool, surplus: f64) {
-    let mut text = egui::RichText::new(format!("{amount:>12.2}"))
-        .monospace()
-        .size(18.0);
-    if is_surplus {
-        text = text.strong().color(if surplus < 0.0 {
-            ui.visuals().error_fg_color
-        } else {
-            theme::accent(ui)
-        });
-    }
-    ui.label(text);
 }
 
 fn export_row(

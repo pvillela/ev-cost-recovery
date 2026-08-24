@@ -19,6 +19,7 @@ use std::path::{Path, PathBuf};
 // module that hands out the union has to hand out what its variants carry. Nothing deeper: the
 // fields inside those payloads can be read without being named.
 pub use crate::api::io::ReadError;
+pub use crate::api::pure::additional::ReimbursementError;
 pub use crate::api::pure::coverage::CoverageError;
 pub use crate::api::pure::energy::EnergyError;
 pub use crate::api::pure::peak_power::PeakPowerError;
@@ -55,6 +56,11 @@ pub enum ApiError {
         source: Option<PathBuf>,
         cause: CostRecoverySurplusError,
     },
+    /// The month's reimbursement cannot be reconciled against the report given.
+    ///
+    /// No `source`, for the reason [`Self::CostRecovery`] has none: every one of these failures
+    /// already names the report it is about, or is about the rates, which are values.
+    Reimbursement(ReimbursementError),
 }
 
 // `source` names the file the failure is *about*, which is not the same as a file that could not be
@@ -76,6 +82,12 @@ impl From<CoverageError> for ApiError {
 impl From<ReadError> for ApiError {
     fn from(e: ReadError) -> Self {
         Self::Read(e)
+    }
+}
+
+impl From<ReimbursementError> for ApiError {
+    fn from(e: ReimbursementError) -> Self {
+        Self::Reimbursement(e)
     }
 }
 
@@ -128,6 +140,7 @@ impl fmt::Display for ApiError {
             Self::Energy { source, cause } => named(f, source.as_deref(), cause),
             Self::CostRecovery(e) => e.fmt(f),
             Self::CostRecoverySurplus { source, cause } => named(f, source.as_deref(), cause),
+            Self::Reimbursement(e) => e.fmt(f),
         }
     }
 }
@@ -153,6 +166,7 @@ impl Error for ApiError {
             Self::Energy { cause, .. } => Some(cause),
             Self::CostRecovery(e) => Some(e),
             Self::CostRecoverySurplus { cause, .. } => Some(cause),
+            Self::Reimbursement(e) => Some(e),
         }
     }
 }

@@ -4,9 +4,10 @@
 //! other, and lifting window chrome into the library would put `egui` in its public surface. The
 //! duplication ends when that app is retired.
 
-use crate::state::WorkingDir;
+use crate::state::{RatesForm, Section, WorkingDir};
 use crate::theme;
 use eframe::egui;
+use egui_extras::DatePickerButton;
 use std::path::Path;
 
 /// A file dialog that opens where the user last was, rather than wherever the system would put it.
@@ -85,4 +86,107 @@ pub fn monospace_block(ui: &mut egui::Ui, text: &str) {
         egui::Label::new(egui::RichText::new(text).monospace())
             .wrap_mode(egui::TextWrapMode::Extend),
     );
+}
+
+/// One schedule of cost-recovery rates: an effective date and the three bands. Returns whether any
+/// of them was edited this frame.
+///
+/// `salt` distinguishes one schedule's widgets from another's on the same screen, which the surplus
+/// tab needs for the rates a period changed to.
+pub fn schedule(ui: &mut egui::Ui, form: &mut RatesForm, salt: &str) -> bool {
+    let mut edited = false;
+    egui::Grid::new(format!("rates_{salt}"))
+        .spacing([12.0, 8.0])
+        .num_columns(2)
+        .show(ui, |ui| {
+            ui.label("Effective from");
+            let mut date = form.effective_date;
+            if ui
+                .add(DatePickerButton::new(&mut date).id_salt(&format!("effective_{salt}")))
+                .changed()
+                || date != form.effective_date
+            {
+                form.effective_date = date;
+                edited = true;
+            }
+            ui.end_row();
+
+            ui.label("Rates");
+            ui.horizontal(|ui| {
+                for (label, field) in [
+                    ("On-peak", &mut form.on_peak),
+                    ("Mid-peak", &mut form.mid_peak),
+                    ("Off-peak", &mut form.off_peak),
+                ] {
+                    ui.label(label);
+                    if ui
+                        .add(
+                            egui::TextEdit::singleline(field)
+                                .desired_width(72.0)
+                                .hint_text("0.0000"),
+                        )
+                        .changed()
+                    {
+                        edited = true;
+                    }
+                }
+                ui.weak("$/kWh");
+            });
+            ui.end_row();
+        });
+    edited
+}
+
+/// One amount in a headline table.
+///
+/// `answer` sets it in bold and colours it by its own sign. That is for the single figure the
+/// screen exists to state — a surplus, a variance — and not for the figures it is made of, whose
+/// signs are only bookkeeping.
+pub fn amount_label(ui: &mut egui::Ui, amount: f64, answer: bool) {
+    let mut text = egui::RichText::new(format!("{amount:>12.2}"))
+        .monospace()
+        .size(18.0);
+    if answer {
+        text = text.strong().color(if amount < 0.0 {
+            ui.visuals().error_fg_color
+        } else {
+            theme::accent(ui)
+        });
+    }
+    ui.label(text);
+}
+
+/// The sections of a report as a tab shows them.
+///
+/// Every report opens with its own summary, which the tab drawing it has already stated above in
+/// its own hand. Repeating it would give the answer twice, so that section stands down and the
+/// sections nested in it take its place at the top, which is where they read from. Everything after
+/// it is shown whole.
+pub fn sections_to_show(mut sections: Vec<Section>) -> Vec<Section> {
+    if sections.is_empty() {
+        return sections;
+    }
+    let summary = sections.remove(0);
+    let mut shown = summary.subsections;
+    shown.extend(sections);
+    shown
+}
+
+/// One section and everything nested in it, each with a heading that collapses.
+///
+/// Open to begin with, at every depth: a reader who has just asked for the figures wants to see
+/// what they were drawn from, and collapsing is for putting a part away once it has been read.
+pub fn section_ui(ui: &mut egui::Ui, section: &Section) {
+    egui::CollapsingHeader::new(&section.title)
+        .default_open(true)
+        .show(ui, |ui| {
+            // A section that nests others can hold nothing of its own, and an empty block would
+            // draw a gap above the first subsection for no reason.
+            if !section.body.is_empty() {
+                monospace_block(ui, &section.body);
+            }
+            for sub in &section.subsections {
+                section_ui(ui, sub);
+            }
+        });
 }
