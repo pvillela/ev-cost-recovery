@@ -34,6 +34,12 @@ sha2 = "0.11.0"
 [target."cfg(windows)".build-dependencies]
 winresource = "0.1.31"
 
+[profile.dev]
+# Full DWARF is around 80% of the dev binary, and the egui dependency tree makes that hundreds of
+# megabytes. Line tables alone still name the file and line of every frame in a backtrace, which is
+# all the debug info this crate's development actually uses.
+debug = "line-tables-only"
+
 [profile.release]
 # The app is downloaded as a single file, so the debug symbols are worth removing: they are most
 # of the binary and nothing in the field reads them.
