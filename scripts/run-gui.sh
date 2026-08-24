@@ -25,4 +25,19 @@ if [ $# -eq 0 ]; then
     set -- --bin ev_cost_recovery
 fi
 
+# Said out loud, not just left in the header. Someone reaching for this script has usually been told
+# to, and the thing worth knowing is that they probably do not need it.
+cat >&2 <<'NOTE'
+run-gui.sh: launching under an explicit DBus session.
+
+  This is a fallback. Where a desktop portal is installed -- as it is in this devcontainer -- the
+  GTK stack starts a session bus by itself and `cargo run --bin ev_cost_recovery` works on its own.
+
+  Use this script where no portal is reachable. There, the file pickers fail silently: clicking
+  "Choose..." does nothing at all, with no error and no panic.
+
+  See docs/session/Devcontainer_GUI_Options.md.
+
+NOTE
+
 exec dbus-run-session -- cargo run "$@"
