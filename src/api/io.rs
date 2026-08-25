@@ -1,12 +1,18 @@
-//! The half of the API that reads.
+//! The half of the API that touches the filesystem.
 //!
-//! Every function here turns paths into values and then delegates to [`pure`](super::pure), which
-//! is where the arithmetic and the judgement live. Keeping this half thin is the point: what a
-//! figure rests on can then be exercised without a filesystem in the way, and the two halves cannot
-//! drift apart because there is only one of each calculation.
+//! Most of it reads: a function turns paths into values and then delegates to [`pure`](super::pure),
+//! which is where the arithmetic and the judgement live. Keeping that half thin is the point — what
+//! a figure rests on can then be exercised without a filesystem in the way, and the two halves
+//! cannot drift apart because there is only one of each calculation.
+//!
+//! Two functions also write, and they are the exceptions that prove the rule rather than a
+//! loosening of it: [`session_csv_to_xlsx`] and [`gb_xml_to_xlsx`] are file-to-file conversions,
+//! whose whole product *is* a file. There is no figure in either for a pure function to return, so
+//! neither has a counterpart in [`pure`](super::pure). Every other function here leaves the disk as
+//! it found it, and the run logs they carry back are written by the caller.
 
 use crate::api::pure;
-use crate::green_button::period_values_xml;
+use crate::green_button::{self, period_values_xml};
 use crate::hydro_bill::{BILL_END_DAY, hydro_bill_from_pdf};
 use crate::session::{Sessions, csv};
 use jiff::civil::Date;
@@ -25,6 +31,8 @@ pub use crate::api::pure::peak_power::{DeliveryCost, PowerEstimates};
 pub use crate::api::pure::recovery::{
     CostRecovery, CostRecoveryRates, CostRecoveryStretch, CostRecoverySurplus,
 };
+pub use crate::green_button::WriteReport;
+pub use crate::session::ConversionReport;
 
 /// A source file could not be read.
 ///
@@ -76,6 +84,61 @@ impl Error for ReadError {
             Self::GreenButton { cause, .. }
             | Self::SessionReport { cause, .. }
             | Self::Bill { cause, .. } => Some(cause.as_ref()),
+        }
+    }
+}
+
+/// A workbook could not be produced from the file it was to be converted from.
+///
+/// Raised only by the two conversions. What the input could not be *read* as is
+/// [`ReadError`]; this is about the output.
+#[derive(Debug)]
+pub enum ConversionError {
+    /// The workbook's name would be the input's own, so the conversion would read and write one
+    /// file. Reached by handing in something already named `.xlsx`.
+    OutputWouldBeInput { path: PathBuf },
+
+    /// A file already stands where the workbook would go.
+    ///
+    /// Refused rather than overwritten, and not as a courtesy: the figures in these workbooks get
+    /// reconciled against real invoices by hand, and a silent overwrite is how that work is lost.
+    /// Move the existing file or delete it.
+    OutputExists { path: PathBuf },
+
+    /// The workbook could not be built or could not be written.
+    Write {
+        path: PathBuf,
+        cause: Box<dyn Error>,
+    },
+}
+
+impl fmt::Display for ConversionError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::OutputWouldBeInput { path } => write!(
+                f,
+                "{} is already an .xlsx file, so converting it would read and write the same file",
+                path.display()
+            ),
+            Self::OutputExists { path } => write!(
+                f,
+                "{} already exists. Move or delete it first -- a conversion never overwrites its \
+                 output.",
+                path.display()
+            ),
+            // The path is written in, unlike `ReadError`'s: the writers name no file of their own,
+            // so without it a caller is told a workbook could not be written and left to guess
+            // which.
+            Self::Write { path, cause } => write!(f, "{}: {cause}", path.display()),
+        }
+    }
+}
+
+impl Error for ConversionError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::OutputWouldBeInput { .. } | Self::OutputExists { .. } => None,
+            Self::Write { cause, .. } => Some(cause.as_ref()),
         }
     }
 }
@@ -507,6 +570,132 @@ pub fn reconcile_evolute_reimbursement(
     )?)
 }
 
+// --------------------------------------------------------------------------------------------
+// The conversions
+//
+// The two functions that write. Both take one file and put a workbook beside it, and both refuse
+// before reading anything if that workbook cannot be written where it would have to go.
+
+/// Where a conversion's workbook goes, once it is settled that it may be written.
+///
+/// Both refusals are made before the input is opened. Parsing a year of meter readings and then
+/// discovering there is nowhere to put the result wastes the time and, worse, reports the second
+/// problem as though it were the first.
+fn workbook_path(input: &Path, output: PathBuf) -> Result<PathBuf, ConversionError> {
+    if output == input {
+        return Err(ConversionError::OutputWouldBeInput {
+            path: input.to_path_buf(),
+        });
+    }
+    if output.exists() {
+        return Err(ConversionError::OutputExists { path: output });
+    }
+    Ok(output)
+}
+
+/// Converts an Evolute session report into a workbook beside it, and says what needed a judgement
+/// call on the way.
+///
+/// Delegates to [`session::excel::session_csv_to_xlsx`], which states what the workbook holds: the
+/// report's own columns in the order it states them, then the columns this software derives, with
+/// `adj_conn_duration` and `avg_kw` as live formulas and the anomalies of each row in the last
+/// column. Every session is written, anomalous ones included — which of them takes part in an
+/// estimate is decided on the reading side.
+///
+/// # Arguments
+///
+/// - `session_csv` - the Evolute session report to convert.
+///
+/// The workbook's name is not an argument. It is the input's, with the extension replaced, which is
+/// what [`session::excel::workbook_path`] settles and what every reader of these files expects to
+/// find beside the report.
+///
+/// Nothing else here writes. The conversion's run log comes back unwritten on the result's `log` --
+/// see [`ConversionReport`] -- and [`SourceLog::write`](crate::session::SourceLog::write) is what a
+/// binary calls to put it beside the workbook.
+///
+/// # Errors
+///
+/// See [`ApiError`]. An existing workbook is refused rather than overwritten, and that is settled
+/// before the report is opened.
+pub fn session_csv_to_xlsx(session_csv: &Path) -> Result<ConversionReport, ApiError> {
+    workbook_path(
+        session_csv,
+        crate::session::excel::workbook_path(session_csv),
+    )?;
+    // The path is not passed on: `session::excel::session_csv_to_xlsx` derives the same one from
+    // the same function, and taking it as an argument there would let a caller send the workbook
+    // somewhere the check above never looked at.
+    crate::session::excel::session_csv_to_xlsx(session_csv).map_err(|cause| {
+        ApiError::Conversion(ConversionError::Write {
+            path: crate::session::excel::workbook_path(session_csv),
+            cause,
+        })
+    })
+}
+
+/// What [`gb_xml_to_xlsx`] produced.
+///
+/// A pair rather than a single type, because [`WriteReport`] is the workbook writer's own account
+/// of what it put in the sheets and knows nothing about where the file went.
+#[derive(Debug, Clone)]
+pub struct GbConversionReport {
+    /// Where the workbook was written.
+    pub output_path: PathBuf,
+    /// What went into it.
+    pub written: WriteReport,
+}
+
+/// Converts a Toronto Hydro Green Button export into the peak-values workbook beside it.
+///
+/// Two sheets, as [`green_button::write_workbook`] builds them: `Peak_values` carries one row per
+/// billing period — the energy used, the highest kW and kVA over the period and within the 7-7
+/// demand window, when each fell and in which Time-of-Use period — and `Interval_values` carries
+/// every hour of the export. A period holding fewer intervals than a whole one should, and any cell
+/// reporting an anomaly, are highlighted in the sheet.
+///
+/// # Arguments
+///
+/// - `gb_xml` - the Green Button (ESPI) XML export to convert.
+///
+/// There is no `bill_end_day` argument, for the reason the reading functions here take none: the
+/// billing period is [`BILL_END_DAY`], which is a fact about Toronto Hydro rather than a choice a
+/// caller makes. The workbook's name is likewise the input's with the extension replaced.
+///
+/// The feed must carry hourly readings for all three of kWh, kW and kVA. Anything else is an error
+/// naming what was missing, rather than a workbook with a hole in it.
+///
+/// # Errors
+///
+/// See [`ApiError`]. An existing workbook is refused rather than overwritten, and that is settled
+/// before the export is opened — which matters more here than for a session report, since parsing a
+/// multi-year export is not quick.
+pub fn gb_xml_to_xlsx(gb_xml: &Path) -> Result<GbConversionReport, ApiError> {
+    let output_path = workbook_path(gb_xml, gb_xml.with_extension("xlsx"))?;
+
+    let xml = std::fs::read_to_string(gb_xml).map_err(|cause| ReadError::GreenButton {
+        path: gb_xml.to_path_buf(),
+        cause: Box::new(cause),
+    })?;
+    let feed = green_button::parse(&xml).map_err(|cause| ReadError::GreenButton {
+        path: gb_xml.to_path_buf(),
+        cause,
+    })?;
+
+    let written =
+        green_button::write_workbook(&output_path, &feed, BILL_END_DAY).map_err(|cause| {
+            ApiError::Conversion(ConversionError::Write {
+                path: output_path.clone(),
+                cause,
+            })
+        })?;
+
+    Ok(GbConversionReport {
+        output_path,
+        written,
+    })
+}
+
 /// The named reports as one [`Sessions`].
 ///
 /// Merged rather than flattened, and merged as reports rather than as lists of sessions. What each
@@ -535,6 +724,47 @@ mod test {
     use crate::api::error::CoverageError;
     use crate::hydro_bill::billing_period_dates;
     use jiff::civil::date;
+
+    /// The two refusals a conversion makes before opening anything, and the case that passes.
+    ///
+    /// Both are settled from the paths alone, so this needs no fixture and writes nothing. The
+    /// repository's own tracked files stand in for a workbook that is already there.
+    #[test]
+    fn a_conversion_refuses_an_output_it_would_destroy() {
+        // Handing in something already named `.xlsx` would read and write one file.
+        let xlsx = Path::new("book.xlsx");
+        assert!(matches!(
+            workbook_path(xlsx, xlsx.with_extension("xlsx")),
+            Err(ConversionError::OutputWouldBeInput { .. })
+        ));
+
+        // A file already standing where the workbook would go is never overwritten.
+        assert!(matches!(
+            workbook_path(Path::new("Cargo.lock"), PathBuf::from("Cargo.toml")),
+            Err(ConversionError::OutputExists { .. })
+        ));
+
+        // Nothing in the way, so the conversion may proceed and is told where to put it.
+        assert_eq!(
+            workbook_path(
+                Path::new("data/Session_Report_June_1_2026-June_30_2026.csv"),
+                PathBuf::from("data/no_such_workbook_here.xlsx")
+            )
+            .unwrap(),
+            PathBuf::from("data/no_such_workbook_here.xlsx")
+        );
+    }
+
+    /// The session conversion asks `session::excel` where the workbook goes rather than deriving
+    /// the name itself, so the file it checks and the file it writes cannot come apart.
+    #[test]
+    fn the_session_workbook_is_named_in_one_place() {
+        let csv = Path::new("data/Session_Report_June_1_2026-June_30_2026.csv");
+        assert_eq!(
+            crate::session::excel::workbook_path(csv),
+            csv.with_extension("xlsx")
+        );
+    }
 
     /// A date that is not a closing date is the caller's mistake, and is reported as such rather
     /// than reaching the panic in `BillingPeriod::ending_on`.

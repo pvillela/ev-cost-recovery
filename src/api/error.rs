@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 // ordinary thing to do with an error union -- forces a caller to name the payload types, so a
 // module that hands out the union has to hand out what its variants carry. Nothing deeper: the
 // fields inside those payloads can be read without being named.
-pub use crate::api::io::ReadError;
+pub use crate::api::io::{ConversionError, ReadError};
 pub use crate::api::pure::additional::ReimbursementError;
 pub use crate::api::pure::coverage::CoverageError;
 pub use crate::api::pure::energy::EnergyError;
@@ -56,6 +56,10 @@ pub enum ApiError {
         source: Option<PathBuf>,
         cause: CostRecoverySurplusError,
     },
+    /// A workbook could not be produced from the file it was to be converted from.
+    ///
+    /// No `source`: every one of these failures already names the file it is about.
+    Conversion(ConversionError),
     /// The month's reimbursement cannot be reconciled against the report given.
     ///
     /// No `source`, for the reason [`Self::CostRecovery`] has none: every one of these failures
@@ -82,6 +86,12 @@ impl From<CoverageError> for ApiError {
 impl From<ReadError> for ApiError {
     fn from(e: ReadError) -> Self {
         Self::Read(e)
+    }
+}
+
+impl From<ConversionError> for ApiError {
+    fn from(e: ConversionError) -> Self {
+        Self::Conversion(e)
     }
 }
 
@@ -140,6 +150,7 @@ impl fmt::Display for ApiError {
             Self::Energy { source, cause } => named(f, source.as_deref(), cause),
             Self::CostRecovery(e) => e.fmt(f),
             Self::CostRecoverySurplus { source, cause } => named(f, source.as_deref(), cause),
+            Self::Conversion(e) => e.fmt(f),
             Self::Reimbursement(e) => e.fmt(f),
         }
     }
@@ -166,6 +177,7 @@ impl Error for ApiError {
             Self::Energy { cause, .. } => Some(cause),
             Self::CostRecovery(e) => Some(e),
             Self::CostRecoverySurplus { cause, .. } => Some(cause),
+            Self::Conversion(e) => Some(e),
             Self::Reimbursement(e) => Some(e),
         }
     }

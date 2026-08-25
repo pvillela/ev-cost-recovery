@@ -162,10 +162,20 @@ pub fn session_csv_to_xlsx(path: &Path) -> Result<ConversionReport, Box<dyn Erro
     convert_session_csv(path).map_err(|e| format!("{}: {e}", path.display()).into())
 }
 
+/// Where [`session_csv_to_xlsx`] puts the workbook for `csv`: beside it, with the extension
+/// replaced.
+///
+/// Public so that a caller which has to decide *before* the conversion runs — whether the file is
+/// already there, whether it would be the input itself — asks this rather than deriving the name a
+/// second time and drifting from it.
+pub fn workbook_path(csv: &Path) -> PathBuf {
+    csv.with_extension("xlsx")
+}
+
 fn convert_session_csv(path: &Path) -> Result<ConversionReport, Box<dyn Error>> {
     let rows = csv::session_rows(path)?;
 
-    let output_path = path.with_extension("xlsx");
+    let output_path = workbook_path(path);
     let mut book = umya_spreadsheet::new_file();
     write_sheet(&mut book, &output_path, &rows)?;
 
