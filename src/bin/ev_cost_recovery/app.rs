@@ -1,7 +1,7 @@
 //! The window: the tab bar and which tab is drawn.
 
 use crate::state::{AppState, Tab};
-use crate::{about, detail, reimbursement, surplus, theme};
+use crate::{about, convert, detail, reimbursement, surplus, theme};
 use eframe::egui;
 
 pub const APP_NAME: &str = "EV Cost Recovery";
@@ -74,6 +74,10 @@ impl eframe::App for App {
                         // Always offered. It reads its own report and answers on its own, so
                         // nothing on the other two tabs has to have happened first.
                         (Tab::Reimbursement, "Evolute reimbursement", true),
+                        // Last, and likewise always offered. It produces nothing the rest of the
+                        // app reads, so it is where someone goes on purpose rather than on the
+                        // way to something else.
+                        (Tab::Convert, "Convert to workbook", true),
                     ] {
                         let selected = self.state.tab == tab;
                         let text = egui::RichText::new(label).strong();
@@ -132,6 +136,9 @@ impl eframe::App for App {
                         &mut self.state.reimbursement,
                         &mut self.state.working_dir,
                     ),
+                    Tab::Convert => {
+                        convert::ui(ui, &mut self.state.convert, &mut self.state.working_dir)
+                    }
                 });
         });
 

@@ -98,11 +98,12 @@ pub enum ConversionError {
     /// file. Reached by handing in something already named `.xlsx`.
     OutputWouldBeInput { path: PathBuf },
 
-    /// A file already stands where the workbook would go.
+    /// A file already stands where the workbook would go, and the caller asked to be refused.
     ///
-    /// Refused rather than overwritten, and not as a courtesy: the figures in these workbooks get
+    /// Refusing is the default rather than a courtesy: the figures in these workbooks get
     /// reconciled against real invoices by hand, and a silent overwrite is how that work is lost.
-    /// Move the existing file or delete it.
+    /// Move the existing file, delete it, or call again with
+    /// [`OnExistingWorkbook::Replace`].
     OutputExists { path: PathBuf },
 
     /// The workbook could not be built or could not be written.
@@ -122,8 +123,8 @@ impl fmt::Display for ConversionError {
             ),
             Self::OutputExists { path } => write!(
                 f,
-                "{} already exists. Move or delete it first -- a conversion never overwrites its \
-                 output.",
+                "{} already exists. Move or delete it first, or ask for it to be replaced -- a \
+                 conversion never overwrites its output unless told to.",
                 path.display()
             ),
             // The path is written in, unlike `ReadError`'s: the writers name no file of their own,
@@ -573,21 +574,43 @@ pub fn reconcile_evolute_reimbursement(
 // --------------------------------------------------------------------------------------------
 // The conversions
 //
-// The two functions that write. Both take one file and put a workbook beside it, and both refuse
-// before reading anything if that workbook cannot be written where it would have to go.
+// The two functions that write. Both take one file and put a workbook beside it, and both settle
+// before reading anything whether that workbook may be written where it would have to go.
+
+/// What a conversion is to do about a workbook that is already there.
+///
+/// An argument rather than a policy, because the two callers want opposite things and both are
+/// right. A batch job wants to be stopped; someone who has just edited a session report and is
+/// converting it again wants the new workbook. What is not wanted is the middle case — an
+/// overwrite nobody asked for — so replacing has to be said.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OnExistingWorkbook {
+    /// Leave the existing file alone and fail with [`ConversionError::OutputExists`].
+    Refuse,
+
+    /// Overwrite it. The old workbook is gone, along with anything written into it by hand.
+    Replace,
+}
 
 /// Where a conversion's workbook goes, once it is settled that it may be written.
 ///
 /// Both refusals are made before the input is opened. Parsing a year of meter readings and then
 /// discovering there is nowhere to put the result wastes the time and, worse, reports the second
 /// problem as though it were the first.
-fn workbook_path(input: &Path, output: PathBuf) -> Result<PathBuf, ConversionError> {
+///
+/// [`OnExistingWorkbook::Replace`] waives only the second refusal. An input that is its own output
+/// is refused either way: there is no reading a file that the writer has already truncated.
+fn workbook_path(
+    input: &Path,
+    output: PathBuf,
+    on_existing: OnExistingWorkbook,
+) -> Result<PathBuf, ConversionError> {
     if output == input {
         return Err(ConversionError::OutputWouldBeInput {
             path: input.to_path_buf(),
         });
     }
-    if output.exists() {
+    if on_existing == OnExistingWorkbook::Refuse && output.exists() {
         return Err(ConversionError::OutputExists { path: output });
     }
     Ok(output)
@@ -605,6 +628,7 @@ fn workbook_path(input: &Path, output: PathBuf) -> Result<PathBuf, ConversionErr
 /// # Arguments
 ///
 /// - `session_csv` - the Evolute session report to convert.
+/// - `on_existing` - what to do about a workbook already standing where this one goes.
 ///
 /// The workbook's name is not an argument. It is the input's, with the extension replaced, which is
 /// what [`session::excel::workbook_path`] settles and what every reader of these files expects to
@@ -616,12 +640,16 @@ fn workbook_path(input: &Path, output: PathBuf) -> Result<PathBuf, ConversionErr
 ///
 /// # Errors
 ///
-/// See [`ApiError`]. An existing workbook is refused rather than overwritten, and that is settled
-/// before the report is opened.
-pub fn session_csv_to_xlsx(session_csv: &Path) -> Result<ConversionReport, ApiError> {
+/// See [`ApiError`]. Whether an existing workbook is refused or replaced is `on_existing`'s to say,
+/// and either way it is settled before the report is opened.
+pub fn session_csv_to_xlsx(
+    session_csv: &Path,
+    on_existing: OnExistingWorkbook,
+) -> Result<ConversionReport, ApiError> {
     workbook_path(
         session_csv,
         crate::session::excel::workbook_path(session_csv),
+        on_existing,
     )?;
     // The path is not passed on: `session::excel::session_csv_to_xlsx` derives the same one from
     // the same function, and taking it as an argument there would let a caller send the workbook
@@ -657,6 +685,7 @@ pub struct GbConversionReport {
 /// # Arguments
 ///
 /// - `gb_xml` - the Green Button (ESPI) XML export to convert.
+/// - `on_existing` - what to do about a workbook already standing where this one goes.
 ///
 /// There is no `bill_end_day` argument, for the reason the reading functions here take none: the
 /// billing period is [`BILL_END_DAY`], which is a fact about Toronto Hydro rather than a choice a
@@ -667,11 +696,14 @@ pub struct GbConversionReport {
 ///
 /// # Errors
 ///
-/// See [`ApiError`]. An existing workbook is refused rather than overwritten, and that is settled
-/// before the export is opened — which matters more here than for a session report, since parsing a
-/// multi-year export is not quick.
-pub fn gb_xml_to_xlsx(gb_xml: &Path) -> Result<GbConversionReport, ApiError> {
-    let output_path = workbook_path(gb_xml, gb_xml.with_extension("xlsx"))?;
+/// See [`ApiError`]. Whether an existing workbook is refused or replaced is `on_existing`'s to say,
+/// and either way it is settled before the export is opened — which matters more here than for a
+/// session report, since parsing a multi-year export is not quick.
+pub fn gb_xml_to_xlsx(
+    gb_xml: &Path,
+    on_existing: OnExistingWorkbook,
+) -> Result<GbConversionReport, ApiError> {
+    let output_path = workbook_path(gb_xml, gb_xml.with_extension("xlsx"), on_existing)?;
 
     let xml = std::fs::read_to_string(gb_xml).map_err(|cause| ReadError::GreenButton {
         path: gb_xml.to_path_buf(),
@@ -734,13 +766,21 @@ mod test {
         // Handing in something already named `.xlsx` would read and write one file.
         let xlsx = Path::new("book.xlsx");
         assert!(matches!(
-            workbook_path(xlsx, xlsx.with_extension("xlsx")),
+            workbook_path(
+                xlsx,
+                xlsx.with_extension("xlsx"),
+                OnExistingWorkbook::Refuse
+            ),
             Err(ConversionError::OutputWouldBeInput { .. })
         ));
 
-        // A file already standing where the workbook would go is never overwritten.
+        // A file already standing where the workbook would go is not overwritten unasked.
         assert!(matches!(
-            workbook_path(Path::new("Cargo.lock"), PathBuf::from("Cargo.toml")),
+            workbook_path(
+                Path::new("Cargo.lock"),
+                PathBuf::from("Cargo.toml"),
+                OnExistingWorkbook::Refuse
+            ),
             Err(ConversionError::OutputExists { .. })
         ));
 
@@ -748,11 +788,40 @@ mod test {
         assert_eq!(
             workbook_path(
                 Path::new("data/Session_Report_June_1_2026-June_30_2026.csv"),
-                PathBuf::from("data/no_such_workbook_here.xlsx")
+                PathBuf::from("data/no_such_workbook_here.xlsx"),
+                OnExistingWorkbook::Refuse
             )
             .unwrap(),
             PathBuf::from("data/no_such_workbook_here.xlsx")
         );
+    }
+
+    /// Asking for a replacement waives the second refusal and only the second.
+    ///
+    /// Nothing is written: `workbook_path` decides and returns, and the caller does the writing.
+    #[test]
+    fn asking_to_replace_waives_only_the_existing_file() {
+        // The file is there and would be overwritten, which is what was asked for.
+        assert_eq!(
+            workbook_path(
+                Path::new("Cargo.lock"),
+                PathBuf::from("Cargo.toml"),
+                OnExistingWorkbook::Replace
+            )
+            .unwrap(),
+            PathBuf::from("Cargo.toml")
+        );
+
+        // An input that is its own output stays refused. There would be nothing left to read.
+        let xlsx = Path::new("book.xlsx");
+        assert!(matches!(
+            workbook_path(
+                xlsx,
+                xlsx.with_extension("xlsx"),
+                OnExistingWorkbook::Replace
+            ),
+            Err(ConversionError::OutputWouldBeInput { .. })
+        ));
     }
 
     /// The session conversion asks `session::excel` where the workbook goes rather than deriving

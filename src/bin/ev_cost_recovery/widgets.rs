@@ -88,6 +88,15 @@ pub fn monospace_block(ui: &mut egui::Ui, text: &str) {
     );
 }
 
+/// A monospaced list whose lines are sentences rather than columns, so they wrap.
+///
+/// The counterpart to [`monospace_block`], and the difference is the whole point of having two:
+/// report text is laid out to a fixed width and must not be re-wrapped, while an anomaly is a
+/// sentence of no particular length and is simply lost off the right-hand edge if it is not.
+pub fn monospace_lines(ui: &mut egui::Ui, text: &str) {
+    ui.add(egui::Label::new(egui::RichText::new(text).monospace()).wrap());
+}
+
 /// One schedule of cost-recovery rates: an effective date and the three bands. Returns whether any
 /// of them was edited this frame.
 ///

@@ -6,9 +6,11 @@
 //! tested here.
 
 use ev_cost_recovery::io::{
-    CostRecoveryRates, CostRecoverySurplus, ReimbursementReconciliation, cost_recovery_surplus,
-    reconcile_evolute_reimbursement,
+    CostRecoveryRates, CostRecoverySurplus, GbConversionReport, OnExistingWorkbook,
+    ReimbursementReconciliation, cost_recovery_surplus, gb_xml_to_xlsx,
+    reconcile_evolute_reimbursement, session_csv_to_xlsx,
 };
+use ev_cost_recovery::session::excel::workbook_path as session_workbook_path;
 use ev_cost_recovery::session::file_name::report_coverage;
 use jiff::civil;
 use std::path::{Path, PathBuf};
@@ -23,12 +25,18 @@ use std::path::{Path, PathBuf};
 /// different calendar, and shares nothing with the other two but the folder the file dialogs open
 /// in. It is a tab rather than a second program because it is the same month's charging seen from
 /// the other side, and whoever asks one question asks the other in the same sitting.
+///
+/// [`Tab::Convert`] answers no question at all. It turns a source file into a workbook to be read
+/// by eye, which is what the two command-line converters do, and it is here so that the app is the
+/// only thing anyone has to open. It comes last because nothing else needs it: every figure this
+/// app produces is taken from the source files directly.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Tab {
     #[default]
     Surplus,
     Detail,
     Reimbursement,
+    Convert,
 }
 
 #[derive(Default)]
@@ -36,6 +44,7 @@ pub struct AppState {
     pub tab: Tab,
     pub surplus: SurplusState,
     pub reimbursement: ReimbursementState,
+    pub convert: ConvertState,
     pub working_dir: WorkingDir,
 }
 
@@ -539,6 +548,157 @@ impl ReimbursementState {
         self.outcome = None;
         self.error = None;
     }
+}
+
+// --------------------------------------------------------------------------------------------
+// The workbook conversions
+
+/// One of the two file-to-file conversions, as the tab has to drive it.
+///
+/// A trait rather than two copies of [`ConversionSlot`], because everything the tab does with a
+/// conversion — pick a file, work out what would be overwritten, ask, run, report — is the same
+/// for both, and only the three lines here differ.
+pub trait Conversion {
+    /// What a finished conversion has to show for itself.
+    type Outcome;
+
+    /// Where the workbook goes. Asked before the conversion runs, to find out whether anything is
+    /// already there.
+    fn workbook(input: &Path) -> PathBuf;
+
+    /// Converts, and returns either the outcome or a message to put in front of the user.
+    fn run(input: &Path, on_existing: OnExistingWorkbook) -> Result<Self::Outcome, String>;
+}
+
+/// The Evolute session report conversion.
+pub struct SessionConversion;
+
+/// What one produced.
+pub struct SessionWorkbook {
+    pub workbook: PathBuf,
+    /// The rows that needed a judgement call, as the command line prints them. Empty for a clean
+    /// conversion.
+    pub anomalies: Vec<String>,
+    /// Why the run log could not be written, if it could not.
+    ///
+    /// Carried on the outcome rather than raised as the conversion's error, because by the time
+    /// the log is written the workbook is already on disk. Failing the whole conversion over it
+    /// would report that nothing was produced, when in fact the file the user asked for is there
+    /// and only its log is missing. Both are said, in that order.
+    pub log_failure: Option<String>,
+}
+
+impl Conversion for SessionConversion {
+    type Outcome = SessionWorkbook;
+
+    fn workbook(input: &Path) -> PathBuf {
+        session_workbook_path(input)
+    }
+
+    fn run(input: &Path, on_existing: OnExistingWorkbook) -> Result<SessionWorkbook, String> {
+        let report = session_csv_to_xlsx(input, on_existing)
+            .map_err(|e| format!("{}: {e}", input.display()))?;
+        // The app is the end of the line, so the run log is written here. The library returns what
+        // it found and writes nothing; see `Sessions::logs`.
+        let log_failure = report.log.write().err().map(|e| {
+            format!(
+                "The workbook was written, but its run log was not.\n{}: {e}",
+                report.log.path().display()
+            )
+        });
+        Ok(SessionWorkbook {
+            workbook: report.output_path,
+            anomalies: report.anomalies.iter().map(|a| a.to_string()).collect(),
+            log_failure,
+        })
+    }
+}
+
+/// The Green Button meter export conversion.
+pub struct GbConversion;
+
+impl Conversion for GbConversion {
+    type Outcome = GbConversionReport;
+
+    fn workbook(input: &Path) -> PathBuf {
+        input.with_extension("xlsx")
+    }
+
+    fn run(input: &Path, on_existing: OnExistingWorkbook) -> Result<GbConversionReport, String> {
+        gb_xml_to_xlsx(input, on_existing).map_err(|e| format!("{}: {e}", input.display()))
+    }
+}
+
+/// One conversion's file, its result and its one question.
+pub struct ConversionSlot<C: Conversion> {
+    pub input: Option<PathBuf>,
+    pub outcome: Option<C::Outcome>,
+    pub error: Option<String>,
+    /// The workbook a conversion is about to replace, while the user is being asked about it.
+    ///
+    /// The api refuses an existing workbook unless told otherwise, and this is where being told
+    /// otherwise comes from. Asked rather than refused outright: converting a report that has been
+    /// corrected is an ordinary thing to want, and asked rather than done quietly because the
+    /// workbook may have been reconciled against an invoice by hand.
+    pub confirm_replace: Option<PathBuf>,
+}
+
+// Derived `Default` would demand `C::Outcome: Default`, which neither outcome is and neither needs
+// to be.
+impl<C: Conversion> Default for ConversionSlot<C> {
+    fn default() -> Self {
+        Self {
+            input: None,
+            outcome: None,
+            error: None,
+            confirm_replace: None,
+        }
+    }
+}
+
+impl<C: Conversion> ConversionSlot<C> {
+    /// Takes the file to convert, and drops whatever the last one produced. A result left standing
+    /// under a different file name is the one thing this tab must not show.
+    pub fn select(&mut self, input: PathBuf) {
+        self.input = Some(input);
+        self.outcome = None;
+        self.error = None;
+        self.confirm_replace = None;
+    }
+
+    /// Converts, or asks first if that would replace a workbook already there.
+    pub fn start(&mut self) {
+        self.error = None;
+        self.outcome = None;
+        let Some(input) = self.input.as_deref() else {
+            return;
+        };
+        let workbook = C::workbook(input);
+        if workbook.exists() {
+            self.confirm_replace = Some(workbook);
+        } else {
+            self.convert(OnExistingWorkbook::Refuse);
+        }
+    }
+
+    /// Converts, having settled what is to happen to any workbook in the way.
+    pub fn convert(&mut self, on_existing: OnExistingWorkbook) {
+        self.confirm_replace = None;
+        let Some(input) = self.input.clone() else {
+            return;
+        };
+        match C::run(&input, on_existing) {
+            Ok(outcome) => self.outcome = Some(outcome),
+            Err(message) => self.error = Some(message),
+        }
+    }
+}
+
+/// The Convert tab: the two conversions, side by side and independent of each other.
+#[derive(Default)]
+pub struct ConvertState {
+    pub sessions: ConversionSlot<SessionConversion>,
+    pub green_button: ConversionSlot<GbConversion>,
 }
 
 // --------------------------------------------------------------------------------------------

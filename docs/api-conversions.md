@@ -1,12 +1,15 @@
 # The two file conversions in `api::io`
 
 Written 2026-08-25, when `api::io::session_csv_to_xlsx` and `api::io::gb_xml_to_xlsx` were added.
+Revised the same day, when the GUI tab for them settled the overwrite question left open below.
 
 ## What they are
 
 ```rust
-pub fn session_csv_to_xlsx(session_csv: &Path) -> Result<ConversionReport, ApiError>
-pub fn gb_xml_to_xlsx(gb_xml: &Path) -> Result<GbConversionReport, ApiError>
+pub fn session_csv_to_xlsx(session_csv: &Path, on_existing: OnExistingWorkbook)
+    -> Result<ConversionReport, ApiError>
+pub fn gb_xml_to_xlsx(gb_xml: &Path, on_existing: OnExistingWorkbook)
+    -> Result<GbConversionReport, ApiError>
 ```
 
 `GbConversionReport` pairs the output path with `green_button::WriteReport`, which is the workbook
@@ -49,17 +52,28 @@ Deriving that name a second time in the api would be two definitions free to dri
 one, and `the_session_workbook_is_named_in_one_place` asserts the api asks for it rather than
 computing it.
 
-### Both conversions refuse to overwrite — an open decision
+### An existing workbook is the caller's decision — `OnExistingWorkbook`
 
-`gb_peak_values` already refuses, with the reasoning written out in its help text: the figures in
-these workbooks get reconciled against real invoices by hand, and a silent overwrite is how that
-work is lost. `session::excel::session_csv_to_xlsx` does not refuse.
+`gb_peak_values` refuses, with the reasoning written out in its help text: the figures in these
+workbooks get reconciled against real invoices by hand, and a silent overwrite is how that work is
+lost. `session::excel::session_csv_to_xlsx` does not refuse.
 
-The guard was applied **in the api layer only**, so nothing existing changed: `ev_csv_to_xlsx` and
-`ev_peak_gui` still overwrite as they did. That leaves one operation with two behaviours depending
-on which layer you call, which is a real cost. The alternatives are to push the guard down into
-`session::excel` — which would change the CLI and the GUI, where re-converting an edited CSV would
-start failing — or to drop it from the api. Undecided; the api-only guard is the reversible choice.
+The guard first went in as api-only and unconditional, which was recorded here as undecided. The
+GUI settled it. `ev_peak_gui`'s Convert tab does not refuse an existing workbook — it asks, with a
+modal — and a tab built on an api that refuses outright could not offer that. Refusing and
+replacing are both right, for different callers, so which one happens is now an argument:
+
+```rust
+pub enum OnExistingWorkbook { Refuse, Replace }
+```
+
+`Replace` waives only the existing-file refusal. An input that is its own output — anything already
+named `.xlsx` — stays refused either way, since there would be nothing left to read.
+
+The guard is still api-only: `ev_csv_to_xlsx` and `ev_peak_gui` call `session::excel` directly and
+overwrite as they always did. One operation with two behaviours by layer remains a real cost, but
+it is now a cost paid for a reason rather than an accident, and the api's behaviour is no longer
+the stricter of the two by fiat — a caller can ask for either.
 
 ## A follow-up not taken
 
@@ -67,12 +81,31 @@ start failing — or to drop it from the api. Undecided; the api-only guard is t
 refusals. It could call `api::io::gb_xml_to_xlsx` and lose the duplication. It was left alone
 because it also prints the holiday calendar, which is CLI presentation and has no place in the api.
 
+## The GUI tab
+
+`ev_cost_recovery` has a fourth tab, `Convert to workbook`, holding both conversions one above the
+other. It is last, and produces nothing the other three read — they parse the source files
+themselves — so it is a place someone goes on purpose rather than on the way to something else.
+
+Both halves are the same widget, `convert::picker::<C>`, generic over a `state::Conversion` trait
+whose three items are all that differ between them: where the workbook goes, how to run it, and
+what a finished one has to show. Everything the tab does around that — pick, ask, run, report — is
+written once.
+
+Picking a file that already has a workbook beside it opens the "Replace existing workbook?" modal,
+the same question `ev_peak_gui` asks. Answering it is the only thing in the codebase that passes
+`OnExistingWorkbook::Replace`.
+
 ## What was and was not checked
 
-Checked: `cargo test` (258 passing), `cargo clippy --all-targets`, `cargo fmt --check`. Two new
-tests cover the guard's two refusals and its passing case, settled from paths alone so they write
-nothing.
+Checked: `cargo test` (259 passing), `cargo clippy --all-targets`, `cargo fmt --check`. Three tests
+cover the guard's refusals, the case that passes, and what `Replace` does and does not waive —
+settled from paths alone, so they write nothing.
 
-**Not checked: neither conversion has been run against a real file.** Both are thin wrappers over
-code the CLIs already exercise, but that is an argument rather than a check, and it should not be
-mistaken for one.
+Checked in the running app, on a virtual display, against the repository's own test fixtures copied
+to a scratch folder: both conversions wrote a workbook, the session one wrote its run log beside it
+and listed its five anomalies, the Green Button one reported 3 billing periods over 792 intervals,
+and re-converting raised the modal and replaced the file on Replace.
+
+**Not checked: neither conversion has been run against a production file** — a real Evolute report
+or a real multi-year Toronto Hydro export. The fixtures are small and were built for other tests.

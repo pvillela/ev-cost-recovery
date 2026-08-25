@@ -15,6 +15,7 @@
 
 mod about;
 mod app;
+mod convert;
 mod detail;
 mod reimbursement;
 mod state;
