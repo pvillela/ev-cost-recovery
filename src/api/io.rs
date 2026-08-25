@@ -10,6 +10,12 @@
 //! whose whole product *is* a file. There is no figure in either for a pure function to return, so
 //! neither has a counterpart in [`pure`](super::pure). Every other function here leaves the disk as
 //! it found it, and the run logs they carry back are written by the caller.
+//!
+//! # How this file is laid out
+//!
+//! Public before private, functions before the types only they name: the readers, the two
+//! conversions, then the two error enums, then the private helpers. Opening the file shows the API
+//! surface. Anything new goes in the section it belongs to rather than at the end.
 
 // `session::excel` arrives as a module rather than as its two functions: both are named the same
 // as something declared here, and a prefix says which is meant without inventing an alias.
@@ -44,115 +50,11 @@ pub use crate::{
     session::ConversionReport,
 };
 
-/// A source file could not be read.
-///
-/// The only error kind this module raises on its own. Everything else it returns comes from a pure
-/// function it delegated to.
-///
-/// `path` is held for a caller that wants to act on which file failed rather than print it. It is
-/// deliberately *not* written into the message: both readers name the file they concern, so adding
-/// it here produced `data/x.XML: data/x.XML: ...`.
-#[derive(Debug)]
-pub enum ReadError {
-    /// The Green Button export could not be read, could not be parsed, or carries no reading in
-    /// the billing period asked for.
-    GreenButton {
-        path: PathBuf,
-        cause: Box<dyn Error>,
-    },
-
-    /// A session report could not be read.
-    SessionReport {
-        path: PathBuf,
-        cause: Box<dyn Error>,
-    },
-
-    /// A Toronto Hydro bill PDF could not be read, or is not laid out the way one is read.
-    ///
-    /// [`BillError::is_layout`](crate::hydro_bill::BillError::is_layout) tells those two apart,
-    /// and `cause` downcasts to [`BillError`](crate::hydro_bill::BillError) for a caller that
-    /// wants to ask.
-    Bill {
-        path: PathBuf,
-        cause: Box<dyn Error>,
-    },
-}
-
-impl fmt::Display for ReadError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::GreenButton { cause, .. }
-            | Self::SessionReport { cause, .. }
-            | Self::Bill { cause, .. } => cause.fmt(f),
-        }
-    }
-}
-
-impl Error for ReadError {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        match self {
-            Self::GreenButton { cause, .. }
-            | Self::SessionReport { cause, .. }
-            | Self::Bill { cause, .. } => Some(cause.as_ref()),
-        }
-    }
-}
-
-/// A workbook could not be produced from the file it was to be converted from.
-///
-/// Raised only by the two conversions. What the input could not be *read* as is
-/// [`ReadError`]; this is about the output.
-#[derive(Debug)]
-pub enum ConversionError {
-    /// The workbook's name would be the input's own, so the conversion would read and write one
-    /// file. Reached by handing in something already named `.xlsx`.
-    OutputWouldBeInput { path: PathBuf },
-
-    /// A file already stands where the workbook would go, and the caller asked to be refused.
-    ///
-    /// Refusing is the default rather than a courtesy: the figures in these workbooks get
-    /// reconciled against real invoices by hand, and a silent overwrite is how that work is lost.
-    /// Move the existing file, delete it, or call again with
-    /// [`OnExistingWorkbook::Replace`].
-    OutputExists { path: PathBuf },
-
-    /// The workbook could not be built or could not be written.
-    Write {
-        path: PathBuf,
-        cause: Box<dyn Error>,
-    },
-}
-
-impl fmt::Display for ConversionError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::OutputWouldBeInput { path } => write!(
-                f,
-                "{} is already an .xlsx file, so converting it would read and write the same file",
-                path.display()
-            ),
-            Self::OutputExists { path } => write!(
-                f,
-                "{} already exists. Move or delete it first, or ask for it to be replaced -- a \
-                 conversion never overwrites its output unless told to.",
-                path.display()
-            ),
-            // The path is written in, unlike `ReadError`'s: the writers name no file of their own,
-            // so without it a caller is told a workbook could not be written and left to guess
-            // which.
-            Self::Write { path, cause } => write!(f, "{}: {cause}", path.display()),
-        }
-    }
-}
-
-impl Error for ConversionError {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        match self {
-            Self::OutputWouldBeInput { .. } | Self::OutputExists { .. } => None,
-            Self::Write { cause, .. } => Some(cause.as_ref()),
-        }
-    }
-}
+// --------------------------------------------------------------------------------------------
+// The readers
+//
+// Paths in, figures out. Each turns files into values, hands them to the pure function of the
+// same name and reports which file a failure was about. None of them writes.
 
 /// Returns peak power estimates for the intervals of interest that maximize kW and kVA in the
 /// specified billing period.
@@ -485,55 +387,6 @@ pub fn cost_recovery_surplus(
     })
 }
 
-/// Names the file a [`CostRecoverySurplusError`] is about.
-///
-/// Delegates to the two functions that already answer this for the costing errors, since a surplus
-/// fails in exactly their ways plus the recovery's. A recovery failure names no file: the rates are
-/// the caller's own values, and the period came from the bill only after it was read successfully.
-fn surplus_source(
-    cause: &CostRecoverySurplusError,
-    bill_pdf: &Path,
-    gb_xml: &Path,
-) -> Option<PathBuf> {
-    match cause {
-        CostRecoverySurplusError::Recovery(_) => None,
-        CostRecoverySurplusError::PeakPower(e) => gb_source(e, Some(bill_pdf), gb_xml),
-        CostRecoverySurplusError::Energy(e) => bill_source(e, Some(bill_pdf)),
-    }
-}
-
-/// Names the file a [`PeakPowerError`] is about, given the paths this call was made with.
-///
-/// Which file that is turns on the variant, not on the call: a period only partly covered is the
-/// meter export's, while a date that closes no period is the bill's when a bill supplied it. Pure
-/// says what went wrong and this says where, because neither knows both.
-///
-/// `bill_pdf` is `None` for [`peak_power`], where the date is the caller's own argument and no file
-/// is at fault.
-fn gb_source(cause: &PeakPowerError, bill_pdf: Option<&Path>, gb_xml: &Path) -> Option<PathBuf> {
-    match cause {
-        // Both are the bill's: it supplied the date, and it states the figure that is zero.
-        PeakPowerError::NotABillingPeriodEnding(_) | PeakPowerError::ZeroDenominator(_) => {
-            bill_pdf.map(Path::to_path_buf)
-        }
-        PeakPowerError::NoPeak { .. }
-        | PeakPowerError::ValuesAreForAnotherPeriod { .. }
-        | PeakPowerError::PeriodNotFullyCovered { .. } => Some(gb_xml.to_path_buf()),
-    }
-}
-
-/// Names the file an [`EnergyError`] is about.
-///
-/// Both variants concern the bill: it states the period, and it states the rates. `bill_pdf` is
-/// `None` for [`energy`], which takes no bill and gets its date from the caller.
-fn bill_source(cause: &EnergyError, bill_pdf: Option<&Path>) -> Option<PathBuf> {
-    match cause {
-        EnergyError::NotABillingPeriodEnding(_)
-        | EnergyError::NoRate { .. }
-        | EnergyError::ZeroDenominator(_) => bill_pdf.map(Path::to_path_buf),
-    }
-}
-
 /// Reconciles what Evolute reimbursed for a calendar month against what the cost-recovery rates
 /// come to over the same month.
 ///
@@ -602,34 +455,10 @@ pub enum OnExistingWorkbook {
     Replace,
 }
 
-/// Where a conversion's workbook goes, once it is settled that it may be written.
-///
-/// Both refusals are made before the input is opened. Parsing a year of meter readings and then
-/// discovering there is nowhere to put the result wastes the time and, worse, reports the second
-/// problem as though it were the first.
-///
-/// [`OnExistingWorkbook::Replace`] waives only the second refusal. An input that is its own output
-/// is refused either way: there is no reading a file that the writer has already truncated.
-fn workbook_path(
-    input: &Path,
-    output: PathBuf,
-    on_existing: OnExistingWorkbook,
-) -> Result<PathBuf, ConversionError> {
-    if output == input {
-        return Err(ConversionError::OutputWouldBeInput {
-            path: input.to_path_buf(),
-        });
-    }
-    if on_existing == OnExistingWorkbook::Refuse && output.exists() {
-        return Err(ConversionError::OutputExists { path: output });
-    }
-    Ok(output)
-}
-
 /// Converts an Evolute session report into a workbook beside it, and says what needed a judgement
 /// call on the way.
 ///
-/// Delegates to [`session::excel::session_csv_to_xlsx`], which states what the workbook holds: the
+/// Delegates to [`excel::session_csv_to_xlsx`](crate::session::excel::session_csv_to_xlsx), which states what the workbook holds: the
 /// report's own columns in the order it states them, then the columns this software derives, with
 /// `adj_conn_duration` and `avg_kw` as live formulas and the anomalies of each row in the last
 /// column. Every session is written, anomalous ones included — which of them takes part in an
@@ -641,7 +470,7 @@ fn workbook_path(
 /// - `on_existing` - what to do about a workbook already standing where this one goes.
 ///
 /// The workbook's name is not an argument. It is the input's, with the extension replaced, which is
-/// what [`session::excel::workbook_path`] settles and what every reader of these files expects to
+/// what [`excel::workbook_path`](crate::session::excel::workbook_path) settles and what every reader of these files expects to
 /// find beside the report.
 ///
 /// Nothing else here writes. The conversion's run log comes back unwritten on the result's `log` --
@@ -732,6 +561,202 @@ pub fn gb_xml_to_xlsx(
         output_path,
         written,
     })
+}
+
+// --------------------------------------------------------------------------------------------
+// What can go wrong
+//
+// The two kinds this module raises on its own rather than passing on from `pure`. Both reach a
+// caller inside the `ApiError` every function above returns, so neither is named in a signature --
+// which is why they sit below the functions rather than above them.
+
+/// A source file could not be read.
+///
+/// One of the two error kinds this module raises on its own. Everything else it returns comes from
+/// a pure function it delegated to.
+///
+/// `path` is held for a caller that wants to act on which file failed rather than print it. It is
+/// deliberately *not* written into the message: both readers name the file they concern, so adding
+/// it here produced `data/x.XML: data/x.XML: ...`.
+#[derive(Debug)]
+pub enum ReadError {
+    /// The Green Button export could not be read, could not be parsed, or carries no reading in
+    /// the billing period asked for.
+    GreenButton {
+        path: PathBuf,
+        cause: Box<dyn Error>,
+    },
+
+    /// A session report could not be read.
+    SessionReport {
+        path: PathBuf,
+        cause: Box<dyn Error>,
+    },
+
+    /// A Toronto Hydro bill PDF could not be read, or is not laid out the way one is read.
+    ///
+    /// [`BillError::is_layout`](crate::hydro_bill::BillError::is_layout) tells those two apart,
+    /// and `cause` downcasts to [`BillError`](crate::hydro_bill::BillError) for a caller that
+    /// wants to ask.
+    Bill {
+        path: PathBuf,
+        cause: Box<dyn Error>,
+    },
+}
+
+impl fmt::Display for ReadError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::GreenButton { cause, .. }
+            | Self::SessionReport { cause, .. }
+            | Self::Bill { cause, .. } => cause.fmt(f),
+        }
+    }
+}
+
+impl Error for ReadError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::GreenButton { cause, .. }
+            | Self::SessionReport { cause, .. }
+            | Self::Bill { cause, .. } => Some(cause.as_ref()),
+        }
+    }
+}
+
+/// A workbook could not be produced from the file it was to be converted from.
+///
+/// Raised only by the two conversions. What the input could not be *read* as is
+/// [`ReadError`]; this is about the output.
+#[derive(Debug)]
+pub enum ConversionError {
+    /// The workbook's name would be the input's own, so the conversion would read and write one
+    /// file. Reached by handing in something already named `.xlsx`.
+    OutputWouldBeInput { path: PathBuf },
+
+    /// A file already stands where the workbook would go, and the caller asked to be refused.
+    ///
+    /// Refusing is the default rather than a courtesy: the figures in these workbooks get
+    /// reconciled against real invoices by hand, and a silent overwrite is how that work is lost.
+    /// Move the existing file, delete it, or call again with
+    /// [`OnExistingWorkbook::Replace`].
+    OutputExists { path: PathBuf },
+
+    /// The workbook could not be built or could not be written.
+    Write {
+        path: PathBuf,
+        cause: Box<dyn Error>,
+    },
+}
+
+impl fmt::Display for ConversionError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::OutputWouldBeInput { path } => write!(
+                f,
+                "{} is already an .xlsx file, so converting it would read and write the same file",
+                path.display()
+            ),
+            Self::OutputExists { path } => write!(
+                f,
+                "{} already exists. Move or delete it first, or ask for it to be replaced -- a \
+                 conversion never overwrites its output unless told to.",
+                path.display()
+            ),
+            // The path is written in, unlike `ReadError`'s: the writers name no file of their own,
+            // so without it a caller is told a workbook could not be written and left to guess
+            // which.
+            Self::Write { path, cause } => write!(f, "{}: {cause}", path.display()),
+        }
+    }
+}
+
+impl Error for ConversionError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::OutputWouldBeInput { .. } | Self::OutputExists { .. } => None,
+            Self::Write { cause, .. } => Some(cause.as_ref()),
+        }
+    }
+}
+
+// --------------------------------------------------------------------------------------------
+// Helpers
+//
+// Private, and below everything they serve. Three of them answer one question -- which file a
+// failure was about -- that `pure` cannot answer and a caller should not have to.
+
+/// Names the file a [`CostRecoverySurplusError`] is about.
+///
+/// Delegates to the two functions that already answer this for the costing errors, since a surplus
+/// fails in exactly their ways plus the recovery's. A recovery failure names no file: the rates are
+/// the caller's own values, and the period came from the bill only after it was read successfully.
+fn surplus_source(
+    cause: &CostRecoverySurplusError,
+    bill_pdf: &Path,
+    gb_xml: &Path,
+) -> Option<PathBuf> {
+    match cause {
+        CostRecoverySurplusError::Recovery(_) => None,
+        CostRecoverySurplusError::PeakPower(e) => gb_source(e, Some(bill_pdf), gb_xml),
+        CostRecoverySurplusError::Energy(e) => bill_source(e, Some(bill_pdf)),
+    }
+}
+
+/// Names the file a [`PeakPowerError`] is about, given the paths this call was made with.
+///
+/// Which file that is turns on the variant, not on the call: a period only partly covered is the
+/// meter export's, while a date that closes no period is the bill's when a bill supplied it. Pure
+/// says what went wrong and this says where, because neither knows both.
+///
+/// `bill_pdf` is `None` for [`peak_power`], where the date is the caller's own argument and no file
+/// is at fault.
+fn gb_source(cause: &PeakPowerError, bill_pdf: Option<&Path>, gb_xml: &Path) -> Option<PathBuf> {
+    match cause {
+        // Both are the bill's: it supplied the date, and it states the figure that is zero.
+        PeakPowerError::NotABillingPeriodEnding(_) | PeakPowerError::ZeroDenominator(_) => {
+            bill_pdf.map(Path::to_path_buf)
+        }
+        PeakPowerError::NoPeak { .. }
+        | PeakPowerError::ValuesAreForAnotherPeriod { .. }
+        | PeakPowerError::PeriodNotFullyCovered { .. } => Some(gb_xml.to_path_buf()),
+    }
+}
+
+/// Names the file an [`EnergyError`] is about.
+///
+/// Both variants concern the bill: it states the period, and it states the rates. `bill_pdf` is
+/// `None` for [`energy`], which takes no bill and gets its date from the caller.
+fn bill_source(cause: &EnergyError, bill_pdf: Option<&Path>) -> Option<PathBuf> {
+    match cause {
+        EnergyError::NotABillingPeriodEnding(_)
+        | EnergyError::NoRate { .. }
+        | EnergyError::ZeroDenominator(_) => bill_pdf.map(Path::to_path_buf),
+    }
+}
+
+/// Where a conversion's workbook goes, once it is settled that it may be written.
+///
+/// Both refusals are made before the input is opened. Parsing a year of meter readings and then
+/// discovering there is nowhere to put the result wastes the time and, worse, reports the second
+/// problem as though it were the first.
+///
+/// [`OnExistingWorkbook::Replace`] waives only the second refusal. An input that is its own output
+/// is refused either way: there is no reading a file that the writer has already truncated.
+fn workbook_path(
+    input: &Path,
+    output: PathBuf,
+    on_existing: OnExistingWorkbook,
+) -> Result<PathBuf, ConversionError> {
+    if output == input {
+        return Err(ConversionError::OutputWouldBeInput {
+            path: input.to_path_buf(),
+        });
+    }
+    if on_existing == OnExistingWorkbook::Refuse && output.exists() {
+        return Err(ConversionError::OutputExists { path: output });
+    }
+    Ok(output)
 }
 
 /// The named reports as one [`Sessions`].
