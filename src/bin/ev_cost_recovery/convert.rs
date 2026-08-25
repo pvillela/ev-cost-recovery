@@ -21,8 +21,8 @@ pub fn ui(ui: &mut egui::Ui, state: &mut ConvertState, working: &mut WorkingDir)
         ui,
         "Turns a source file into an Excel workbook beside it, with the columns this software \
          derives and anything that needed a judgement call marked in the sheet. Nothing on the \
-         other tabs depends on these: they read the source files themselves. The workbooks are for \
-         reading, and for checking a figure against an invoice by hand.",
+         other tabs depends on these: they read the source files themselves. The workbooks can be \
+         generated to facilitate inspection and exploration of the source data.",
     );
     ui.add_space(14.0);
 
@@ -59,10 +59,11 @@ pub fn ui(ui: &mut egui::Ui, state: &mut ConvertState, working: &mut WorkingDir)
                 "Toronto Hydro Green Button export",
                 "Green Button export",
                 &["xml", "XML"],
-                "Two sheets. Peak_values carries one row per billing period — the energy used, \
-                 the highest kW and kVA over the period and within the 7-7 demand window, when \
-                 each occurred and in which Time-of-Use period. Interval_values carries every \
-                 hour of the export. A multi-year export takes a moment to parse.",
+                "The workbook contains two sheets. Peak_values carries one row per billing period \
+                 — the energy used, the highest kW and kVA over the period and within the 7-7 \
+                 demand window, when each occurred, and in which Time-of-Use period. \
+                 Interval_values carries every hour of the export. A multi-year export takes a \
+                 moment to parse.",
             );
             if let Some(outcome) = &state.green_button.outcome {
                 gb_outcome(ui, outcome);

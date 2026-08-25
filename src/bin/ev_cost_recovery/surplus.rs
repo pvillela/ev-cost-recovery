@@ -87,11 +87,7 @@ fn inputs(ui: &mut egui::Ui, state: &mut SurplusState, working: &mut WorkingDir)
 
 fn rates(ui: &mut egui::Ui, state: &mut SurplusState) {
     ui.label(egui::RichText::new("Cost-recovery rates").strong());
-    widgets::note(
-        ui,
-        "Your own rates, in dollars per kilowatt-hour. No bill is read for these and no tax is \
-         added: what they have to cover is your decision.",
-    );
+    widgets::note(ui, "In dollars per kilowatt-hour.");
     ui.add_space(6.0);
 
     if widgets::schedule(ui, &mut state.rates_at_start, "start") {
@@ -167,14 +163,6 @@ fn headline(ui: &mut egui::Ui, surplus: &CostRecoverySurplus) {
                 ui.end_row();
             }
         });
-
-    ui.add_space(8.0);
-    widgets::note(
-        ui,
-        "The customer charge, the standard supply administration charge and the wholesale market \
-         service charge are counted on neither side, so a surplus of zero is not breaking even on \
-         the whole invoice.",
-    );
 }
 
 fn export_row(

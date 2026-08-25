@@ -441,9 +441,8 @@ pub fn cost_recovery(
 /// to. Subtracting one from the other is therefore money against money, which is the only basis on
 /// which the two sides compare.
 ///
-/// The costs cover the two parts of the bill a charger can be held to. The customer charge, the
-/// standard supply administration charge and the wholesale market service charge are none of them
-/// in either, so a surplus of zero is not the same as breaking even on the whole invoice.
+/// The costs cover the two parts of the bill a charger can be held to: the energy lines and the
+/// three demand-priced delivery lines. Nothing else on the invoice enters either side.
 ///
 /// # Arguments
 ///

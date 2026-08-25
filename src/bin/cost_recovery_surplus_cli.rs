@@ -28,9 +28,7 @@ the rates held through, and two when they changed during it -- the first being t
 on the period's first day, whose effective date may be well before the period, and the second the
 rates it changed to. A change takes effect at local midnight starting its date.
 
-Only the delivery and energy sides of the bill are counted as EV cost. The customer charge, the
-standard supply administration charge and the wholesale market service charge are in neither, so a
-surplus of zero is not the same as breaking even on the whole invoice.
+Only the delivery and energy sides of the bill are counted as EV cost.
 
 The report is written to stdout as markdown that also reads as plain text.
 

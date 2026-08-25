@@ -191,12 +191,12 @@ fn results(ui: &mut egui::Ui, state: &mut ReimbursementState, working: &mut Work
     }
 }
 
-/// Both subtractions, each in its own unit, in the order the report's own summary states them, so
-/// the headline and the tables cannot tell different stories.
+/// The two money subtractions, in the order the report's own summary states them, so the headline
+/// and the tables cannot tell different stories.
 ///
-/// Money and energy in two grids rather than one. They answer different questions — was the month
-/// paid for, and do the two documents agree about how much was drawn — and a single column of
-/// figures in two units invites reading one as the other.
+/// Money only. The energy variance is a supporting figure and sits below with the table it is
+/// drawn from — a column of figures in two units invites reading one as the other, and it answers
+/// neither of the questions this screen exists to settle.
 fn headline(ui: &mut egui::Ui, r: &ReimbursementReconciliation) {
     let rows = |ui: &mut egui::Ui, salt: &str, unit: &str, rows: [(&str, f64, bool); 3]| {
         egui::Grid::new(format!("reimbursement_headline_{salt}"))
@@ -213,19 +213,12 @@ fn headline(ui: &mut egui::Ui, r: &ReimbursementReconciliation) {
             });
     };
 
-    // The costs are negative in each column so it adds down to the variance. A subtraction cannot
-    // be checked against two positive numbers.
-    rows(
-        ui,
-        "money",
-        "$",
-        [
-            ("Reimbursement received", r.reimbursed, false),
-            ("Cost recovery earned", -r.cost_recovery_amount, false),
-            ("Dollar variance", r.dollar_variance, true),
-        ],
-    );
-    ui.add_space(10.0);
+    // The second figure is negative in each column so it adds down to the variance. A subtraction
+    // cannot be checked against two positive numbers.
+    //
+    // The remittance first, because it is the narrower question and the one that has to hold
+    // before the other means anything. The Charges Report total appears in it and nowhere after:
+    // repeating it beside a subtraction that does not use it invites reading one as the other.
     rows(
         ui,
         "remittance",
@@ -239,28 +232,22 @@ fn headline(ui: &mut egui::Ui, r: &ReimbursementReconciliation) {
     ui.add_space(10.0);
     rows(
         ui,
-        "energy",
-        "kWh",
+        "money",
+        "$",
         [
-            ("On Evolute's Charges Report", r.charges_report_kwh, false),
-            (
-                "Priced from the session report",
-                -r.tou_kwh.total_kwh(),
-                false,
-            ),
-            ("Energy variance", r.kwh_variance, true),
+            ("Reimbursement received", r.reimbursed, false),
+            ("Cost recovery earned", -r.cost_recovery_amount, false),
+            ("Dollar variance", r.dollar_variance, true),
         ],
     );
 
     ui.add_space(8.0);
     widgets::note(
         ui,
-        "Three questions, and a month can fail any one of them on its own. A negative dollar \
-         variance is Evolute having paid less than our rates come to. The remittance variance \
-         asks the narrower question our rates play no part in: whether the money that arrived is \
-         what Evolute's own Charges Report says it billed. The energy variance sets our \
-         kilowatt-hours against Evolute's, which come from different documents and are arrived at \
-         differently. Nothing on Toronto Hydro's bill is counted anywhere here.",
+        "Two questions, and a month can fail either on its own. The remittance variance asks \
+         whether the money that arrived is what Evolute's own Charges Report says it billed; our \
+         rates play no part in it. The dollar variance then asks whether that money is what our \
+         rates come to for the month. Nothing on Toronto Hydro's bill is counted in either.",
     );
 }
 

@@ -328,6 +328,23 @@ pub fn reconcile_evolute_reimbursement(
     })
 }
 
+/// What the remittance variance means, in a sentence.
+///
+/// A narrower claim than [`verdict`]'s, and worth keeping apart from it: this one says only
+/// whether Evolute sent what its own Charges Report came to. Our rates are not in it.
+fn remittance_verdict(variance: f64) -> &'static str {
+    // Half a cent, for the reason `verdict` uses the same threshold.
+    if variance.abs() < 0.005 {
+        "Evolute sent exactly what its own Charges Report comes to for this month."
+    } else if variance > 0.0 {
+        "Evolute sent more than its own Charges Report comes to for this month, by the amount \
+         above."
+    } else {
+        "Evolute sent less than its own Charges Report comes to for this month, by the amount \
+         above."
+    }
+}
+
 /// What the variance means, in a sentence, so the sign does not have to be read off a number.
 fn verdict(variance: f64) -> &'static str {
     // Half a cent, which is where the printed figure stops. A variance smaller than that shows as
@@ -363,7 +380,14 @@ impl fmt::Display for ReimbursementReconciliation {
             )
         )?;
 
-        // The answer first and the working under a heading of its own, as the cost reports do.
+        // Both answers first, then the working under headings of its own, as the cost reports do.
+        //
+        // The remittance leads because it is the narrower question and the one that has to be
+        // settled first: whether Evolute sent what its own document says. Only once that holds
+        // does comparing the money against our rates mean anything. The Charges Report total
+        // appears here and nowhere below -- having been reconciled, it has done its work, and
+        // repeating it in a column that does not use it invites reading one subtraction as the
+        // other.
         writeln!(
             f,
             "{}",
@@ -371,19 +395,6 @@ impl fmt::Display for ReimbursementReconciliation {
                 ("Reimbursement received", self.reimbursed),
                 // Negative so the column adds down to the variance, which is a subtraction and
                 // cannot be checked against two positive numbers.
-                ("Cost recovery earned", -self.cost_recovery_amount),
-                ("Dollar variance", self.dollar_variance),
-            ])
-        )?;
-        writeln!(f, "\n{}\n", wrap(verdict(self.dollar_variance), ""))?;
-        writeln!(f, "{}\n", rounding_note())?;
-
-        writeln!(f, "{}\n", h2("Remittance variance"))?;
-        writeln!(
-            f,
-            "{}",
-            amounts(&[
-                ("Reimbursement received", self.reimbursed),
                 ("Charges Report total", -self.charges_report_amount),
                 ("Remittance variance", self.remittance_variance),
             ])
@@ -391,42 +402,20 @@ impl fmt::Display for ReimbursementReconciliation {
         writeln!(
             f,
             "\n{}\n",
-            wrap(
-                "A separate question from the one above, and the only one on this page that our \
-                 own rates play no part in: whether the money that arrived is the money Evolute's \
-                 own Charges Report says it billed. A month can settle here and still show a \
-                 dollar variance above, which would mean Evolute paid its document in full and \
-                 its document does not come to what our rates do.",
-                "",
-            )
+            wrap(remittance_verdict(self.remittance_variance), "")
         )?;
 
-        writeln!(f, "{}\n", h2("Energy variance"))?;
         writeln!(
             f,
             "{}",
             amounts(&[
-                ("kWh on Evolute's Charges Report", self.charges_report_kwh),
-                // Negative so the column adds down to the variance, as the money column above it
-                // does.
-                ("kWh priced above", -self.tou_kwh.total_kwh()),
-                ("Energy variance", self.kwh_variance),
+                ("Reimbursement received", self.reimbursed),
+                ("Cost recovery earned", -self.cost_recovery_amount),
+                ("Dollar variance", self.dollar_variance),
             ])
         )?;
-        writeln!(
-            f,
-            "\n{}\n",
-            wrap(
-                "The two figures come from different documents and are arrived at differently. \
-                 Evolute's is what its Charges Report billed the month on. Ours is the session \
-                 report's energy placed on a clock and cut at the month's own edges: a session \
-                 running across midnight on the first or the last day counts here for its own \
-                 part only, and a session the report carries but dates outside the month counts \
-                 for nothing. Whether that leaves a gap, and how large a gap is worth asking \
-                 about, is what this figure is here to show.",
-                "",
-            )
-        )?;
+        writeln!(f, "\n{}\n", wrap(verdict(self.dollar_variance), ""))?;
+        writeln!(f, "{}\n", rounding_note())?;
 
         writeln!(f, "{}\n", h2("Cost recovery earned, by time of use"))?;
         let [on_peak, mid_peak, off_peak] =
@@ -474,6 +463,34 @@ impl fmt::Display for ReimbursementReconciliation {
                 &["TOU", "kWh", "EV rate", "Recovery"],
                 &rows,
                 &[Left, Right, Right, Right],
+            )
+        )?;
+
+        // After the table it draws on. The kilowatt-hours priced above are one side of this
+        // subtraction, so a reader meets them before being asked to check them against Evolute's.
+        writeln!(f, "{}\n", h2("Energy variance"))?;
+        writeln!(
+            f,
+            "{}",
+            amounts(&[
+                ("kWh on Evolute's Charges Report", self.charges_report_kwh),
+                // Negative so the column adds down to the variance, as the money columns do.
+                ("kWh priced above", -self.tou_kwh.total_kwh()),
+                ("Energy variance", self.kwh_variance),
+            ])
+        )?;
+        writeln!(
+            f,
+            "\n{}\n",
+            wrap(
+                "The two figures come from different documents and are arrived at differently. \
+                 Evolute's is what its Charges Report billed the month on. Ours is the session \
+                 report's energy placed on a clock and cut at the month's own edges: a session \
+                 running across midnight on the first or the last day counts here for its own \
+                 part only, and a session the report carries but dates outside the month counts \
+                 for nothing. Whether that leaves a gap, and how large a gap is worth asking \
+                 about, is what this figure is here to show.",
+                "",
             )
         )?;
 
