@@ -420,7 +420,7 @@ impl IntervalEstimates {
 
     /// Which sessions are in which segment.
     fn push_membership(&self, out: &mut Vec<String>) {
-        out.push(h2("Segment membership"));
+        out.push(h2("Sessions by segment"));
         out.push(String::new());
 
         for (seg, _) in &self.seg_estimates {

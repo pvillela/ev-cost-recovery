@@ -702,16 +702,24 @@ impl fmt::Display for CostRecoverySurplus {
             )
         )?;
 
-        // Once, above the three parts rather than inside each. They are drawn from the same
-        // records, so what is odd about those records is odd about all three figures.
-        writeln!(f, "{}", self.notes.to_markdown())?;
-        writeln!(f, "{}", self.meter.to_markdown())?;
-
-        // The three parts in full, under their own headings. The figure above is a subtraction of
-        // three numbers, and none of them can be checked without the report it came from.
+        // The three parts in full, under their own headings, in the order the summary lists them.
+        // The figure above is a subtraction of three numbers, and none of them can be checked
+        // without the report it came from -- so these come first, before anything about the
+        // records they were computed from.
         writeln!(f, "{}", self.recovery)?;
         writeln!(f, "{}", self.energy)?;
-        write!(f, "{}", self.delivery)
+        writeln!(f, "{}", self.delivery)?;
+
+        // Once, after the three parts rather than inside each. They are drawn from the same
+        // records, so what is odd about those records is odd about all three figures.
+        //
+        // Under a heading of their own, at the same level as the three. Both blocks are written as
+        // subsections, and following an `h1` they would read as belonging to the delivery cost
+        // alone -- and a reader who wants the answer should not have to pass the caveats to reach
+        // it.
+        writeln!(f, "{}\n", h1("Source Data"))?;
+        writeln!(f, "{}", self.notes.to_markdown())?;
+        write!(f, "{}", self.meter.to_markdown())
     }
 }
 

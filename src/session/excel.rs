@@ -494,6 +494,10 @@ fn add_comments(sheet: &mut Worksheet) {
 }
 
 /// The date/time format needs real width or Excel renders the cell as `####`.
+///
+/// Every column holding a date and time takes that width, whichever of the eight it is. The
+/// header's own length decides nothing here: `adj_conn_start_utc` is a long name and a value
+/// longer still, and sizing to the name left the value hidden.
 fn set_widths(sheet: &mut Worksheet) {
     for (i, (header, source)) in COLUMNS.iter().enumerate() {
         let letters = column_letters(i + 1);
@@ -502,6 +506,8 @@ fn set_widths(sheet: &mut Worksheet) {
             | Source::ConnStartUtc
             | Source::ConnEndLocal
             | Source::ConnEndUtc
+            | Source::AdjConnStartLocal
+            | Source::AdjConnStartUtc
             | Source::AdjConnEndLocal
             | Source::AdjConnEndUtc => 24.0,
             Source::Duration(_) | Source::AdjConnDuration => 13.0,

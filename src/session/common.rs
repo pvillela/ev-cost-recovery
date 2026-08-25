@@ -871,8 +871,7 @@ impl fmt::Display for AnomalyKind {
             }
             Self::ExcessiveAvgKw => {
                 "average kilowatts above the Evolute breaker rating, which the hardware should not \
-                 allow; the session still counts towards every estimate, but the breaker-spec \
-                 figures assume no session draws more than that rating"
+                 allow; the session still counts towards every estimate"
             }
             Self::DuplicateId => {
                 "another session in the report carries the same Charge_Session_ID; the id is not \

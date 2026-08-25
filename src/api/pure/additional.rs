@@ -16,6 +16,7 @@
 //! only thing that states it — see [`report_coverage`].
 
 use crate::{
+    charges_report::ChargesReport,
     markdown::{Left, Right, amounts, field, h1, h2, rounding_note, table, wrap},
     session::{AnomalyKind, SessionNotes, Sessions, TouKwh, file_name::report_coverage, tou_kwh},
     time::{Interval, local_midnight},
@@ -48,6 +49,19 @@ pub enum ReimbursementError {
     /// A partial month reconciled against a full month's reimbursement is a variance that means
     /// nothing, and looks exactly like Evolute having underpaid.
     NotACalendarMonth { path: PathBuf, from: Date, to: Date },
+
+    /// The Charges Report covers a different span from the month the session report names.
+    ///
+    /// Two documents for two different months, reconciled against each other, produce a variance
+    /// that means nothing and looks exactly like Evolute having underpaid. Both are chosen by
+    /// hand, so picking last month's is an ordinary slip.
+    ChargesReportIsForAnotherMonth {
+        charges_path: PathBuf,
+        charges_from: Date,
+        charges_to: Date,
+        month_start: Date,
+        month_end: Date,
+    },
 
     /// The rates given had not taken effect by the first day of the month.
     ///
@@ -87,6 +101,18 @@ impl fmt::Display for ReimbursementError {
                  calendar month",
                 path.display()
             ),
+            Self::ChargesReportIsForAnotherMonth {
+                charges_path,
+                charges_from,
+                charges_to,
+                month_start,
+                month_end,
+            } => write!(
+                f,
+                "{}: the Charges Report covers {charges_from} to {charges_to}, but the session \
+                 report is for {month_start} to {month_end}",
+                charges_path.display()
+            ),
             Self::RatesNotYetInEffect {
                 month_start,
                 effective_date,
@@ -117,9 +143,18 @@ pub struct ReimbursementReconciliation {
     /// kWh consumed by EV charging sessions during the calendar month, per Evolute's
     /// Charges Report (NOT the Session Report).
     pub charges_report_kwh: f64,
-    /// Actual reimbursement received from Evolute for the calendar month, per Evolute's
-    /// Charges Report.
-    pub reimbursement: f64,
+    /// The dollars Evolute's Charges Report totals for the calendar month.
+    ///
+    /// What Evolute's own document says it billed, not what arrived. See [`Self::reimbursed`].
+    pub charges_report_amount: f64,
+    /// What Evolute actually paid for the calendar month, in dollars.
+    ///
+    /// Independent of [`Self::charges_report_amount`], and given rather than read, because it
+    /// comes from wherever the money was seen to land -- a bank statement, a remittance advice --
+    /// and not from any document this crate opens. That independence is what makes
+    /// [`Self::remittance_variance`] worth computing: if the figure were taken off the Charges
+    /// Report it would agree with the report by construction, whatever Evolute had actually sent.
+    pub reimbursed: f64,
     /// Energy consumption attributable to EV charging sessions during the calendar month, by TOU,
     /// calculated from session report.
     pub tou_kwh: TouKwh,
@@ -129,12 +164,78 @@ pub struct ReimbursementReconciliation {
     pub cost_recovery_rates: CostRecoveryRates,
     /// Calculated total cost recovery amount for the calendar month.
     pub cost_recovery_amount: f64,
-    /// Reimbursement minus cost recovery amount.
+    /// `reimbursed - cost_recovery_amount`.
     ///
-    /// Positive when Evolute sent more than the rates come to, negative when it sent less.
+    /// The question the tab exists to answer: did the money that arrived match what our own rates
+    /// say the month's charging earned. Positive when Evolute sent more than the rates come to,
+    /// negative when it sent less.
     pub dollar_variance: f64,
+    /// `reimbursed - charges_report_amount`.
+    ///
+    /// A narrower question than [`Self::dollar_variance`], and one Evolute alone can answer: did
+    /// Evolute send what its own Charges Report says it billed. Our rates do not enter into it.
+    /// The two variances fail differently -- this one says the remittance does not match the
+    /// document, the other says the document does not match our rates -- and a month can be wrong
+    /// in either way without being wrong in the other.
+    pub remittance_variance: f64,
     /// What these figures were drawn from, and what needed a judgement call along the way.
     pub notes: SessionNotes,
+}
+
+/// The calendar month a set of sessions is for, read off the one report's file name.
+///
+/// The sessions themselves are never asked. A quiet month would name a shorter span than it is, or
+/// none at all, and everything downstream would be reconciled against the wrong dates without
+/// anything saying so.
+fn month_of(sessions: &Sessions) -> Result<(Date, Date), ReimbursementError> {
+    let [source] = &sessions.sources[..] else {
+        return Err(ReimbursementError::NotOneSessionReport {
+            sources: sessions.sources.clone(),
+        });
+    };
+
+    let coverage =
+        report_coverage(source).ok_or_else(|| ReimbursementError::UndatedSessionReport {
+            path: source.clone(),
+        })?;
+    let (from, to) = (coverage.from, coverage.to);
+
+    if from != from.first_of_month() || to != from.last_of_month() {
+        return Err(ReimbursementError::NotACalendarMonth {
+            path: source.clone(),
+            from,
+            to,
+        });
+    }
+    Ok((from, to))
+}
+
+/// Checks that a Charges Report is for the same month as the session report.
+///
+/// Separate from [`reconcile_evolute_reimbursement`], which is handed the report's figures and
+/// never sees the report itself. Both documents are chosen by hand, and picking last month's
+/// Charges Report is an ordinary slip that would otherwise show up as a plausible-looking
+/// underpayment.
+///
+/// # Errors
+///
+/// [`ReimbursementError::ChargesReportIsForAnotherMonth`] when the spans differ, and whatever
+/// [`reconcile_evolute_reimbursement`] would raise about the session report's own name.
+pub fn check_charges_report_covers_month(
+    sessions: &Sessions,
+    charges: &ChargesReport,
+) -> Result<(), ReimbursementError> {
+    let (month_start, month_end) = month_of(sessions)?;
+    if charges.covers_month(month_start) {
+        return Ok(());
+    }
+    Err(ReimbursementError::ChargesReportIsForAnotherMonth {
+        charges_path: charges.path.clone(),
+        charges_from: charges.from,
+        charges_to: charges.to,
+        month_start,
+        month_end,
+    })
 }
 
 /// What each band recovers: that band's kilowatt-hours at that band's rate, on-peak first.
@@ -165,11 +266,14 @@ fn recovery_by_band(kwh: &TouKwh, rates: &CostRecoveryRates) -> [f64; 3] {
 /// - `sessions` - every session from the one report covering the month, as
 ///   [`energy`](super::energy::energy) takes them, with the same treatment of duplicates and of
 ///   records that contradict themselves.
-/// - `charges_report_kwh` - the kilowatt-hours Evolute's Charges Report states for the month.
+/// - `charges_report_kwh` - the kilowatt-hours Evolute's Charges Report totals for the month.
 ///   Given rather than derived, and it has to be: it comes off the document Evolute billed from,
 ///   which is not the session report. Summing the session report for it would compare that report
 ///   with itself, and the two would agree by construction whatever Evolute had actually charged.
-/// - `reimbursement` - what Evolute actually paid for the month, in dollars.
+/// - `charges_report_amount` - the dollars that same report totals for the month.
+/// - `reimbursed` - what Evolute actually paid, from wherever the money was seen to land. A third
+///   figure rather than a second reading of the one above, so that a remittance which does not
+///   match Evolute's own document shows up instead of being assumed away.
 /// - `cost_recovery_rates` - the rates in effect over the month. One schedule only: a rate change
 ///   inside the month would need two, and our schedules change on the first of a month.
 ///
@@ -180,28 +284,11 @@ fn recovery_by_band(kwh: &TouKwh, rates: &CostRecoveryRates) -> [f64; 3] {
 pub fn reconcile_evolute_reimbursement(
     sessions: &Sessions,
     charges_report_kwh: f64,
-    reimbursement: f64,
+    charges_report_amount: f64,
+    reimbursed: f64,
     cost_recovery_rates: CostRecoveryRates,
 ) -> Result<ReimbursementReconciliation, ReimbursementError> {
-    let [source] = &sessions.sources[..] else {
-        return Err(ReimbursementError::NotOneSessionReport {
-            sources: sessions.sources.clone(),
-        });
-    };
-
-    let coverage =
-        report_coverage(source).ok_or_else(|| ReimbursementError::UndatedSessionReport {
-            path: source.clone(),
-        })?;
-    let (month_start, month_end) = (coverage.from, coverage.to);
-
-    if month_start != month_start.first_of_month() || month_end != month_start.last_of_month() {
-        return Err(ReimbursementError::NotACalendarMonth {
-            path: source.clone(),
-            from: month_start,
-            to: month_end,
-        });
-    }
+    let (month_start, month_end) = month_of(sessions)?;
 
     if cost_recovery_rates.effective_date > month_start {
         return Err(ReimbursementError::RatesNotYetInEffect {
@@ -228,13 +315,15 @@ pub fn reconcile_evolute_reimbursement(
     Ok(ReimbursementReconciliation {
         month_start,
         month_end,
-        reimbursement,
         charges_report_kwh,
+        charges_report_amount,
+        reimbursed,
         kwh_variance: charges_report_kwh - tou.total_kwh(),
         tou_kwh: tou,
         cost_recovery_rates,
         cost_recovery_amount,
-        dollar_variance: reimbursement - cost_recovery_amount,
+        dollar_variance: reimbursed - cost_recovery_amount,
+        remittance_variance: reimbursed - charges_report_amount,
         notes: sessions.notes(AnomalyKind::bears_on_energy),
     })
 }
@@ -279,7 +368,7 @@ impl fmt::Display for ReimbursementReconciliation {
             f,
             "{}",
             amounts(&[
-                ("Reimbursement received", self.reimbursement),
+                ("Reimbursement received", self.reimbursed),
                 // Negative so the column adds down to the variance, which is a subtraction and
                 // cannot be checked against two positive numbers.
                 ("Cost recovery earned", -self.cost_recovery_amount),
@@ -288,6 +377,29 @@ impl fmt::Display for ReimbursementReconciliation {
         )?;
         writeln!(f, "\n{}\n", wrap(verdict(self.dollar_variance), ""))?;
         writeln!(f, "{}\n", rounding_note())?;
+
+        writeln!(f, "{}\n", h2("Remittance variance"))?;
+        writeln!(
+            f,
+            "{}",
+            amounts(&[
+                ("Reimbursement received", self.reimbursed),
+                ("Charges Report total", -self.charges_report_amount),
+                ("Remittance variance", self.remittance_variance),
+            ])
+        )?;
+        writeln!(
+            f,
+            "\n{}\n",
+            wrap(
+                "A separate question from the one above, and the only one on this page that our \
+                 own rates play no part in: whether the money that arrived is the money Evolute's \
+                 own Charges Report says it billed. A month can settle here and still show a \
+                 dollar variance above, which would mean Evolute paid its document in full and \
+                 its document does not come to what our rates do.",
+                "",
+            )
+        )?;
 
         writeln!(f, "{}\n", h2("Energy variance"))?;
         writeln!(
@@ -400,6 +512,7 @@ mod test {
             &as_report(vec![s]),
             10.0,
             5.00,
+            5.00,
             rates(date(2026, 6, 1), 0.11, 0.09, 0.07),
         )
         .expect("a June report and rates effective on the 1st");
@@ -429,6 +542,7 @@ mod test {
             &as_report(vec![s]),
             12.5,
             0.0,
+            0.0,
             rates(date(2026, 6, 1), 0.11, 0.09, 0.07),
         )
         .expect("a June report and rates effective on the 1st");
@@ -452,6 +566,7 @@ mod test {
         let r = reconcile_evolute_reimbursement(
             &as_report(vec![s]),
             8.0,
+            0.0,
             0.0,
             rates(date(2026, 6, 1), 0.11, 0.09, 0.07),
         )
@@ -482,6 +597,7 @@ mod test {
             &as_report(vec![inside, july]),
             10.0,
             0.0,
+            0.0,
             rates(date(2026, 6, 1), 0.11, 0.09, 0.07),
         )
         .expect("a June report and rates effective on the 1st");
@@ -500,6 +616,7 @@ mod test {
     fn a_month_with_no_sessions_still_names_its_month() {
         let r = reconcile_evolute_reimbursement(
             &Sessions::from_session_lists(vec![Vec::new()], vec![PathBuf::from(JUNE)], Vec::new()),
+            0.0,
             0.0,
             0.0,
             rates(date(2026, 6, 1), 0.11, 0.09, 0.07),
@@ -527,7 +644,7 @@ mod test {
             Vec::new(),
         );
         assert!(matches!(
-            reconcile_evolute_reimbursement(&two_files, 0.0, 0.0, good),
+            reconcile_evolute_reimbursement(&two_files, 0.0, 0.0, 0.0, good),
             Err(ReimbursementError::NotOneSessionReport { .. })
         ));
 
@@ -541,7 +658,7 @@ mod test {
             10.0,
         )]);
         assert!(matches!(
-            reconcile_evolute_reimbursement(&undated, 0.0, 0.0, good),
+            reconcile_evolute_reimbursement(&undated, 0.0, 0.0, 0.0, good),
             Err(ReimbursementError::UndatedSessionReport { .. })
         ));
 
@@ -555,7 +672,7 @@ mod test {
             10.0,
         )]);
         assert!(matches!(
-            reconcile_evolute_reimbursement(&partial, 0.0, 0.0, good),
+            reconcile_evolute_reimbursement(&partial, 0.0, 0.0, 0.0, good),
             Err(ReimbursementError::NotACalendarMonth { .. })
         ));
 
@@ -563,6 +680,7 @@ mod test {
         assert!(matches!(
             reconcile_evolute_reimbursement(
                 &as_report(one()),
+                0.0,
                 0.0,
                 0.0,
                 rates(date(2026, 6, 15), 0.11, 0.09, 0.07)

@@ -21,6 +21,7 @@
 // as something declared here, and a prefix says which is meant without inventing an alias.
 use crate::{
     api::pure,
+    charges_report::charges_report,
     green_button::{self, period_values_xml},
     hydro_bill::{BILL_END_DAY, hydro_bill_from_pdf},
     session::{Sessions, csv, excel},
@@ -390,9 +391,9 @@ pub fn cost_recovery_surplus(
 /// Reconciles what Evolute reimbursed for a calendar month against what the cost-recovery rates
 /// come to over the same month.
 ///
-/// Reads the one session report and hands it to
+/// Reads both of Evolute's documents for the month and hands their figures to
 /// [`pure::reconcile_evolute_reimbursement`](fn@super::pure::reconcile_evolute_reimbursement),
-/// which states how the figures are arrived at.
+/// which states how the comparison is arrived at.
 ///
 /// Independent of the surplus the rest of this module computes, and not a part of it. That asks
 /// whether our rates cover Toronto Hydro's bill over a billing period running from the 24th; this
@@ -403,11 +404,19 @@ pub fn cost_recovery_surplus(
 ///
 /// - `session_csv` - the Evolute session report for the month. One report, and its file name is
 ///   what says which month this is.
-/// - `charges_report_kwh` - the kilowatt-hours Evolute's Charges Report states for the month. A
-///   value rather than a path: that document is not one this crate reads.
-/// - `reimbursement` - what Evolute actually paid for the month, in dollars.
+/// - `charges_csv` - Evolute's Charges Report for the same month, which is where both of Evolute's
+///   own figures come from. In production it sits in the same folder as the session report.
+/// - `reimbursed` - what Evolute actually paid, in dollars. The one figure still given rather than
+///   read, and it has to be: the money is seen to land in a bank statement or a remittance advice,
+///   neither of which is a document this crate opens. Taking it off the Charges Report instead
+///   would make it agree with that report by construction and the remittance check worthless.
 /// - `cost_recovery_rates` - the rates in effect over the month, as values rather than a path, for
 ///   the reason [`cost_recovery`] takes them that way: nothing in this crate writes them down.
+///
+/// The two files are checked against each other before anything is reconciled: the Charges Report
+/// states the period it covers, and it must be the calendar month the session report's name gives.
+/// Reconciling one month's charges against another month's sessions produces a variance that looks
+/// exactly like an underpayment.
 ///
 /// Nothing here writes. The report's `csv.read` log comes back unwritten on the result's `notes` --
 /// see [`csv::session_list`] -- and
@@ -416,20 +425,30 @@ pub fn cost_recovery_surplus(
 ///
 /// # Errors
 ///
-/// See [`ApiError`]. The file is opened before the month is read off its name, unlike
-/// [`cost_recovery`]: there is only one report here, so a name that says nothing and a file that
-/// cannot be read are the same trip to the disk either way.
+/// See [`ApiError`]. The files are opened before the month is read off the session report's name,
+/// unlike [`cost_recovery`]: there is only one session report here, so a name that says nothing and
+/// a file that cannot be read are the same trip to the disk either way.
 pub fn reconcile_evolute_reimbursement(
     session_csv: &Path,
-    charges_report_kwh: f64,
-    reimbursement: f64,
+    charges_csv: &Path,
+    reimbursed: f64,
     cost_recovery_rates: CostRecoveryRates,
 ) -> Result<ReimbursementReconciliation, ApiError> {
+    let charges = charges_report(charges_csv).map_err(|cause| ReadError::ChargesReport {
+        path: charges_csv.to_path_buf(),
+        cause: Box::new(cause),
+    })?;
     let sessions = read_sessions(&[session_csv])?;
+
+    // Before the reconciliation rather than inside it, because it is the one question that needs
+    // both documents in hand and `pure` is handed only their figures.
+    pure::check_charges_report_covers_month(&sessions, &charges)?;
+
     Ok(pure::reconcile_evolute_reimbursement(
         &sessions,
-        charges_report_kwh,
-        reimbursement,
+        charges.total_kwh,
+        charges.total_amount,
+        reimbursed,
         cost_recovery_rates,
     )?)
 }
@@ -513,7 +532,7 @@ pub struct GbConversionReport {
 ///
 /// Two sheets, as [`green_button::write_workbook`] builds them: `Peak_values` carries one row per
 /// billing period — the energy used, the highest kW and kVA over the period and within the 7-7
-/// demand window, when each fell and in which Time-of-Use period — and `Interval_values` carries
+/// demand window, when each occurred and in which Time-of-Use period — and `Interval_values` carries
 /// every hour of the export. A period holding fewer intervals than a whole one should, and any cell
 /// reporting an anomaly, are highlighted in the sheet.
 ///
@@ -593,6 +612,12 @@ pub enum ReadError {
         cause: Box<dyn Error>,
     },
 
+    /// Evolute's Charges Report could not be read, or is not one.
+    ChargesReport {
+        path: PathBuf,
+        cause: Box<dyn Error>,
+    },
+
     /// A Toronto Hydro bill PDF could not be read, or is not laid out the way one is read.
     ///
     /// [`BillError::is_layout`](crate::hydro_bill::BillError::is_layout) tells those two apart,
@@ -609,6 +634,7 @@ impl fmt::Display for ReadError {
         match self {
             Self::GreenButton { cause, .. }
             | Self::SessionReport { cause, .. }
+            | Self::ChargesReport { cause, .. }
             | Self::Bill { cause, .. } => cause.fmt(f),
         }
     }
@@ -619,6 +645,7 @@ impl Error for ReadError {
         match self {
             Self::GreenButton { cause, .. }
             | Self::SessionReport { cause, .. }
+            | Self::ChargesReport { cause, .. }
             | Self::Bill { cause, .. } => Some(cause.as_ref()),
         }
     }

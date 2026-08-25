@@ -12,9 +12,8 @@ pub fn ui(ui: &mut egui::Ui, state: &mut SurplusState, working: &mut WorkingDir)
     widgets::heading(ui, "EV cost recovery surplus");
     widgets::note(
         ui,
-        "What the cost-recovery rates recover over one billing period, less what the chargers' \
-         share of the delivery and energy lines cost. A positive surplus means the rates covered \
-         that share.",
+        "The amount recovered over the billing period by the EV cost-recovery rates, minus the \
+         energy and delivery costs attributable to EV charging sessions.",
     );
     ui.add_space(12.0);
 

@@ -3,7 +3,7 @@
 //!
 //! The figures are the same as those from `cost_recovery_surplus_cli`; computed by the same library
 //! code, and a saved report is byte-for-byte what that command prints. What differs is only the
-//! asking: four files chosen from pickers and the rates typed into a form, rather than six
+//! asking: four files chosen from pickers and the rates entered in a form, rather than six
 //! positional arguments in which a schedule is written `DATE:ON,MID,OFF`.
 //!
 //! The second tab is what the command line cannot show: the three intervals of interest the

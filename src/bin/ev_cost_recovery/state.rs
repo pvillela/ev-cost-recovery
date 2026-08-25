@@ -131,7 +131,7 @@ impl Input {
 }
 
 /// One cost-recovery schedule as the form holds it: an effective date and three rates still in the
-/// text the user typed.
+/// text entered manually.
 ///
 /// The rates are text rather than `f64` because a field being edited passes through states that are
 /// not numbers — `0.`, `-`, empty — and a numeric widget either rejects or rewrites them under the
@@ -398,25 +398,31 @@ pub struct ReimbursementOutcome {
 
 /// The Reimbursement tab's form and what it produced.
 ///
-/// One report rather than two, because a reimbursement settles a calendar month and one Evolute
-/// report is one calendar month. One schedule of rates rather than two, because our schedules
-/// change on the first of a month, so a month is priced at one set of rates or it is not a month we
-/// can reconcile.
+/// Two of Evolute's documents for the one month, and one figure entered manually. One session
+/// report rather
+/// than two, because a reimbursement settles a calendar month and one Evolute report is one
+/// calendar month. One schedule of rates rather than two, because our schedules change on the
+/// first of a month, so a month is priced at one set of rates or it is not a month we can
+/// reconcile.
 #[derive(Default)]
 pub struct ReimbursementState {
     pub sessions: Option<PathBuf>,
-    /// The kilowatt-hours Evolute's Charges Report states for the month, still in the text the
-    /// user typed. Typed rather than read: that document is not one this app opens, and it is the
-    /// half of the comparison the session report cannot supply.
-    pub charges_report_kwh: String,
-    /// What Evolute paid, still in the text the user typed, for the reason the rates are text: a
-    /// field being edited passes through states that are not numbers.
-    pub reimbursement: String,
+    /// Evolute's Charges Report for the same month, which is where both of Evolute's own figures
+    /// come from. In production it sits in the same folder as the session report.
+    pub charges: Option<PathBuf>,
+    /// What Evolute actually paid, still in the text entered manually, for the reason the rates
+    /// are text: a field being edited passes through states that are not numbers.
+    ///
+    /// The one figure still entered by hand. It is what was seen to arrive -- from a bank
+    /// statement or a
+    /// remittance advice -- and taking it off the Charges Report instead would make it agree with
+    /// that report whatever Evolute had actually sent.
+    pub reimbursed: String,
     pub rates: RatesForm,
     pub outcome: Option<ReimbursementOutcome>,
     pub error: Option<String>,
-    /// What the picked file was refused for, shown against the picker rather than at the foot of
-    /// the form.
+    /// What the picked session report was refused for, shown against its picker rather than at the
+    /// foot of the form.
     pub input_note: Option<String>,
 }
 
@@ -450,9 +456,20 @@ impl ReimbursementState {
         self.clear_results();
     }
 
-    /// Whether the run may go ahead: a report chosen, and not refused.
+    /// Takes Evolute's Charges Report.
+    ///
+    /// Not checked by name, unlike the session report. Its name carries the month too, but as a
+    /// timestamp rather than a span, and the file itself states the period it covers -- so the
+    /// month is read from inside it and cross-checked there, where a wrong file is caught however
+    /// it happens to be named.
+    pub fn select_charges(&mut self, path: PathBuf) {
+        self.charges = Some(path);
+        self.clear_results();
+    }
+
+    /// Whether the run may go ahead: both documents chosen, and the session report not refused.
     pub fn can_run(&self) -> bool {
-        self.sessions.is_some() && self.input_note.is_none()
+        self.sessions.is_some() && self.charges.is_some() && self.input_note.is_none()
     }
 
     /// Marks that a rate, the effective date or the amount was edited. The figures on screen
@@ -461,12 +478,12 @@ impl ReimbursementState {
         self.clear_results();
     }
 
-    /// One figure the user typed, named in the message when it cannot be read.
+    /// One figure entered manually, named in the message when it cannot be read.
     ///
     /// # Errors
     ///
     /// A blank or unreadable figure, named. Blank is refused rather than read as zero: zero is a
-    /// real answer -- Evolute paid nothing, nobody charged all month -- and must be typed to be
+    /// real answer -- Evolute paid nothing, nobody charged all month -- and must be entered to be
     /// meant.
     fn number(text: &str, what: &str) -> Result<f64, String> {
         let text = text.trim();
@@ -477,30 +494,19 @@ impl ReimbursementState {
             .map_err(|e| format!("cannot read \"{text}\" as the {what}: {e}"))
     }
 
-    /// What Evolute paid.
+    /// What Evolute actually paid. The one figure still entered manually: it comes off a bank
+    /// statement or a remittance advice, neither of which this app opens.
     fn amount(&self) -> Result<f64, String> {
-        Self::number(&self.reimbursement, "reimbursement amount")
-    }
-
-    /// What Evolute's Charges Report states the month's energy was.
-    fn charges_kwh(&self) -> Result<f64, String> {
-        Self::number(&self.charges_report_kwh, "Charges Report kWh")
+        Self::number(&self.reimbursed, "reimbursement amount")
     }
 
     /// Reconciles the month, filling in either the outcome or the error.
     pub fn run(&mut self) {
         self.clear_results();
-        let Some(csv) = self.sessions.clone() else {
+        let (Some(csv), Some(charges)) = (self.sessions.clone(), self.charges.clone()) else {
             return;
         };
-        let charges_kwh = match self.charges_kwh() {
-            Ok(kwh) => kwh,
-            Err(e) => {
-                self.error = Some(e);
-                return;
-            }
-        };
-        let reimbursement = match self.amount() {
+        let reimbursed = match self.amount() {
             Ok(amount) => amount,
             Err(e) => {
                 self.error = Some(e);
@@ -515,7 +521,7 @@ impl ReimbursementState {
             }
         };
 
-        match reconcile_evolute_reimbursement(&csv, charges_kwh, reimbursement, rates) {
+        match reconcile_evolute_reimbursement(&csv, &charges, reimbursed, rates) {
             Ok(reconciliation) => {
                 // The app is the end of the line, so the run log is written here, as it is for a
                 // surplus. See `SessionNotes::write_logs`.
@@ -695,9 +701,25 @@ impl<C: Conversion> ConversionSlot<C> {
     }
 }
 
-/// The Convert tab: the two conversions, side by side and independent of each other.
+/// Which of the two conversions the Convert tab is showing.
+///
+/// The session report first: it is the one converted every month, while a Green Button export is
+/// fetched a few times a year.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Which {
+    #[default]
+    Sessions,
+    GreenButton,
+}
+
+/// The Convert tab: the two conversions, one shown at a time.
+///
+/// Both are held whichever is on screen, so switching between them loses neither the file chosen
+/// nor the result of a conversion already run. They share nothing else — a Green Button export and
+/// a session report have no bearing on each other.
 #[derive(Default)]
 pub struct ConvertState {
+    pub which: Which,
     pub sessions: ConversionSlot<SessionConversion>,
     pub green_button: ConversionSlot<GbConversion>,
 }
@@ -796,7 +818,7 @@ mod test {
         all.then_some(paths)
     }
 
-    /// A schedule, as the form holds one once it has been typed into.
+    /// A schedule, as the form holds one once it has been filled in.
     fn form(effective: civil::Date, on: &str, mid: &str, off: &str) -> RatesForm {
         RatesForm {
             effective_date: effective,
@@ -917,15 +939,15 @@ mod test {
     /// three fields to look at.
     #[test]
     fn a_rate_that_is_not_a_number_names_the_band_it_belongs_to() {
-        let typed = form(civil::date(2026, 5, 1), "0.11", "eleven cents", "0.07");
-        let e = typed.parse().expect_err("\"eleven cents\" is not a rate");
+        let entered = form(civil::date(2026, 5, 1), "0.11", "eleven cents", "0.07");
+        let e = entered.parse().expect_err("\"eleven cents\" is not a rate");
         assert!(e.contains("mid-peak"), "{e}");
 
         // Blank is refused too. Read as zero it would price that band's energy at nothing and still
         // produce a report.
         let blank = RatesForm {
             mid_peak: String::new(),
-            ..typed
+            ..entered
         };
         let e = blank.parse().expect_err("a blank rate is not a rate");
         assert!(e.contains("mid-peak"), "{e}");
@@ -976,6 +998,9 @@ mod test {
     #[test]
     fn the_reimbursement_tab_refuses_a_report_that_is_not_a_whole_month() {
         let mut state = ReimbursementState::default();
+        // Chosen first so that `can_run` below turns on the session report's name alone. Whether
+        // the Charges Report is for the same month is settled from inside it, at run time.
+        state.select_charges(PathBuf::from("/data/XX-XX_charges_2026-06-01.csv"));
 
         state.select(PathBuf::from(
             "/data/Session_Report_June_1_2026-June_30_2026.csv",
@@ -1008,41 +1033,56 @@ mod test {
     }
 
     /// A blank figure is refused rather than read as zero. Zero is a real answer -- Evolute paid
-    /// nothing, nobody charged all month -- and has to be typed to be meant. Both typed figures
-    /// are judged the same way and each names itself when it cannot be read.
+    /// nothing, nobody charged all month -- and has to be entered to be meant.
     #[test]
-    fn a_blank_typed_figure_is_refused_and_a_typed_zero_is_not() {
+    fn a_blank_figure_is_refused_and_an_entered_zero_is_not() {
         let mut state = ReimbursementState::default();
         assert!(state.amount().is_err(), "blank amount");
-        assert!(state.charges_kwh().is_err(), "blank kWh");
 
-        state.reimbursement = "  ".to_owned();
+        state.reimbursed = "  ".to_owned();
         assert!(state.amount().is_err(), "whitespace only");
 
-        state.reimbursement = "0".to_owned();
+        state.reimbursed = "0".to_owned();
         assert_eq!(state.amount(), Ok(0.0));
 
-        state.reimbursement = "118.09".to_owned();
+        state.reimbursed = "118.09".to_owned();
         assert_eq!(state.amount(), Ok(118.09));
 
-        state.charges_report_kwh = "1362.005".to_owned();
-        assert_eq!(state.charges_kwh(), Ok(1362.005));
-
-        state.reimbursement = "one hundred".to_owned();
+        state.reimbursed = "one hundred".to_owned();
         assert!(
             state
                 .amount()
                 .is_err_and(|e| e.contains("one hundred") && e.contains("reimbursement amount")),
-            "the message quotes what was typed and names the field"
+            "the message quotes what was entered and names the field"
         );
+    }
 
-        state.charges_report_kwh = "lots".to_owned();
-        assert!(
-            state
-                .charges_kwh()
-                .is_err_and(|e| e.contains("lots") && e.contains("Charges Report kWh")),
-            "the kWh field names itself too"
-        );
+    /// The run needs both of Evolute's documents. Either one alone leaves a comparison with
+    /// nothing on the other side of it.
+    #[test]
+    fn both_documents_are_needed_before_a_month_can_be_reconciled() {
+        let mut state = ReimbursementState::default();
+        assert!(!state.can_run(), "nothing chosen");
+
+        state.select(PathBuf::from(
+            "/data/Session_Report_June_1_2026-June_30_2026.csv",
+        ));
+        assert!(state.input_note.is_none(), "{:?}", state.input_note);
+        assert!(!state.can_run(), "no Charges Report yet");
+
+        state.select_charges(PathBuf::from("/data/XX-XX_charges_2026-06-01.csv"));
+        assert!(state.can_run(), "both chosen");
+    }
+
+    /// Choosing either document drops whatever the last run produced, as editing a rate does.
+    #[test]
+    fn choosing_a_charges_report_drops_the_figures_on_screen() {
+        let mut state = ReimbursementState {
+            error: Some("stale".to_owned()),
+            ..Default::default()
+        };
+        state.select_charges(PathBuf::from("/data/XX-XX_charges_2026-06-01.csv"));
+        assert!(state.error.is_none());
     }
 
     /// Editing an input drops the figures it produced, as it does on the surplus tab: a

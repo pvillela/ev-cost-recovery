@@ -702,7 +702,7 @@ mod test {
             [
                 "Estimates",
                 "Segments",
-                "Segment membership",
+                "Sessions by segment",
                 "Excluded sessions",
                 "Anomalies",
             ]
@@ -728,7 +728,7 @@ mod test {
             .collect();
         assert_eq!(
             titles,
-            ["Estimates", "Segments", "Segment membership", "Anomalies"],
+            ["Estimates", "Segments", "Sessions by segment", "Anomalies"],
             "{fixture}"
         );
     }

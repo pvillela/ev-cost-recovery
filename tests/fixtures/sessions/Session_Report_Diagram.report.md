@@ -47,8 +47,8 @@ much of the segment each session covered, so it is fractional; "kW" weights
 each session's average power the same way.
 
 
-Segment membership
-------------------
+Sessions by segment
+-------------------
 
 - 16:00 - A, B, C
 - 16:15 - A, B, C, D, E
@@ -71,6 +71,5 @@ interval's concern.
 
 - ExcessiveAvgKw - average kilowatts above the Evolute breaker rating, which
   the hardware should not allow; the session still counts towards every
-  estimate, but the breaker-spec figures assume no session draws more than
-  that rating.
+  estimate.
 

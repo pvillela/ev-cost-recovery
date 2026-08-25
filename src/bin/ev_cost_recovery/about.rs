@@ -1,7 +1,7 @@
 //! The About window: what this program is, and the terms the code inside it arrives under.
 //!
-//! Copied from `ev_peak_gui`; see `widgets.rs` for why. It draws [`APP_NAME`], so the two windows
-//! differ by that alone.
+//! Copied from `ev_peak_gui`; see `widgets.rs` for why. The two windows have since parted company
+//! in two places: this one draws its own [`APP_NAME`], and this one can copy the notices.
 //!
 //! The notices are embedded rather than shipped beside the binary because the app is downloaded
 //! as a single file. A copy that travels in the archive can be deleted; a copy inside the
@@ -52,7 +52,21 @@ pub fn window(ctx: &egui::Context, open: &mut bool) {
         ui.add_space(12.0);
         ui.separator();
         ui.add_space(4.0);
-        ui.label(egui::RichText::new("Third-party notices").strong());
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new("Third-party notices").strong());
+            // A copy button rather than selectable text. The scroll area lays out only the rows on
+            // screen, so a drag can never reach the rest of a document this long -- and the whole
+            // of it is what anyone asking for the notices needs.
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui
+                    .button("Copy")
+                    .on_hover_text("Copies the notices in full, every crate, to the clipboard.")
+                    .clicked()
+                {
+                    ui.ctx().copy_text(NOTICES.to_owned());
+                }
+            });
+        });
         ui.add_space(4.0);
 
         let row_height = ui.text_style_height(&egui::TextStyle::Monospace);

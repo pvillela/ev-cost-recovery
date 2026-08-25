@@ -17,46 +17,6 @@ Note: the four amounts above add exactly, because the surplus is computed
 from the three as they are printed. The reports below round their own
 figures for display, so their columns may not.
 
-Session data
-------------
-
-- May.csv
-- June.csv
-
-A billing period straddles two calendar months and a session report covers
-one, so two are read.
-
-Sessions needing a look
------------------------
-
-These sessions count towards the figures above, and something about them
-needed a judgement call. Only what bears on these figures is listed.
-
-| File     | Row | Session | Anomaly        |
-|:---------|----:|:--------|:---------------|
-| June.csv |   7 | HOT     | ExcessiveAvgKw |
-
-- ExcessiveAvgKw - average kilowatts above the Evolute breaker rating, which
-  the hardware should not allow; the session still counts towards every
-  estimate, but the breaker-spec figures assume no session draws more than
-  that rating.
-
-Meter data
-----------
-
-- TH_Electric_Usage.XML
-
-These hours of the export needed a judgement call. Every figure on the
-demand side is a maximum over the whole period, so an hour anywhere in it
-that carried no reading is an hour that could have held the maximum and
-offered nothing.
-
-| Hour             | Anomaly    |
-|:-----------------|:-----------|
-| 2026-06-11 19:00 | MissingKva |
-
-- MissingKva - the hour carried a kWh or kW reading but no kVA.
-
 EV Cost Recovery
 ================
 
@@ -148,3 +108,45 @@ Delivery charges by component
 | Transmission Network Charge    | kW 7-7 |     4.355 |       4.500 |          5.0000 |  22.50 |
 
 
+
+Source Data
+===========
+
+Session data
+------------
+
+- May.csv
+- June.csv
+
+A billing period straddles two calendar months and a session report covers
+one, so two are read.
+
+Sessions needing a look
+-----------------------
+
+These sessions count towards the figures above, and something about them
+needed a judgement call. Only what bears on these figures is listed.
+
+| File     | Row | Session | Anomaly        |
+|:---------|----:|:--------|:---------------|
+| June.csv |   7 | HOT     | ExcessiveAvgKw |
+
+- ExcessiveAvgKw - average kilowatts above the Evolute breaker rating, which
+  the hardware should not allow; the session still counts towards every
+  estimate.
+
+Meter data
+----------
+
+- TH_Electric_Usage.XML
+
+These hours of the export needed a judgement call. Every figure on the
+demand side is a maximum over the whole period, so an hour anywhere in it
+that carried no reading is an hour that could have held the maximum and
+offered nothing.
+
+| Hour             | Anomaly    |
+|:-----------------|:-----------|
+| 2026-06-11 19:00 | MissingKva |
+
+- MissingKva - the hour carried a kWh or kW reading but no kVA.

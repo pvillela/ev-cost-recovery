@@ -48,14 +48,21 @@ pub fn ui(ui: &mut egui::Ui, state: &mut ReimbursementState, working: &mut Worki
     }
 }
 
+/// Wide enough for the longest label on this tab. Both grids are given it so their label columns
+/// line up, which they would not do on their own: a note sits between them, and each would
+/// otherwise size its column to its own labels.
+const LABEL_WIDTH: f32 = 150.0;
+
 /// The report and the amount, in the order they are asked for: the report says which month this is,
 /// and the amount is what that month was paid.
+///
+/// Two grids rather than one, so each note sits directly beneath the field it is about. They ask
+/// for different things from different documents, and a single note at the foot left a reader to
+/// work out which sentence was about which field.
 fn inputs(ui: &mut egui::Ui, state: &mut ReimbursementState, working: &mut WorkingDir) {
-    // Collected across the grid and acted on after it, because `state` is borrowed field by field
-    // inside and `edited` takes the whole of it.
-    let mut edited = false;
-    egui::Grid::new("reimbursement_inputs")
+    egui::Grid::new("reimbursement_files")
         .spacing([12.0, 8.0])
+        .min_col_width(LABEL_WIDTH)
         .num_columns(3)
         .show(ui, |ui| {
             ui.label("Session report");
@@ -77,36 +84,52 @@ fn inputs(ui: &mut egui::Ui, state: &mut ReimbursementState, working: &mut Worki
                 ui.end_row();
             }
 
-            // Both come off Evolute's Charges Report, which the app does not read, so they are
-            // typed. They are the other side of the comparison: the session report supplies ours.
-            for (label, field, hint, unit) in [
-                (
-                    "Charges Report kWh",
-                    &mut state.charges_report_kwh,
-                    "0.000",
-                    "kWh Evolute billed the month on",
-                ),
-                (
-                    "Reimbursement",
-                    &mut state.reimbursement,
-                    "0.00",
-                    "$ received for the month",
-                ),
-            ] {
-                ui.label(label);
-                if ui
-                    .add(
-                        egui::TextEdit::singleline(field)
-                            .desired_width(96.0)
-                            .hint_text(hint),
-                    )
-                    .changed()
-                {
-                    edited = true;
-                }
-                ui.weak(unit);
-                ui.end_row();
+            ui.label("Charges Report");
+            if ui.button("Choose…").clicked()
+                && let Some(path) = widgets::dialog(working)
+                    .add_filter("Charges Report", &["csv", "CSV"])
+                    .pick_file()
+            {
+                working.remember(&path);
+                state.select_charges(path);
             }
+            widgets::picked_file(ui, state.charges.as_deref(), "None chosen");
+            ui.end_row();
+        });
+
+    widgets::note(
+        ui,
+        "Two of Evolute's documents for the same month, ordinarily filed together. The Session \
+         Report says what each session drew, and its file name is the only thing that says which \
+         month this is. The Charges Report says what Evolute billed for the month; its energy and \
+         dollar columns are each totalled. The energy total is compared with the kilowatt-hours \
+         priced from the Session Report, and the dollar total with the reimbursement entered \
+         below. If the two files turn out to cover different months, the reconciliation is refused \
+         rather than run.",
+    );
+    ui.add_space(10.0);
+
+    // Collected across the grid and acted on after it, because `state` is borrowed field by field
+    // inside and `edited` takes the whole of it.
+    let mut edited = false;
+    egui::Grid::new("reimbursement_figures")
+        .spacing([12.0, 8.0])
+        .min_col_width(LABEL_WIDTH)
+        .num_columns(3)
+        .show(ui, |ui| {
+            ui.label("Reimbursement");
+            if ui
+                .add(
+                    egui::TextEdit::singleline(&mut state.reimbursed)
+                        .desired_width(96.0)
+                        .hint_text("0.00"),
+                )
+                .changed()
+            {
+                edited = true;
+            }
+            ui.weak("$ actually received for the month");
+            ui.end_row();
         });
 
     if edited {
@@ -115,9 +138,8 @@ fn inputs(ui: &mut egui::Ui, state: &mut ReimbursementState, working: &mut Worki
 
     widgets::note(
         ui,
-        "One report, covering one whole calendar month. Its file name is the only thing that says \
-         which month that is. The two figures beneath it are read off Evolute's Charges Report, \
-         which is a different document and is not opened here.",
+        "The one figure entered manually, because it is not in either document: it is what was \
+         seen to arrive, from a bank statement or a remittance advice.",
     );
 }
 
@@ -198,9 +220,20 @@ fn headline(ui: &mut egui::Ui, r: &ReimbursementReconciliation) {
         "money",
         "$",
         [
-            ("Reimbursement received", r.reimbursement, false),
+            ("Reimbursement received", r.reimbursed, false),
             ("Cost recovery earned", -r.cost_recovery_amount, false),
             ("Dollar variance", r.dollar_variance, true),
+        ],
+    );
+    ui.add_space(10.0);
+    rows(
+        ui,
+        "remittance",
+        "$",
+        [
+            ("Reimbursement received", r.reimbursed, false),
+            ("Charges Report total", -r.charges_report_amount, false),
+            ("Remittance variance", r.remittance_variance, true),
         ],
     );
     ui.add_space(10.0);
@@ -222,10 +255,12 @@ fn headline(ui: &mut egui::Ui, r: &ReimbursementReconciliation) {
     ui.add_space(8.0);
     widgets::note(
         ui,
-        "A negative dollar variance is Evolute having paid less than the rates come to for the \
-         month. The energy variance sets our figure against Evolute's, which come from different \
-         documents and are arrived at differently. Nothing on Toronto Hydro's bill is counted \
-         anywhere here.",
+        "Three questions, and a month can fail any one of them on its own. A negative dollar \
+         variance is Evolute having paid less than our rates come to. The remittance variance \
+         asks the narrower question our rates play no part in: whether the money that arrived is \
+         what Evolute's own Charges Report says it billed. The energy variance sets our \
+         kilowatt-hours against Evolute's, which come from different documents and are arrived at \
+         differently. Nothing on Toronto Hydro's bill is counted anywhere here.",
     );
 }
 

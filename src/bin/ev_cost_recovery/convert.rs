@@ -7,9 +7,9 @@
 use crate::{
     state::{
         Conversion, ConversionSlot, ConvertState, GbConversion, SessionConversion, SessionWorkbook,
-        WorkingDir,
+        Which, WorkingDir,
     },
-    widgets,
+    theme, widgets,
 };
 use eframe::egui;
 use ev_cost_recovery::io::{GbConversionReport, OnExistingWorkbook};
@@ -24,42 +24,78 @@ pub fn ui(ui: &mut egui::Ui, state: &mut ConvertState, working: &mut WorkingDir)
          other tabs depends on these: they read the source files themselves. The workbooks are for \
          reading, and for checking a figure against an invoice by hand.",
     );
-    ui.add_space(16.0);
+    ui.add_space(14.0);
 
-    picker::<SessionConversion>(
-        ui,
-        &mut state.sessions,
-        working,
-        "Evolute session report",
-        "Session report",
-        &["csv", "CSV"],
-        "One row per charging session: the report's own columns in the order it states them, then \
-         the derived ones, with the adjusted duration and the average kW as live formulas. Every \
-         session is written, anomalous ones included.",
-    );
-    if let Some(outcome) = &state.sessions.outcome {
-        session_outcome(ui, outcome);
-    }
-
-    ui.add_space(18.0);
+    chooser(ui, &mut state.which);
+    ui.add_space(4.0);
     ui.separator();
-    ui.add_space(18.0);
+    ui.add_space(14.0);
 
-    picker::<GbConversion>(
-        ui,
-        &mut state.green_button,
-        working,
-        "Toronto Hydro Green Button export",
-        "Green Button export",
-        &["xml", "XML"],
-        "Two sheets. Peak_values carries one row per billing period — the energy used, the highest \
-         kW and kVA over the period and within the 7-7 demand window, when each fell and in which \
-         Time-of-Use period. Interval_values carries every hour of the export. A multi-year export \
-         takes a moment to parse.",
-    );
-    if let Some(outcome) = &state.green_button.outcome {
-        gb_outcome(ui, outcome);
+    // One at a time. Drawn one above the other, a long result for the first pushed the second's
+    // button off the screen, so reaching it meant scrolling past a report that had nothing to do
+    // with it.
+    match state.which {
+        Which::Sessions => {
+            picker::<SessionConversion>(
+                ui,
+                &mut state.sessions,
+                working,
+                "Evolute session report",
+                "Session report",
+                &["csv", "CSV"],
+                "One row per charging session: the report's own columns in the order it states \
+                 them, then the derived ones, with the adjusted duration and the average kW as \
+                 live formulas. Every session is written, anomalous ones included.",
+            );
+            if let Some(outcome) = &state.sessions.outcome {
+                session_outcome(ui, outcome);
+            }
+        }
+        Which::GreenButton => {
+            picker::<GbConversion>(
+                ui,
+                &mut state.green_button,
+                working,
+                "Toronto Hydro Green Button export",
+                "Green Button export",
+                &["xml", "XML"],
+                "Two sheets. Peak_values carries one row per billing period — the energy used, \
+                 the highest kW and kVA over the period and within the 7-7 demand window, when \
+                 each occurred and in which Time-of-Use period. Interval_values carries every \
+                 hour of the export. A multi-year export takes a moment to parse.",
+            );
+            if let Some(outcome) = &state.green_button.outcome {
+                gb_outcome(ui, outcome);
+            }
+        }
     }
+}
+
+/// Which conversion is on screen.
+///
+/// A row of selectable buttons rather than a second row of tabs in the bar above. These two are one
+/// job seen twice, not two places in the app, and promoting them would put four entries in a bar
+/// that holds four already. Each keeps whatever it has done: switching away and back finds the
+/// file still chosen and the last result still there.
+fn chooser(ui: &mut egui::Ui, which: &mut Which) {
+    ui.horizontal(|ui| {
+        ui.label("Convert");
+        for (value, label) in [
+            (Which::Sessions, "Session report"),
+            (Which::GreenButton, "Green Button export"),
+        ] {
+            let selected = *which == value;
+            let text = egui::RichText::new(label);
+            let text = if selected {
+                text.strong().color(theme::accent(ui))
+            } else {
+                text
+            };
+            if ui.add(egui::Button::selectable(selected, text)).clicked() {
+                *which = value;
+            }
+        }
+    });
 }
 
 /// One conversion's file picker, its Convert button, its error and its replace prompt.

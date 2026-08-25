@@ -27,7 +27,7 @@ pub mod recovery;
 #[cfg(test)]
 pub(crate) mod test_support;
 
-pub use additional::reconcile_evolute_reimbursement;
+pub use additional::{check_charges_report_covers_month, reconcile_evolute_reimbursement};
 pub use coverage::check_reports_cover_period;
 pub use energy::{energy, energy_cost};
 pub use peak_power::{peak_power, peak_power_cost};

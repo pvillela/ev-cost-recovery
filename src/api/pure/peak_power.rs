@@ -1272,7 +1272,7 @@ mod test {
         let report = cost().to_string();
         for heading in [
             "EV Peak Power Contribution",
-            "Segment membership",
+            "Sessions by segment",
             "Segments",
         ] {
             assert!(
