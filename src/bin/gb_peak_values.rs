@@ -3,11 +3,15 @@
 use ev_cost_recovery::{
     green_button::{Feed, parse, write_workbook},
     hydro_bill::{BILL_END_DAY, bill_start_day},
-    time::holidays,
-    time::local_date,
+    time::{holidays, local_date},
 };
-use std::path::{Path, PathBuf};
-use std::process::ExitCode;
+use std::{
+    env,
+    error::Error,
+    fs,
+    path::{Path, PathBuf},
+    process::ExitCode,
+};
 
 /// The help text. A function rather than a `const` because it states the billing period boundary,
 /// which is [`BILL_END_DAY`] rather than anything this file should be repeating.
@@ -49,7 +53,7 @@ naming what was missing, rather than a workbook with a hole in it.
 }
 
 fn main() -> ExitCode {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let args: Vec<String> = env::args().skip(1).collect();
 
     if args.iter().any(|a| a == "-h" || a == "--help") {
         print!("{}", usage());
@@ -69,7 +73,7 @@ fn main() -> ExitCode {
     }
 }
 
-fn run(input: &Path) -> Result<(), Box<dyn std::error::Error>> {
+fn run(input: &Path) -> Result<(), Box<dyn Error>> {
     let output = output_path(input)?;
     if output.exists() {
         return Err(format!(
@@ -79,7 +83,7 @@ fn run(input: &Path) -> Result<(), Box<dyn std::error::Error>> {
         .into());
     }
 
-    let xml = std::fs::read_to_string(input).map_err(|e| format!("{}: {e}", input.display()))?;
+    let xml = fs::read_to_string(input).map_err(|e| format!("{}: {e}", input.display()))?;
     let feed = parse(&xml)?;
 
     report_holidays(&feed);

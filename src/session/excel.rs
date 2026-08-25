@@ -13,8 +13,10 @@ use crate::time::{
     duration_of_serial, instant_of_serial, serial_of_civil, serial_of_duration, serial_of_instant,
 };
 
-use super::csv::{self, SessionRows};
-use super::{Anomaly, AnomalyKind, RSession, RunLog, Session, Sessions, SourceLog};
+use super::{
+    Anomaly, AnomalyKind, RSession, RunLog, Session, Sessions, SourceLog,
+    csv::{self, SessionRows},
+};
 use jiff::Timestamp;
 use std::{
     collections::HashMap,
@@ -797,11 +799,12 @@ fn number(
 // cargo test --lib -- session::excel::test --nocapture
 mod test {
     use super::*;
-    use crate::session::BREAKER_RATING_KW;
-    use crate::session::test_support::{timing_anomalies, timing_anomalies_in_cell};
+    use crate::session::{
+        BREAKER_RATING_KW,
+        test_support::{timing_anomalies, timing_anomalies_in_cell},
+    };
     use jiff::{civil, tz::TimeZone};
-    use std::fs;
-    use std::time::Duration;
+    use std::{env, fs, process, time::Duration};
 
     fn utc(dt: civil::DateTime) -> Timestamp {
         dt.to_zoned(TimeZone::UTC).unwrap().timestamp()
@@ -809,7 +812,7 @@ mod test {
 
     /// A scratch directory of its own per test, since these run in parallel within one process.
     fn temp_dir(tag: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("ev_peak_excel_{}_{tag}", std::process::id()));
+        let dir = env::temp_dir().join(format!("ev_peak_excel_{}_{tag}", process::id()));
         fs::create_dir_all(&dir).unwrap();
         dir
     }

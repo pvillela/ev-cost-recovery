@@ -5,9 +5,12 @@
 //! pipeline does, and that asking for a period the feed does not reach is an error rather than a
 //! row of zeroes.
 
-use ev_cost_recovery::green_button::{parse, period_values, period_values_xml};
-use ev_cost_recovery::hydro_bill::BILL_END_DAY;
+use ev_cost_recovery::{
+    green_button::{parse, period_values, period_values_xml},
+    hydro_bill::BILL_END_DAY,
+};
 use jiff::civil::date;
+use std::fs;
 
 use super::fixture;
 
@@ -21,7 +24,7 @@ fn the_packaged_call_matches_the_long_hand_pipeline() {
     let path = fixture("billed_period.XML");
     let ending = date(2026, 6, 23);
 
-    let xml = std::fs::read_to_string(&path).unwrap();
+    let xml = fs::read_to_string(&path).unwrap();
     let readings = parse(&xml).unwrap().readings();
     let expected = period_values(&readings, BILL_END_DAY)
         .into_iter()

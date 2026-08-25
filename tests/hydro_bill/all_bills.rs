@@ -12,9 +12,11 @@
 //! dropped because a rate change printed it twice, still parses -- it just gives a total that no
 //! longer equals its parts.
 
-use ev_cost_recovery::hydro_bill::hydro_bill_from_pdf;
-use ev_cost_recovery::hydro_bill::pdf_text::{self, Line};
-use std::path::PathBuf;
+use ev_cost_recovery::hydro_bill::{
+    hydro_bill_from_pdf,
+    pdf_text::{self, Line},
+};
+use std::{fs, path::PathBuf};
 
 /// Money is stated to the cent, and the sums here are of a handful of terms.
 const CENT: f64 = 0.005;
@@ -35,7 +37,7 @@ fn bills_dir() -> PathBuf {
 #[test]
 #[ignore = "reads every bill PDF in data/hydro_bills"]
 fn every_bill_parses_and_its_figures_agree_with_each_other() {
-    let mut paths: Vec<PathBuf> = std::fs::read_dir(bills_dir())
+    let mut paths: Vec<PathBuf> = fs::read_dir(bills_dir())
         .expect(
             "the sample bills are not in the repository: put the Toronto Hydro PDFs in \
              data/hydro_bills before running this",

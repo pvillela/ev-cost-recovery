@@ -17,15 +17,19 @@
 //! Series are told apart by `uom`, the unit of measure. `kind` is not usable: kWh and kVA both
 //! carry `kind=12` in this feed.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::error::Error;
-use std::path::PathBuf;
+use std::{
+    collections::{BTreeMap, BTreeSet, HashMap},
+    error::Error,
+    path::{Path, PathBuf},
+};
 
 use jiff::Timestamp;
 use roxmltree::{Document, Node};
 
-use crate::green_button::{Anomaly, METER_INTERVAL, Reading};
-use crate::time::is_on_grid;
+use crate::{
+    green_button::{Anomaly, METER_INTERVAL, Reading},
+    time::is_on_grid,
+};
 
 /// [`METER_INTERVAL`] in seconds, which is the form the feed states it in.
 const METER_INTERVAL_SECS: i64 = METER_INTERVAL.as_secs() as i64;
@@ -102,7 +106,7 @@ impl Readings {
     /// Set here rather than by [`Feed::readings`], which is handed a parsed feed and never sees a
     /// file. Whoever opened one is the only party that knows.
     #[must_use]
-    pub fn from_source(mut self, path: &std::path::Path) -> Self {
+    pub fn from_source(mut self, path: &Path) -> Self {
         self.source = Some(path.to_path_buf());
         self
     }

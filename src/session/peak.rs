@@ -1,5 +1,7 @@
-use super::excel::session_list;
-use super::{Anomaly, Bracket, RSegment, RSession, SEGMENT_DURATION, Segment, Sessions, SourceLog};
+use super::{
+    Anomaly, Bracket, RSegment, RSession, SEGMENT_DURATION, Segment, Sessions, SourceLog,
+    excel::session_list,
+};
 use crate::time::Interval;
 use std::{
     error::Error,
@@ -290,13 +292,15 @@ fn collect_session_anomalies(
 
 #[cfg(test)]
 mod test {
-    use crate::session::TIME_GRID_STEP;
+    use crate::session::{Session, TIME_GRID_STEP};
 
-    use super::super::{
-        SEGMENT_DURATION,
-        site_load::{ev_load, site_load},
+    use super::{
+        super::{
+            SEGMENT_DURATION,
+            site_load::{ev_load, site_load},
+        },
+        *,
     };
-    use super::*;
     use jiff::Timestamp;
     use std::time::Duration;
 
@@ -331,8 +335,8 @@ mod test {
         let conn_start = ts(start);
         let adj_conn_end = ts(end);
         let charge_time = Duration::from_secs(3600);
-        let session = crate::session::Session {
-            path: std::rc::Rc::new(PathBuf::from("Session_Report_Test.csv")),
+        let session = Session {
+            path: Rc::new(PathBuf::from("Session_Report_Test.csv")),
             row: 2,
             id: id.to_owned(),
             conn_start,

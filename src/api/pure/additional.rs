@@ -15,13 +15,13 @@
 //! Nothing here opens anything. The month comes from the session report's file name, which is the
 //! only thing that states it — see [`report_coverage`].
 
-use crate::markdown::{Left, Right, amounts, field, h1, h2, rounding_note, table, wrap};
-use crate::session::file_name::report_coverage;
-use crate::session::{AnomalyKind, SessionNotes, Sessions, TouKwh, tou_kwh};
-use crate::time::{Interval, local_midnight};
+use crate::{
+    markdown::{Left, Right, amounts, field, h1, h2, rounding_note, table, wrap},
+    session::{AnomalyKind, SessionNotes, Sessions, TouKwh, file_name::report_coverage, tou_kwh},
+    time::{Interval, local_midnight},
+};
 use jiff::civil::Date;
-use std::path::PathBuf;
-use std::{error::Error, fmt};
+use std::{error::Error, fmt, path::PathBuf};
 
 // Re-exported for the same reason `recovery` re-exports what it takes: a caller should not have to
 // know which module a type comes from in order to spell the call.
@@ -373,8 +373,10 @@ impl fmt::Display for ReimbursementReconciliation {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::api::pure::test_support::{as_report, close};
-    use crate::session::test_support::session;
+    use crate::{
+        api::pure::test_support::{as_report, close},
+        session::test_support::session,
+    };
     use jiff::civil::date;
 
     const JUNE: &str = "data/Session_Report_June_1_2026-June_30_2026.csv";

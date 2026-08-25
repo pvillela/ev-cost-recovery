@@ -4,13 +4,16 @@
 //! themselves. These workbooks are for reading by eye and for checking a figure against an invoice
 //! by hand, which is why an existing one is worth asking about before it is replaced.
 
-use crate::state::{
-    Conversion, ConversionSlot, ConvertState, GbConversion, SessionConversion, SessionWorkbook,
-    WorkingDir,
+use crate::{
+    state::{
+        Conversion, ConversionSlot, ConvertState, GbConversion, SessionConversion, SessionWorkbook,
+        WorkingDir,
+    },
+    widgets,
 };
-use crate::widgets;
 use eframe::egui;
 use ev_cost_recovery::io::{GbConversionReport, OnExistingWorkbook};
+use std::path::Path;
 
 pub fn ui(ui: &mut egui::Ui, state: &mut ConvertState, working: &mut WorkingDir) {
     widgets::heading(ui, "Convert a file to a workbook");
@@ -140,7 +143,7 @@ fn replace_prompt<C: Conversion>(ui: &mut egui::Ui, slot: &mut ConversionSlot<C>
 }
 
 /// Where the workbook went. The same line for both conversions, so they read alike.
-fn written(ui: &mut egui::Ui, path: &std::path::Path) {
+fn written(ui: &mut egui::Ui, path: &Path) {
     ui.add_space(14.0);
     ui.label(egui::RichText::new("Workbook written").strong());
     ui.add(egui::Label::new(path.display().to_string()).wrap());

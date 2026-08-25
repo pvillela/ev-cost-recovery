@@ -7,12 +7,13 @@
 //! The invoice covers `MAY 23 2026 TO JUN 23 2026`, which is the period the `billed_period`
 //! fixture carries in full.
 
-use ev_cost_recovery::green_button::{parse, period_values};
-use ev_cost_recovery::hydro_bill::BILL_END_DAY;
-use ev_cost_recovery::time::{Interval, Tou, tou_of};
+use ev_cost_recovery::{
+    green_button::{parse, period_values},
+    hydro_bill::BILL_END_DAY,
+    time::{Interval, Tou, tou_of},
+};
 use jiff::civil::date;
-use std::collections::HashMap;
-use std::time::Duration;
+use std::{collections::HashMap, fs, time::Duration};
 
 use super::fixture;
 
@@ -20,7 +21,7 @@ const HOUR: Duration = Duration::from_secs(3600);
 
 /// The `key value` pairs from the invoice fixture, comments and blanks skipped.
 fn invoice() -> HashMap<String, String> {
-    let text = std::fs::read_to_string(fixture("invoice_2026_06.txt")).unwrap();
+    let text = fs::read_to_string(fixture("invoice_2026_06.txt")).unwrap();
     text.lines()
         .map(str::trim)
         .filter(|l| !l.is_empty() && !l.starts_with('#'))
@@ -45,7 +46,7 @@ fn agrees_with_truncated(generated: f64, printed: f64) -> bool {
 #[test]
 fn the_billed_period_reproduces_the_invoice() {
     let invoice = invoice();
-    let xml = std::fs::read_to_string(fixture("billed_period.XML")).unwrap();
+    let xml = fs::read_to_string(fixture("billed_period.XML")).unwrap();
     let feed = parse(&xml).unwrap();
     let readings = feed.readings();
 
@@ -105,7 +106,7 @@ fn the_billed_period_reproduces_the_invoice() {
 fn the_tou_buckets_reproduce_the_invoice() {
     let invoice = invoice();
     let loss_factor = number(&invoice, "loss_factor");
-    let xml = std::fs::read_to_string(fixture("billed_period.XML")).unwrap();
+    let xml = fs::read_to_string(fixture("billed_period.XML")).unwrap();
     let feed = parse(&xml).unwrap();
     let readings = feed.readings();
 

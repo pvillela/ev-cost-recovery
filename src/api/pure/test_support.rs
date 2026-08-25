@@ -8,14 +8,17 @@
 //! What stays with a module's own tests is anything that reads a result rather than builds an
 //! input. Those are about one operation and belong beside it.
 
-use crate::green_button::{Peak, PeriodValues};
-use crate::hydro_bill::{BILL_END_DAY, BillingPeriod, HydroBill};
-use crate::session::{RSession, Sessions, test_support::session};
-use crate::time::Tou;
-use jiff::Timestamp;
-use jiff::civil::{Date, date};
-use std::collections::BTreeMap;
-use std::path::PathBuf;
+use crate::{
+    green_button::{Peak, PeriodValues},
+    hydro_bill::{BILL_END_DAY, BillingPeriod, HydroBill},
+    session::{RSession, Sessions, test_support::session},
+    time::Tou,
+};
+use jiff::{
+    Timestamp,
+    civil::{Date, date},
+};
+use std::{collections::BTreeMap, path::PathBuf};
 
 /// The period every fixture here belongs to: 24 May to 23 June 2026.
 const PERIOD_ENDING: (i16, i8, i8) = (2026, 6, 23);

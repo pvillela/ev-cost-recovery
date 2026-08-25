@@ -6,9 +6,7 @@
 
 use super::{AnomalyKind, RSession, Session};
 use jiff::Timestamp;
-use std::path::PathBuf;
-use std::rc::Rc;
-use std::time::Duration;
+use std::{path::PathBuf, rc::Rc, time::Duration};
 
 /// A session for tests: read from `path` at `row`, starting at `conn_start` (RFC 3339), lasting
 /// `minutes`, and drawing `energy_use` kWh over that time.

@@ -439,6 +439,7 @@ pub fn report_sections(text: &str) -> Vec<Section> {
 #[cfg(test)]
 mod test {
     use super::*;
+    use std::{env, fs, process};
 
     fn state_on(date: civil::Date) -> EstimateState {
         let mut state = EstimateState::default();
@@ -454,15 +455,13 @@ mod test {
     /// a figure happens here; a click is only which of these it calls.
     #[test]
     fn the_app_produces_the_same_report_as_the_command_line() {
-        let fixtures =
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sessions");
+        let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sessions");
         for stem in ["Session_Report_Diagram", "Session_Report_Anomalies"] {
             // Convert in a scratch directory, so no generated workbook lands in the fixtures.
-            let dir = std::env::temp_dir()
-                .join(format!("ev_cost_recovery_{stem}_{}", std::process::id()));
-            std::fs::create_dir_all(&dir).unwrap();
+            let dir = env::temp_dir().join(format!("ev_cost_recovery_{stem}_{}", process::id()));
+            fs::create_dir_all(&dir).unwrap();
             let csv = dir.join(format!("{stem}.csv"));
-            std::fs::copy(fixtures.join(format!("{stem}.csv")), &csv).unwrap();
+            fs::copy(fixtures.join(format!("{stem}.csv")), &csv).unwrap();
 
             let mut convert = ConvertState::default();
             convert.select_csv(csv);
@@ -491,8 +490,7 @@ mod test {
             estimate.run();
 
             let outcome = estimate.outcome.as_ref().expect("{stem}: an estimate");
-            let golden =
-                std::fs::read_to_string(fixtures.join(format!("{stem}.report.md"))).unwrap();
+            let golden = fs::read_to_string(fixtures.join(format!("{stem}.report.md"))).unwrap();
             // The workbook is in a scratch directory, so only its name matches the golden file's.
             assert_eq!(
                 outcome.text.replace(&dir.display().to_string(), ""),
@@ -506,7 +504,7 @@ mod test {
                 outcome.heading
             );
 
-            std::fs::remove_dir_all(&dir).ok();
+            fs::remove_dir_all(&dir).ok();
         }
     }
 
@@ -693,9 +691,8 @@ mod test {
     /// are what the report actually produces.
     #[test]
     fn the_report_is_split_at_its_own_section_titles() {
-        let text =
-            std::fs::read_to_string("tests/fixtures/sessions/Session_Report_Anomalies.report.md")
-                .expect("run from the crate root");
+        let text = fs::read_to_string("tests/fixtures/sessions/Session_Report_Anomalies.report.md")
+            .expect("run from the crate root");
         let titles: Vec<String> = report_sections(&text)
             .into_iter()
             .map(|s| s.title)
@@ -723,8 +720,8 @@ mod test {
     #[test]
     fn every_golden_report_splits_into_titled_sections() {
         let fixture = "Session_Report_Diagram";
-        let text = std::fs::read_to_string(format!("tests/fixtures/sessions/{fixture}.report.md"))
-            .unwrap();
+        let text =
+            fs::read_to_string(format!("tests/fixtures/sessions/{fixture}.report.md")).unwrap();
         let titles: Vec<String> = report_sections(&text)
             .into_iter()
             .map(|s| s.title)
@@ -741,12 +738,11 @@ mod test {
     /// button at the foot of the Convert tab and a click on the tab itself now do the same thing.
     #[test]
     fn a_conversion_hands_its_workbook_on_exactly_once() {
-        let fixtures =
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sessions");
-        let dir = std::env::temp_dir().join(format!("ev_peak_handoff_{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sessions");
+        let dir = env::temp_dir().join(format!("ev_peak_handoff_{}", process::id()));
+        fs::create_dir_all(&dir).unwrap();
         let csv = dir.join("Session_Report_Diagram.csv");
-        std::fs::copy(fixtures.join("Session_Report_Diagram.csv"), &csv).unwrap();
+        fs::copy(fixtures.join("Session_Report_Diagram.csv"), &csv).unwrap();
 
         let mut convert = ConvertState::default();
         assert_eq!(convert.take_handoff(), None, "nothing to hand on yet");
@@ -775,7 +771,7 @@ mod test {
         estimate.select_workbook(handed);
         assert!(!estimate.carried_over);
 
-        std::fs::remove_dir_all(&dir).ok();
+        fs::remove_dir_all(&dir).ok();
     }
 
     /// The working folder follows whatever file was last touched, so the next dialog opens where

@@ -31,7 +31,7 @@ use ev_cost_recovery::{
     time::Interval,
 };
 use jiff::Timestamp;
-use std::fs;
+use std::{env, fs, iter, process};
 
 use super::{fixture, fixtures_dir};
 
@@ -55,7 +55,7 @@ const CASES: [(&str, &str, &str); 2] = [
 /// Converts the fixture in a scratch directory and renders its report, so no generated workbook
 /// lands in `tests/fixtures/`.
 fn render(stem: &str, lo: &str, hi: &str) -> String {
-    let dir = std::env::temp_dir().join(format!("ev_peak_report_{stem}_{}", std::process::id()));
+    let dir = env::temp_dir().join(format!("ev_peak_report_{stem}_{}", process::id()));
     fs::create_dir_all(&dir).unwrap();
     let csv = dir.join(format!("{stem}.csv"));
     fs::copy(fixture(&format!("{stem}.csv")), &csv).unwrap();
@@ -85,7 +85,7 @@ fn rendered_reports_match_their_golden_files() {
         let rendered = render(stem, lo, hi);
         let golden = fixtures_dir().join(format!("{stem}.report.md"));
 
-        if std::env::var_os("UPDATE_REPORT_GOLDEN").is_some() {
+        if env::var_os("UPDATE_REPORT_GOLDEN").is_some() {
             fs::write(&golden, &rendered).unwrap();
             continue;
         }
@@ -214,7 +214,7 @@ fn golden_report_tables_are_padded_evenly() {
             continue;
         };
         let mut block: Vec<(usize, usize)> = Vec::new();
-        for (i, line) in md.lines().chain(std::iter::once("")).enumerate() {
+        for (i, line) in md.lines().chain(iter::once("")).enumerate() {
             if line.starts_with('|') {
                 block.push((i + 1, line.chars().count()));
             } else if !block.is_empty() {
@@ -242,7 +242,7 @@ fn the_site_load_table_matches_its_golden_file() {
     let rendered = site_load_report();
     let golden = fixtures_dir().join("site_load.report.txt");
 
-    if std::env::var_os("UPDATE_REPORT_GOLDEN").is_some() {
+    if env::var_os("UPDATE_REPORT_GOLDEN").is_some() {
         fs::write(&golden, &rendered).unwrap();
         return;
     }

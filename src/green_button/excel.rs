@@ -26,17 +26,21 @@
 //! default, and machine names are `lower_snake_case` throughout so that reading a sheet back by
 //! column name cannot be defeated by a capitalisation difference.
 
-use std::collections::{BTreeMap, BTreeSet};
-use std::error::Error;
-use std::path::Path;
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    error::Error,
+    path::Path,
+};
 
 use umya_spreadsheet::{
     HorizontalAlignmentValues, Pane, PaneStateValues, PaneValues, VerticalAlignmentValues,
     Worksheet, writer,
 };
 
-use crate::green_button::{Anomaly, Feed, Peak, PeriodValues, Reading, period_values};
-use crate::time::{serial_of_date, serial_of_instant, serial_of_local};
+use crate::{
+    green_button::{Anomaly, Feed, Peak, PeriodValues, Reading, period_values},
+    time::{serial_of_date, serial_of_instant, serial_of_local},
+};
 
 const GENERAL_FORMAT: &str = "General";
 const DATE_FORMAT: &str = "yyyy/mm/dd";

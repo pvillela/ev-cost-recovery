@@ -9,6 +9,7 @@
 //! spreadsheet is reconciled against a utility invoice to three decimal places, and accumulating
 //! 744 floating-point divisions before summing them loses that agreement.
 
+use crate::time::is_on_grid;
 use jiff::Timestamp;
 use std::{fmt, time::Duration};
 
@@ -50,7 +51,7 @@ impl Reading {
     /// aligned hour cannot straddle two. Ontario's UTC offsets are whole hours in both seasons, so
     /// a whole hour in UTC is a whole hour locally.
     pub fn is_aligned(&self) -> bool {
-        crate::time::is_on_grid(self.start, METER_INTERVAL)
+        is_on_grid(self.start, METER_INTERVAL)
     }
 }
 

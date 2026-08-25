@@ -8,8 +8,7 @@
 //! executable cannot, and the licences of the crates linked into it require that their notices
 //! reach whoever holds the program.
 
-use crate::app::APP_NAME;
-use crate::theme;
+use crate::{app::APP_NAME, theme};
 use eframe::egui;
 use std::sync::LazyLock;
 

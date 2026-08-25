@@ -8,7 +8,10 @@
 //! happens to be lying in the tree.
 
 use sha2::{Digest, Sha256};
-use std::path::{Path, PathBuf};
+use std::{
+    env, fs,
+    path::{Path, PathBuf},
+};
 
 /// Written by `scripts/gen-notices.sh`. Gitignored, so absent in a fresh checkout.
 const NOTICES: &str = "THIRD-PARTY-NOTICES.md";
@@ -56,15 +59,15 @@ fn notices() {
     }
 
     // Release-like profiles report "release". Anything else is a build nobody receives.
-    let released = std::env::var("PROFILE").as_deref() == Ok("release");
+    let released = env::var("PROFILE").as_deref() == Ok("release");
     let text = if released {
         release_notices()
     } else {
         PLACEHOLDER.to_owned()
     };
 
-    let out = PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR is set for build scripts"));
-    std::fs::write(out.join("third-party-notices.md"), text)
+    let out = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR is set for build scripts"));
+    fs::write(out.join("third-party-notices.md"), text)
         .expect("the notices must be written: the About window will not compile without them");
 }
 
@@ -74,7 +77,7 @@ fn notices() {
 /// graph, would ship a binary whose stated licences are not the ones it was built from, and
 /// nothing downstream would catch it.
 fn release_notices() -> String {
-    let Ok(text) = std::fs::read_to_string(Path::new(NOTICES)) else {
+    let Ok(text) = fs::read_to_string(Path::new(NOTICES)) else {
         panic!("{}", complaint("they have not been generated"));
     };
 
@@ -94,8 +97,7 @@ fn release_notices() -> String {
 fn input_hash() -> String {
     let mut hasher = Sha256::new();
     for input in INPUTS {
-        let bytes =
-            std::fs::read(input).unwrap_or_else(|e| panic!("{input} must be readable: {e}"));
+        let bytes = fs::read(input).unwrap_or_else(|e| panic!("{input} must be readable: {e}"));
         hasher.update(&bytes);
     }
     hasher

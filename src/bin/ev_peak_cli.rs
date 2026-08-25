@@ -1,10 +1,10 @@
 use ev_cost_recovery::{
     session::{IoiLength, checked_interval, interval_estimates},
-    time::Interval,
-    time::TZ_OFFSETS,
+    time::{Interval, TZ_OFFSETS},
 };
 use jiff::civil;
 use std::{
+    env,
     path::{Path, PathBuf},
     process::ExitCode,
 };
@@ -34,7 +34,7 @@ estimated.
 The report is written to stdout as markdown that also reads as plain text.";
 
 fn main() -> ExitCode {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let args: Vec<String> = env::args().skip(1).collect();
     if args.is_empty() || args.iter().any(|a| a == "-h" || a == "--help") {
         println!("{USAGE}");
         return if args.is_empty() {

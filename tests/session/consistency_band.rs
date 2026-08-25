@@ -34,8 +34,9 @@ use ev_cost_recovery::{
 };
 use jiff::Timestamp;
 use std::{
-    fs,
+    env, fs,
     path::PathBuf,
+    process,
     sync::atomic::{AtomicUsize, Ordering},
 };
 
@@ -56,9 +57,9 @@ const SOUND: [&str; 2] = ["EARLYIN", "LATEIN"];
 /// afterwards, so a shared one would be removed from under a test still reading it.
 fn workbook() -> PathBuf {
     static NEXT: AtomicUsize = AtomicUsize::new(0);
-    let dir = std::env::temp_dir().join(format!(
+    let dir = env::temp_dir().join(format!(
         "ev_peak_band_{}_{}",
-        std::process::id(),
+        process::id(),
         NEXT.fetch_add(1, Ordering::Relaxed)
     ));
     fs::create_dir_all(&dir).unwrap();

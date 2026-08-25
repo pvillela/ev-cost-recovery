@@ -19,25 +19,28 @@
 //! same rules, and both refuse a period the meter data does not cover. Splitting them would leave
 //! two copies of that agreement to keep.
 
-use crate::green_button::{METER_INTERVAL, Peak};
-use crate::hydro_bill::{
-    NotABillingPeriodEnding, ZeroDenominator, billing_period_dates, billing_period_span,
+use crate::{
+    green_button::{METER_INTERVAL, Peak},
+    hydro_bill::{
+        NotABillingPeriodEnding, ZeroDenominator, billing_period_dates, billing_period_span,
+    },
+    markdown::{Left, Right, amounts, field, h1, h2, rounding_note, table},
+    session::{
+        Bracket, EstimateSet, IntervalEstimates, SessionNotes, Sessions, estimates_from_report,
+    },
+    time::Interval,
 };
-use crate::markdown::{Left, Right, amounts, field, h1, h2, rounding_note, table};
-use crate::session::{
-    Bracket, EstimateSet, IntervalEstimates, SessionNotes, Sessions, estimates_from_report,
-};
-use crate::time::Interval;
 
 // Re-exported because `peak_power` and `peak_power_cost` take them. `IntervalEstimates` is
 // deliberately not: it is inside `PowerEstimates` and `PricedInterval` rather than named by either
 // signature, and a reader who probes that far can go to `session` for it.
-pub use crate::green_button::{MeterNotes, PeriodValues};
-pub use crate::hydro_bill::HydroBill;
-pub use crate::session::RSession;
+pub use crate::{
+    green_button::{MeterNotes, PeriodValues},
+    hydro_bill::HydroBill,
+    session::RSession,
+};
 use jiff::civil::Date;
-use std::error::Error;
-use std::fmt;
+use std::{error::Error, fmt};
 
 /// Peak power estimates for a billing period.
 pub struct PowerEstimates {
@@ -698,14 +701,16 @@ fn peak_interval(
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::api::pure::test_support::{
-        KVA_PEAK_HOUR, KW_PEAK_HOUR, NOP_PEAK_HOUR, as_report, bill, close, period_ending_date,
-        period_values_with_nop, ts, two_report_sessions, two_reports,
+    use crate::{
+        api::pure::test_support::{
+            KVA_PEAK_HOUR, KW_PEAK_HOUR, NOP_PEAK_HOUR, as_report, bill, close, period_ending_date,
+            period_values_with_nop, ts, two_report_sessions, two_reports,
+        },
+        hydro_bill::{BILL_END_DAY, BillingPeriod},
+        session::{AnomalyKind, IntervalEstimates, test_support::session},
     };
-    use crate::hydro_bill::{BILL_END_DAY, BillingPeriod};
-    use crate::session::{AnomalyKind, IntervalEstimates, test_support::session};
     use jiff::civil::date;
-    use std::path::PathBuf;
+    use std::{path::PathBuf, rc::Rc};
 
     /// A bill figure of zero is refused rather than divided by. Every one of the four is checked,
     /// because they are four separate divisions and three of them went unguarded until this test.
@@ -764,7 +769,7 @@ mod test {
     /// other two.
     fn hot_cost() -> DeliveryCost {
         let mut hot = session("June.csv", 7, "HOT", KW_PEAK_HOUR, 60, 6.0);
-        std::rc::Rc::get_mut(&mut hot)
+        Rc::get_mut(&mut hot)
             .expect("sole owner")
             .anomalies
             .push(AnomalyKind::ExcessiveAvgKw);
@@ -1310,8 +1315,7 @@ mod test {
             for anomaly in &kept.estimates.session_anomalies {
                 assert!(
                     cost.notes.anomalies.iter().any(|listed| {
-                        std::rc::Rc::ptr_eq(&listed.session, &anomaly.session)
-                            && listed.kind == anomaly.kind
+                        Rc::ptr_eq(&listed.session, &anomaly.session) && listed.kind == anomaly.kind
                     }),
                     "{} holds an anomaly the notes do not: {anomaly:?}",
                     kept.unit

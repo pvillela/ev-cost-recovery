@@ -5,7 +5,7 @@
 //! Toronto Hydro starts charging adds a field here, while a redesigned statement changes only how
 //! the existing fields are found.
 
-use std::fmt;
+use std::{error::Error, fmt};
 
 use jiff::civil::Date;
 
@@ -143,7 +143,7 @@ impl fmt::Display for ZeroDenominator {
     }
 }
 
-impl std::error::Error for ZeroDenominator {}
+impl Error for ZeroDenominator {}
 
 /// The bill as `Debug` renders it, with the two worked-out values put back where the fields they
 /// replaced used to sit.

@@ -20,10 +20,9 @@
 
 use crate::time::{is_on_grid, local_datetime, time_zone, wall_clock_instant};
 
-use super::TIME_GRID_STEP;
 use super::{
     Anomaly, AnomalyKind, BREAKER_RATING_KW, RSession, RunLog, Session, Sessions, SourceLog,
-    duration_is_consistent,
+    TIME_GRID_STEP, duration_is_consistent,
 };
 use jiff::{
     SignedDuration, Timestamp, civil,
@@ -569,10 +568,8 @@ impl CsvSession {
 // cargo test --lib -- session::csv::test --nocapture
 mod test {
     use super::*;
-    use crate::session::test_support::timing_anomalies;
-    use crate::time::serial_of_civil;
-    use std::fs;
-    use std::path::PathBuf;
+    use crate::{session::test_support::timing_anomalies, time::serial_of_civil};
+    use std::{env, fs, path::PathBuf, process};
 
     /// Both forms the reader itself accepts, in the same order — see `parse_datetime`. A helper
     /// that took only whole minutes could not express a report that has moved to seconds, which is
@@ -610,7 +607,7 @@ mod test {
 
     /// A scratch directory of its own per test, since these run in parallel within one process.
     fn temp_dir(tag: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("ev_peak_csv_{}_{tag}", std::process::id()));
+        let dir = env::temp_dir().join(format!("ev_peak_csv_{}_{tag}", process::id()));
         fs::create_dir_all(&dir).unwrap();
         dir
     }

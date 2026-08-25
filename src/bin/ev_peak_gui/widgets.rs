@@ -1,7 +1,6 @@
 //! Small pieces of chrome the two tabs share.
 
-use crate::state::WorkingDir;
-use crate::theme;
+use crate::{state::WorkingDir, theme};
 use eframe::egui;
 use std::path::Path;
 

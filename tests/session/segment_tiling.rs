@@ -36,7 +36,7 @@ use ev_cost_recovery::{
 };
 use jiff::{Timestamp, Zoned, tz::TimeZone};
 use std::{
-    fs,
+    env, fs, process,
     rc::Rc,
     sync::atomic::{AtomicUsize, Ordering},
 };
@@ -80,9 +80,9 @@ fn hm(ts: Timestamp) -> String {
 /// `IntervalEstimates` holds `Rc`s, so it cannot be computed once and shared across threads either.
 fn estimates() -> IntervalEstimates {
     static NEXT: AtomicUsize = AtomicUsize::new(0);
-    let dir = std::env::temp_dir().join(format!(
+    let dir = env::temp_dir().join(format!(
         "ev_peak_tiling_{}_{}",
-        std::process::id(),
+        process::id(),
         NEXT.fetch_add(1, Ordering::Relaxed)
     ));
     fs::create_dir_all(&dir).unwrap();

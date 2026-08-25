@@ -1,14 +1,17 @@
 //! The Estimate tab: a workbook and an interval of interest in, the peak-contribution report out.
 
-use crate::state::{EstimateState, WorkingDir, report_sections};
-use crate::{theme, widgets};
+use crate::{
+    state::{EstimateState, WorkingDir, report_sections},
+    theme, widgets,
+};
 use eframe::egui;
 use egui_extras::DatePickerButton;
-use ev_cost_recovery::session::{
-    Bracket, IntervalEstimates, IoiLength, LEGAL_START_MINUTES, Segment,
+use ev_cost_recovery::{
+    session::{Bracket, IntervalEstimates, IoiLength, LEGAL_START_MINUTES, Segment},
+    time::time_zone,
 };
-use ev_cost_recovery::time::time_zone;
 use jiff::Zoned;
+use std::fs;
 
 pub fn ui(ui: &mut egui::Ui, state: &mut EstimateState, working: &mut WorkingDir) {
     widgets::heading(ui, "Estimate peak contribution");
@@ -312,7 +315,7 @@ fn export_row(ui: &mut egui::Ui, state: &mut EstimateState, working: &mut Workin
                 // Remembered whether or not the write succeeds: it is where the user just chose to
                 // be either way.
                 working.remember(&path);
-                if let Err(e) = std::fs::write(&path, &text) {
+                if let Err(e) = fs::write(&path, &text) {
                     state.error = Some(format!("{}: {e}", path.display()));
                 }
             }

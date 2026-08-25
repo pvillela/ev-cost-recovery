@@ -4,10 +4,13 @@
 //! the folder the file dialogs open in — the question is whether Evolute paid what our rates earned
 //! over a calendar month, not whether those rates cover Toronto Hydro's bill over a billing period.
 
-use crate::state::{ReimbursementState, WorkingDir, report_sections};
-use crate::{theme, widgets};
+use crate::{
+    state::{ReimbursementState, WorkingDir, report_sections},
+    theme, widgets,
+};
 use eframe::egui;
 use ev_cost_recovery::io::ReimbursementReconciliation;
+use std::fs;
 
 pub fn ui(ui: &mut egui::Ui, state: &mut ReimbursementState, working: &mut WorkingDir) {
     widgets::heading(ui, "Evolute reimbursement");
@@ -246,7 +249,7 @@ fn export_row(
             // Remembered whether or not the write succeeds: it is where the user just chose to be
             // either way.
             working.remember(&path);
-            if let Err(e) = std::fs::write(&path, text) {
+            if let Err(e) = fs::write(&path, text) {
                 state.error = Some(format!("{}: {e}", path.display()));
             }
         }

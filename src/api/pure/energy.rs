@@ -25,9 +25,11 @@ use std::{error::Error, fmt};
 // Re-exported because the two functions here take these and return those, and a caller should not
 // have to know which module they come from in order to spell the call. `Tou` for the same reason
 // one level down: it is what `EnergyError::NoRate` carries, and matching on that names it.
-pub use crate::hydro_bill::HydroBill;
-pub use crate::session::{RSession, TouKwh};
-pub use crate::time::Tou;
+pub use crate::{
+    hydro_bill::HydroBill,
+    session::{RSession, TouKwh},
+    time::Tou,
+};
 
 /// EV energy over a billing period, split by time-of-use band.
 ///
@@ -449,9 +451,12 @@ fn band_name(tou: Tou) -> &'static str {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::api::pure::test_support::as_report;
-    use crate::session::test_support::{inverted_session, session, spike_session};
+    use crate::{
+        api::pure::test_support::as_report,
+        session::test_support::{inverted_session, session, spike_session},
+    };
     use jiff::civil::{Date, date};
+    use std::slice;
 
     /// The period every fixture here belongs to: 24 May to 23 June 2026.
     fn period_ending_date() -> Date {
@@ -473,8 +478,8 @@ mod test {
         // Mid-April, two months before the period opens.
         let outside = session("April.csv", 2, "OUT", "2026-04-15T06:00:00Z", 60, 7.0);
 
-        assert!((kwh(std::slice::from_ref(&inside)) - 7.0).abs() < 1e-9);
-        assert_eq!(kwh(std::slice::from_ref(&outside)), 0.0);
+        assert!((kwh(slice::from_ref(&inside)) - 7.0).abs() < 1e-9);
+        assert_eq!(kwh(slice::from_ref(&outside)), 0.0);
         assert!((kwh(&[inside, outside]) - 7.0).abs() < 1e-9);
     }
 
@@ -487,7 +492,7 @@ mod test {
         // the same.
         let again = session("May.csv", 9, "BOUNDARY", "2026-06-01T06:00:00Z", 60, 7.0);
 
-        assert!((kwh(std::slice::from_ref(&once)) - 7.0).abs() < 1e-9);
+        assert!((kwh(slice::from_ref(&once)) - 7.0).abs() < 1e-9);
         assert!((kwh(&[once, again]) - 7.0).abs() < 1e-9);
     }
 

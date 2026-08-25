@@ -26,11 +26,12 @@ use super::{
         ev_load, ev_pilot_current_a, loading_ratio, site_load,
     },
 };
-use crate::markdown::{Align, Left, Right, h1, h2, table, wrap};
-use crate::time::{Interval, time_zone};
+use crate::{
+    markdown::{Align, Left, Right, h1, h2, table, wrap},
+    time::{Interval, time_zone},
+};
 use jiff::{Timestamp, Zoned};
-use std::collections::BTreeMap;
-use std::fmt;
+use std::{collections::BTreeMap, fmt};
 
 fn local(ts: Timestamp) -> Zoned {
     Zoned::new(ts, time_zone())

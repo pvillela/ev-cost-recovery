@@ -53,9 +53,11 @@
 //! the fact it is cut on in the other.
 
 use crate::time::{standard_date, standard_midnight};
-use jiff::{Timestamp, Unit, civil::Date, civil::date};
-use std::error::Error;
-use std::fmt;
+use jiff::{
+    Timestamp, Unit,
+    civil::{Date, date},
+};
+use std::{error::Error, fmt};
 
 /// The day of the month a Toronto Hydro billing period ends on.
 ///
@@ -238,13 +240,14 @@ pub fn billing_period_span(billing_period_ending: Date) -> String {
 mod test {
     use super::*;
     use crate::time::local_hour;
+    use std::time::Duration;
 
     /// The boundary is standard-time midnight between the 23rd and the 24th, so the last hour of
     /// the 23rd belongs to the period ending that day and the first hour of the 24th starts the
     /// next.
     #[test]
     fn the_period_boundary_is_standard_midnight_on_the_24th() {
-        let last = standard_midnight(date(2026, 6, 24)) - std::time::Duration::from_secs(3600);
+        let last = standard_midnight(date(2026, 6, 24)) - Duration::from_secs(3600);
         let first = standard_midnight(date(2026, 6, 24));
         assert_eq!(
             BillingPeriod::containing(last, BILL_END_DAY).ending,
@@ -270,7 +273,7 @@ mod test {
             date(2026, 6, 23)
         );
         // An hour later it is 01:00 EDT, which is 00:00 EST: the next period has begun.
-        let an_hour_later = midnight_edt + std::time::Duration::from_secs(3600);
+        let an_hour_later = midnight_edt + Duration::from_secs(3600);
         assert_eq!(
             BillingPeriod::containing(an_hour_later, BILL_END_DAY).ending,
             date(2026, 7, 23)

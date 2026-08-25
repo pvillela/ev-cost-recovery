@@ -10,26 +10,33 @@
 //! the chargers metered, which is what a driver can check against their own session history; what
 //! the rate has to cover is a question for whoever sets it.
 
-use crate::hydro_bill::{
-    BILL_END_DAY, BillingPeriod, NotABillingPeriodEnding, billing_period_dates, billing_period_span,
+use crate::{
+    hydro_bill::{
+        BILL_END_DAY, BillingPeriod, NotABillingPeriodEnding, billing_period_dates,
+        billing_period_span,
+    },
+    markdown::{Left, Right, amounts, field, h1, h2, rounding_note, table, wrap},
+    session::{AnomalyKind, SessionNotes, Sessions, tou_kwh},
+    time::{Interval, local_midnight},
 };
-use crate::markdown::{Left, Right, amounts, field, h1, h2, rounding_note, table, wrap};
-use crate::session::{AnomalyKind, SessionNotes, Sessions, tou_kwh};
-use crate::time::{Interval, local_midnight};
 use jiff::{Timestamp, civil::Date};
-use std::{error::Error, fmt};
+use std::{error::Error, fmt, mem};
 
 // Through `super`, not through `crate::io`. The two cost breakdowns are computed here in `pure`;
 // reaching them by the path `io` re-exports them under would point this half of the API at the
 // other, which is the one direction the split exists to prevent.
-use super::energy::{EnergyCost, EnergyError, energy_cost};
-use super::peak_power::{DeliveryCost, PeakPowerError, peak_power_cost};
+use super::{
+    energy::{EnergyCost, EnergyError, energy_cost},
+    peak_power::{DeliveryCost, PeakPowerError, peak_power_cost},
+};
 
 // Re-exported because the functions here take these and return those, and a caller should not have
 // to know which module they come from in order to spell the call.
-pub use crate::green_button::{MeterNotes, PeriodValues};
-pub use crate::hydro_bill::HydroBill;
-pub use crate::session::{RSession, TouKwh};
+pub use crate::{
+    green_button::{MeterNotes, PeriodValues},
+    hydro_bill::HydroBill,
+    session::{RSession, TouKwh},
+};
 
 /// EV cost-recovery TOU rates. The rates are effective for at least one month.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -489,7 +496,7 @@ pub fn cost_recovery_surplus(
     // three hours it prices. Both bear on the subtraction, and neither contains the other.
     let mut notes = sessions.notes(AnomalyKind::bears_on_energy);
     notes.add_anomalies(delivery.notes.anomalies.iter().cloned());
-    let meter = std::mem::take(&mut delivery.meter);
+    let meter = mem::take(&mut delivery.meter);
     recovery.notes = SessionNotes::default();
     delivery.notes = SessionNotes::default();
     energy.notes = SessionNotes::default();
@@ -736,11 +743,16 @@ fn verdict(surplus: f64) -> &'static str {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::api::pure::test_support::{
-        KVA_PEAK_HOUR, KW_PEAK_HOUR, NOP_PEAK_HOUR, as_report, bill, period_ending_date,
-        period_values_with_nop, two_reports,
+    use crate::{
+        api::pure::test_support::{
+            KVA_PEAK_HOUR, KW_PEAK_HOUR, NOP_PEAK_HOUR, as_report, bill, period_ending_date,
+            period_values_with_nop, two_report_sessions, two_reports,
+        },
+        golden,
+        green_button::Anomaly,
+        session::test_support::session,
     };
-    use crate::session::test_support::session;
+    use std::{path::PathBuf, rc::Rc};
 
     /// No sessions at all, as a report.
     ///
@@ -782,11 +794,11 @@ mod test {
     /// is asking about the delivery side alone.
     fn sessions_with_hot() -> Vec<RSession> {
         let mut hot = session("June.csv", 7, "HOT", KW_PEAK_HOUR, 60, 6.0);
-        std::rc::Rc::get_mut(&mut hot)
+        Rc::get_mut(&mut hot)
             .expect("sole owner")
             .anomalies
-            .push(crate::session::AnomalyKind::ExcessiveAvgKw);
-        let mut sessions = crate::api::pure::test_support::two_report_sessions();
+            .push(AnomalyKind::ExcessiveAvgKw);
+        let mut sessions = two_report_sessions();
         sessions.push(hot);
         sessions
     }
@@ -1112,7 +1124,7 @@ mod test {
 
         assert!(
             !sessions
-                .notes(crate::session::AnomalyKind::bears_on_energy)
+                .notes(AnomalyKind::bears_on_energy)
                 .anomalies
                 .iter()
                 .any(|a| a.session.id == "HOT"),
@@ -1359,7 +1371,7 @@ mod test {
             None,
         )
         .expect("the fixture bill closes a billing period and has all three maxima");
-        let alone = crate::api::pure::peak_power_cost(&bill(), peaks(), &two_reports())
+        let alone = peak_power_cost(&bill(), peaks(), &two_reports())
             .expect("the same inputs give the same cost");
 
         for (kept, own) in s
@@ -1484,10 +1496,10 @@ mod test {
         // The meter side of the notes, which a fixture built in memory otherwise says nothing
         // about: a file it was read from, and one interval that needed a judgement call.
         let mut meter = peaks();
-        meter.source = Some(std::path::PathBuf::from("TH_Electric_Usage.XML"));
+        meter.source = Some(PathBuf::from("TH_Electric_Usage.XML"));
         meter.anomalies = vec![(
             KVA_PEAK_HOUR.parse().expect("an RFC 3339 timestamp"),
-            crate::green_button::Anomaly::MissingKva,
+            Anomaly::MissingKva,
         )];
 
         let s = cost_recovery_surplus(
@@ -1499,7 +1511,7 @@ mod test {
         )
         .expect("the fixture bill closes a billing period and has all three maxima");
 
-        crate::golden::check("api/EV_Cost_Recovery_Surplus.report.md", &s.to_string());
+        golden::check("api/EV_Cost_Recovery_Surplus.report.md", &s.to_string());
     }
 
     /// Keeping the intervals did not put them in the report. The summary is a page of money.

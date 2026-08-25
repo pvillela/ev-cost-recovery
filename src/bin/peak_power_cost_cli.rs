@@ -2,9 +2,7 @@
 //! the Evolute session reports covering the period's two ends.
 
 use ev_cost_recovery::io::peak_power_cost;
-use std::error::Error;
-use std::path::Path;
-use std::process::ExitCode;
+use std::{env, error::Error, path::Path, process::ExitCode};
 
 const USAGE: &str = "\
 peak_power_cost_cli -- the delivery cost attributable to EV charging in one billing period.
@@ -36,7 +34,7 @@ Example:
 ";
 
 fn main() -> ExitCode {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let args: Vec<String> = env::args().skip(1).collect();
 
     if args.iter().any(|a| a == "-h" || a == "--help") {
         print!("{USAGE}");

@@ -13,10 +13,8 @@
 //! incomplete-period highlight.
 
 use ev_cost_recovery::time::local_date;
-use jiff::Timestamp;
-use jiff::civil::Date;
-use std::path::Path;
-use std::process::ExitCode;
+use jiff::{Timestamp, civil::Date};
+use std::{env, fs, path::Path, process::ExitCode};
 
 const USAGE: &str = "\
 gb_trim_fixture -- cut a small ESPI feed out of a large one.
@@ -37,7 +35,7 @@ See docs/maintenance-manual.md.
 ";
 
 fn main() -> ExitCode {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let args: Vec<String> = env::args().skip(1).collect();
     if args.iter().any(|a| a == "-h" || a == "--help") {
         print!("{USAGE}");
         return ExitCode::SUCCESS;
@@ -62,7 +60,7 @@ fn main() -> ExitCode {
 fn run(input: &Path, from: &str, to: &str) -> Result<String, String> {
     let from: Date = from.parse().map_err(|e| format!("{from}: {e}"))?;
     let to: Date = to.parse().map_err(|e| format!("{to}: {e}"))?;
-    let xml = std::fs::read_to_string(input).map_err(|e| format!("{}: {e}", input.display()))?;
+    let xml = fs::read_to_string(input).map_err(|e| format!("{}: {e}", input.display()))?;
     trim(&xml, from, to)
 }
 

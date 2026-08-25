@@ -31,10 +31,11 @@
 //! showed up in a dump that recorded only values and number formats.
 
 use super::{fixture, fixtures_dir};
-use ev_cost_recovery::green_button::{parse, write_workbook};
-use ev_cost_recovery::hydro_bill::BILL_END_DAY;
-use std::fmt::Write as _;
-use std::path::Path;
+use ev_cost_recovery::{
+    green_button::{parse, write_workbook},
+    hydro_bill::BILL_END_DAY,
+};
+use std::{cmp, env, fmt::Write as _, fs, path::Path, process};
 use umya_spreadsheet::{Worksheet, reader};
 
 const FIXTURES: &[&str] = &["billed_period", "civic_holiday", "dst_fall", "dst_spring"];
@@ -54,36 +55,36 @@ const STANDARD: &str = "billed_period";
 
 #[test]
 fn each_fixture_matches_its_golden() {
-    let update = std::env::var_os("UPDATE_GOLDEN").is_some();
+    let update = env::var_os("UPDATE_GOLDEN").is_some();
     let mut failures = Vec::new();
 
     for name in FIXTURES {
-        let xml = std::fs::read_to_string(fixture(&format!("{name}.XML")))
+        let xml = fs::read_to_string(fixture(&format!("{name}.XML")))
             .unwrap_or_else(|e| panic!("{name}.XML: {e}"));
         let feed = parse(&xml).unwrap_or_else(|e| panic!("{name}.XML: {e}"));
 
         // A scratch directory per fixture, since tests run in parallel and the writer refuses to
         // overwrite. A normal test run never writes into tests/fixtures.
-        let dir = std::env::temp_dir().join(format!("gb_golden_{}_{name}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = env::temp_dir().join(format!("gb_golden_{}_{name}", process::id()));
+        fs::create_dir_all(&dir).unwrap();
         let workbook = dir.join(format!("{name}.xlsx"));
-        let _ = std::fs::remove_file(&workbook);
+        let _ = fs::remove_file(&workbook);
         write_workbook(&workbook, &feed, BILL_END_DAY).unwrap();
 
         let actual = dump(&workbook);
 
         let golden = fixtures_dir().join(format!("{name}.golden.txt"));
         if update {
-            std::fs::write(&golden, &actual).unwrap();
+            fs::write(&golden, &actual).unwrap();
             if *name == STANDARD {
                 let committed = fixtures_dir().join(format!("{name}.xlsx"));
-                std::fs::copy(&workbook, &committed).unwrap();
+                fs::copy(&workbook, &committed).unwrap();
             }
-            std::fs::remove_dir_all(&dir).ok();
+            fs::remove_dir_all(&dir).ok();
             continue;
         }
-        std::fs::remove_dir_all(&dir).ok();
-        let expected = std::fs::read_to_string(&golden).unwrap_or_default();
+        fs::remove_dir_all(&dir).ok();
+        let expected = fs::read_to_string(&golden).unwrap_or_default();
         if actual != expected {
             failures.push(name);
             eprintln!("--- {name} differs ---");
@@ -240,7 +241,7 @@ fn first_differences(expected: &str, actual: &str, limit: usize) -> Vec<String> 
         .map(|(i, (e, a))| format!("  line {}:\n    golden: {e}\n    actual: {a}", i + 1))
         .chain(
             match expected.lines().count().cmp(&actual.lines().count()) {
-                std::cmp::Ordering::Equal => None,
+                cmp::Ordering::Equal => None,
                 _ => Some(format!(
                     "  line count: golden {}, actual {}",
                     expected.lines().count(),

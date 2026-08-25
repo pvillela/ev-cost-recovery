@@ -10,20 +10,26 @@
 //! of the API and neither depends on it; putting it beside the narrow types would have pointed that
 //! arrow the wrong way.
 
-use std::error::Error;
-use std::fmt;
-use std::path::{Path, PathBuf};
+use std::{
+    error::Error,
+    fmt,
+    path::{Path, PathBuf},
+};
 
 // Re-exported, not merely imported. Matching on `ApiError` past its first level -- which is the
 // ordinary thing to do with an error union -- forces a caller to name the payload types, so a
 // module that hands out the union has to hand out what its variants carry. Nothing deeper: the
 // fields inside those payloads can be read without being named.
-pub use crate::api::io::{ConversionError, ReadError};
-pub use crate::api::pure::additional::ReimbursementError;
-pub use crate::api::pure::coverage::CoverageError;
-pub use crate::api::pure::energy::EnergyError;
-pub use crate::api::pure::peak_power::PeakPowerError;
-pub use crate::api::pure::recovery::{CostRecoveryError, CostRecoverySurplusError};
+pub use crate::api::{
+    io::{ConversionError, ReadError},
+    pure::{
+        additional::ReimbursementError,
+        coverage::CoverageError,
+        energy::EnergyError,
+        peak_power::PeakPowerError,
+        recovery::{CostRecoveryError, CostRecoverySurplusError},
+    },
+};
 
 /// Every way an API call can fail, in one type, by the stage that failed.
 #[derive(Debug)]

@@ -8,8 +8,7 @@
 //! An inherent method rather than a free function, because `period.expected_intervals()` is how it
 //! reads at the two call sites and the split is an artefact of where the constant lives.
 
-use crate::green_button::METER_INTERVAL;
-use crate::hydro_bill::BillingPeriod;
+use crate::{green_button::METER_INTERVAL, hydro_bill::BillingPeriod};
 
 impl BillingPeriod {
     /// How many meter intervals a complete period contains.

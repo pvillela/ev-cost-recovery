@@ -1,7 +1,9 @@
 //! The Convert tab: an Evolute session report CSV in, a workbook out.
 
-use crate::state::{ConvertState, WorkingDir};
-use crate::widgets;
+use crate::{
+    state::{ConvertState, WorkingDir},
+    widgets,
+};
 use eframe::egui;
 
 /// Draws the tab. Returns whether the user asked to move on to the Estimate tab; the workbook

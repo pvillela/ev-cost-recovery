@@ -1,10 +1,13 @@
-use crate::session::log::SourceLog;
-use crate::time::{Interval, duration, time_zone, truncate_to};
+use crate::{
+    session::log::SourceLog,
+    time::{Interval, duration, time_zone, truncate_to},
+};
 
 use super::site_load::{Load, ev_load, ev_real_power_kw, transformer_load};
 use jiff::{Timestamp, Zoned};
 use std::{
     collections::BTreeMap,
+    error::Error,
     fmt::{self, Debug},
     iter::Sum,
     ops::{Add, Div, Mul},
@@ -1069,7 +1072,7 @@ impl Sessions {
     /// The first write that fails, with none of the later ones attempted. A log the user believes
     /// exists and does not is worse than no log at all, so the failure is reported rather than
     /// passed over.
-    pub fn write_logs(&self) -> Result<Vec<PathBuf>, Box<dyn std::error::Error>> {
+    pub fn write_logs(&self) -> Result<Vec<PathBuf>, Box<dyn Error>> {
         self.logs.iter().map(SourceLog::write).collect()
     }
 
@@ -1166,9 +1169,10 @@ impl SessionNotes {
     /// rather than by value: these all come from one [`Sessions`], where a record appears once.
     pub fn add_anomalies(&mut self, anomalies: impl IntoIterator<Item = Anomaly>) {
         for anomaly in anomalies {
-            let held = self.anomalies.iter().any(|a| {
-                a.kind == anomaly.kind && std::rc::Rc::ptr_eq(&a.session, &anomaly.session)
-            });
+            let held = self
+                .anomalies
+                .iter()
+                .any(|a| a.kind == anomaly.kind && Rc::ptr_eq(&a.session, &anomaly.session));
             if !held {
                 self.anomalies.push(anomaly);
             }
@@ -1182,7 +1186,7 @@ impl SessionNotes {
     /// # Errors
     ///
     /// The first write that fails, with none of the later ones attempted.
-    pub fn write_logs(&self) -> Result<Vec<PathBuf>, Box<dyn std::error::Error>> {
+    pub fn write_logs(&self) -> Result<Vec<PathBuf>, Box<dyn Error>> {
         self.logs.iter().map(SourceLog::write).collect()
     }
 }

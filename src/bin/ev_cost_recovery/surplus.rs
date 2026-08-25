@@ -1,9 +1,12 @@
 //! The Cost recovery tab: four files and a rate schedule in, the surplus report out.
 
-use crate::state::{Input, SurplusState, WorkingDir, report_sections};
-use crate::{theme, widgets};
+use crate::{
+    state::{Input, SurplusState, WorkingDir, report_sections},
+    theme, widgets,
+};
 use eframe::egui;
 use ev_cost_recovery::io::CostRecoverySurplus;
+use std::fs;
 
 pub fn ui(ui: &mut egui::Ui, state: &mut SurplusState, working: &mut WorkingDir) {
     widgets::heading(ui, "EV cost recovery surplus");
@@ -197,7 +200,7 @@ fn export_row(
                 // Remembered whether or not the write succeeds: it is where the user just chose to
                 // be either way.
                 working.remember(&path);
-                if let Err(e) = std::fs::write(&path, text) {
+                if let Err(e) = fs::write(&path, text) {
                     state.error = Some(format!("{}: {e}", path.display()));
                 }
             }

@@ -4,8 +4,10 @@
 //! other, and lifting window chrome into the library would put `egui` in its public surface. The
 //! duplication ends when that app is retired.
 
-use crate::state::{RatesForm, Section, WorkingDir};
-use crate::theme;
+use crate::{
+    state::{RatesForm, Section, WorkingDir},
+    theme,
+};
 use eframe::egui;
 use egui_extras::DatePickerButton;
 use std::path::Path;

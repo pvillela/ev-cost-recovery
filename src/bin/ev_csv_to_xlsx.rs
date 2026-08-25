@@ -1,5 +1,5 @@
 use ev_cost_recovery::session::excel::session_csv_to_xlsx;
-use std::{path::PathBuf, process::ExitCode};
+use std::{env, path::PathBuf, process::ExitCode};
 
 const USAGE: &str = "\
 Converts a charging session report from CSV to .xlsx.
@@ -17,7 +17,7 @@ A .convert.log is written beside the workbook. It lists the same findings, or sa
 none.";
 
 fn main() -> ExitCode {
-    let args: Vec<PathBuf> = std::env::args_os().skip(1).map(PathBuf::from).collect();
+    let args: Vec<PathBuf> = env::args_os().skip(1).map(PathBuf::from).collect();
     if args.is_empty() || args.iter().any(|a| a == "-h" || a == "--help") {
         println!("{USAGE}");
         return if args.is_empty() {

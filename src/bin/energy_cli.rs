@@ -3,9 +3,7 @@
 
 use ev_cost_recovery::io::energy;
 use jiff::civil::Date;
-use std::error::Error;
-use std::path::Path;
-use std::process::ExitCode;
+use std::{env, error::Error, path::Path, process::ExitCode};
 
 const USAGE: &str = "\
 energy_cli -- EV energy for one billing period, split by time-of-use band.
@@ -32,7 +30,7 @@ Example:
 ";
 
 fn main() -> ExitCode {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let args: Vec<String> = env::args().skip(1).collect();
 
     if args.iter().any(|a| a == "-h" || a == "--help") {
         print!("{USAGE}");

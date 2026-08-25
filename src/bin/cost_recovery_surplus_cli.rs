@@ -4,9 +4,7 @@
 
 use ev_cost_recovery::io::{CostRecoveryRates, cost_recovery_surplus};
 use jiff::civil::Date;
-use std::error::Error;
-use std::path::Path;
-use std::process::ExitCode;
+use std::{env, error::Error, path::Path, process::ExitCode};
 
 const USAGE: &str = "\
 cost_recovery_surplus_cli -- EV cost recovery against EV cost, for one billing period.
@@ -51,7 +49,7 @@ Examples:
 ";
 
 fn main() -> ExitCode {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let args: Vec<String> = env::args().skip(1).collect();
 
     if args.iter().any(|a| a == "-h" || a == "--help") {
         print!("{USAGE}");

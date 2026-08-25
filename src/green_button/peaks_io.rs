@@ -4,11 +4,13 @@
 //! caller checking one invoice starts from a path and a closing date, and needs to be told when
 //! the feed does not reach that period rather than handed nothing. This module is that call.
 
-use crate::green_button::{PeriodValues, parse, period_values};
-use crate::hydro_bill::MAX_BILL_END_DAY;
-use crate::time::local_date;
+use crate::{
+    green_button::{PeriodValues, Readings, parse, period_values},
+    hydro_bill::MAX_BILL_END_DAY,
+    time::local_date,
+};
 use jiff::civil::Date;
-use std::{error::Error, path::Path};
+use std::{error::Error, fs, path::Path};
 
 /// Reads the Green Button XML at `xml_path` and returns the values for the billing period ending
 /// on `period_ending`.
@@ -40,8 +42,7 @@ pub fn period_values_xml(
     // Every error out of this function names the file it concerns, including the ones below where
     // the underlying error would not: a bare "No such file or directory" says nothing a reader can
     // act on. A caller that has the path already should therefore not add it again.
-    let xml =
-        std::fs::read_to_string(xml_path).map_err(|e| format!("{}: {e}", xml_path.display()))?;
+    let xml = fs::read_to_string(xml_path).map_err(|e| format!("{}: {e}", xml_path.display()))?;
     let feed = parse(&xml).map_err(|e| format!("{}: {e}", xml_path.display()))?;
     // The one place that knows which file these came from, since `parse` is handed a string.
     let readings = feed.readings().from_source(xml_path);
@@ -89,7 +90,7 @@ fn check_calendar(period_ending: Date, bill_end_day: i8) -> Result<(), Box<dyn E
 }
 
 /// What the feed actually covers, for an error that says where to look next.
-fn coverage(readings: &crate::green_button::Readings) -> String {
+fn coverage(readings: &Readings) -> String {
     match (readings.rows.first(), readings.rows.last()) {
         (Some(first), Some(last)) => format!(
             "The feed covers {} to {}.",

@@ -7,6 +7,8 @@
 //! Crate-internal. What a report *says* belongs to the module that owns the figures; this is only
 //! how it is laid out.
 
+use std::{iter, mem};
+
 /// Width the prose is wrapped to. Comfortably inside 80 columns, leaving room for a quoting prefix
 /// in an email reply.
 const WRAP: usize = 76;
@@ -27,7 +29,7 @@ pub(crate) fn table(headers: &[&str], rows: &[Vec<String>], align: &[Align]) -> 
         .map(|(i, h)| {
             rows.iter()
                 .map(|r| r[i].chars().count())
-                .chain(std::iter::once(h.chars().count()))
+                .chain(iter::once(h.chars().count()))
                 .max()
                 .unwrap_or(0)
         })
@@ -77,7 +79,7 @@ pub(crate) fn wrap(text: &str, indent: &str) -> String {
             cur.chars().count() + 1 + word.chars().count()
         };
         if !cur.is_empty() && candidate > WRAP {
-            lines.push(std::mem::take(&mut cur));
+            lines.push(mem::take(&mut cur));
             cur.push_str(indent);
         }
         if !cur.is_empty() && !cur.ends_with(' ') && cur != *indent {

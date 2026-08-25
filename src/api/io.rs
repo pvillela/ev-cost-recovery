@@ -11,28 +11,38 @@
 //! neither has a counterpart in [`pure`](super::pure). Every other function here leaves the disk as
 //! it found it, and the run logs they carry back are written by the caller.
 
-use crate::api::pure;
-use crate::green_button::{self, period_values_xml};
-use crate::hydro_bill::{BILL_END_DAY, hydro_bill_from_pdf};
-use crate::session::{Sessions, csv};
+// `session::excel` arrives as a module rather than as its two functions: both are named the same
+// as something declared here, and a prefix says which is meant without inventing an alias.
+use crate::{
+    api::pure,
+    green_button::{self, period_values_xml},
+    hydro_bill::{BILL_END_DAY, hydro_bill_from_pdf},
+    session::{Sessions, csv, excel},
+};
 use jiff::civil::Date;
-use std::error::Error;
-use std::fmt;
-use std::path::{Path, PathBuf};
+use std::{
+    error::Error,
+    fmt, fs,
+    path::{Path, PathBuf},
+};
 
 // Re-exported rather than merely imported: these name what the functions here return, and a caller
 // should not have to know which module a call delegates to in order to spell that.
-pub use crate::api::error::{
-    ApiError, CostRecoveryError, CostRecoverySurplusError, EnergyError, PeakPowerError,
+pub use crate::{
+    api::{
+        error::{
+            ApiError, CostRecoveryError, CostRecoverySurplusError, EnergyError, PeakPowerError,
+        },
+        pure::{
+            additional::{ReimbursementError, ReimbursementReconciliation},
+            energy::{Energy, EnergyCost, TouKwh},
+            peak_power::{DeliveryCost, PowerEstimates},
+            recovery::{CostRecovery, CostRecoveryRates, CostRecoveryStretch, CostRecoverySurplus},
+        },
+    },
+    green_button::WriteReport,
+    session::ConversionReport,
 };
-pub use crate::api::pure::additional::{ReimbursementError, ReimbursementReconciliation};
-pub use crate::api::pure::energy::{Energy, EnergyCost, TouKwh};
-pub use crate::api::pure::peak_power::{DeliveryCost, PowerEstimates};
-pub use crate::api::pure::recovery::{
-    CostRecovery, CostRecoveryRates, CostRecoveryStretch, CostRecoverySurplus,
-};
-pub use crate::green_button::WriteReport;
-pub use crate::session::ConversionReport;
 
 /// A source file could not be read.
 ///
@@ -646,17 +656,13 @@ pub fn session_csv_to_xlsx(
     session_csv: &Path,
     on_existing: OnExistingWorkbook,
 ) -> Result<ConversionReport, ApiError> {
-    workbook_path(
-        session_csv,
-        crate::session::excel::workbook_path(session_csv),
-        on_existing,
-    )?;
+    workbook_path(session_csv, excel::workbook_path(session_csv), on_existing)?;
     // The path is not passed on: `session::excel::session_csv_to_xlsx` derives the same one from
     // the same function, and taking it as an argument there would let a caller send the workbook
     // somewhere the check above never looked at.
-    crate::session::excel::session_csv_to_xlsx(session_csv).map_err(|cause| {
+    excel::session_csv_to_xlsx(session_csv).map_err(|cause| {
         ApiError::Conversion(ConversionError::Write {
-            path: crate::session::excel::workbook_path(session_csv),
+            path: excel::workbook_path(session_csv),
             cause,
         })
     })
@@ -705,7 +711,7 @@ pub fn gb_xml_to_xlsx(
 ) -> Result<GbConversionReport, ApiError> {
     let output_path = workbook_path(gb_xml, gb_xml.with_extension("xlsx"), on_existing)?;
 
-    let xml = std::fs::read_to_string(gb_xml).map_err(|cause| ReadError::GreenButton {
+    let xml = fs::read_to_string(gb_xml).map_err(|cause| ReadError::GreenButton {
         path: gb_xml.to_path_buf(),
         cause: Box::new(cause),
     })?;
@@ -753,8 +759,7 @@ fn read_sessions(paths: &[&Path]) -> Result<Sessions, ReadError> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::api::error::CoverageError;
-    use crate::hydro_bill::billing_period_dates;
+    use crate::{api::error::CoverageError, hydro_bill::billing_period_dates, time::Tou};
     use jiff::civil::date;
 
     /// The two refusals a conversion makes before opening anything, and the case that passes.
@@ -829,10 +834,7 @@ mod test {
     #[test]
     fn the_session_workbook_is_named_in_one_place() {
         let csv = Path::new("data/Session_Report_June_1_2026-June_30_2026.csv");
-        assert_eq!(
-            crate::session::excel::workbook_path(csv),
-            csv.with_extension("xlsx")
-        );
+        assert_eq!(excel::workbook_path(csv), csv.with_extension("xlsx"));
     }
 
     /// A date that is not a closing date is the caller's mistake, and is reported as such rather
@@ -951,7 +953,7 @@ mod test {
         // The rate a bill does not state is the bill's.
         let no_rate = EnergyError::NoRate {
             period_ending: date(2026, 6, 23),
-            tou: crate::time::Tou::OnPeak,
+            tou: Tou::OnPeak,
         };
         assert_eq!(bill_source(&no_rate, Some(bill)).as_deref(), Some(bill));
         assert_eq!(bill_source(&no_rate, None), None);
@@ -1054,7 +1056,7 @@ mod test {
 
         let no_rate = CostRecoverySurplusError::Energy(EnergyError::NoRate {
             period_ending: date(2026, 6, 23),
-            tou: crate::time::Tou::OnPeak,
+            tou: Tou::OnPeak,
         });
         assert_eq!(surplus_source(&no_rate, bill, xml).as_deref(), Some(bill));
 

@@ -11,7 +11,7 @@
 //! hold together over the whole dataset.
 
 use ev_cost_recovery::green_button::{Anomaly, parse};
-use std::path::PathBuf;
+use std::{fs, path::PathBuf};
 
 fn feed_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -21,7 +21,7 @@ fn feed_path() -> PathBuf {
 #[test]
 #[ignore = "parses the full 18 MB export"]
 fn the_real_export_parses_to_three_complete_hourly_series() {
-    let xml = std::fs::read_to_string(feed_path()).expect(
+    let xml = fs::read_to_string(feed_path()).expect(
         "the sample export is not in the repository: put \
          data/TH_Electric_Usage_23-11-2024_to_24-06-2026.XML in place before running this",
     );

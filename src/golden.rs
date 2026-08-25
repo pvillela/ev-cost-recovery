@@ -14,7 +14,10 @@
 //! real charging records; a golden is built from the crate's own invented fixtures, so it is
 //! reproducible on a fresh checkout and carries nothing that was not written for it.
 
-use std::path::{Path, PathBuf};
+use std::{
+    env, fs,
+    path::{Path, PathBuf},
+};
 
 /// The environment variable that rewrites a golden instead of checking it.
 ///
@@ -39,14 +42,14 @@ fn path(relative: &str) -> PathBuf {
 pub(crate) fn check(relative: &str, rendered: &str) {
     let golden = path(relative);
 
-    if std::env::var_os(UPDATE).is_some() {
+    if env::var_os(UPDATE).is_some() {
         let dir = golden.parent().expect("a fixture path has a parent");
-        std::fs::create_dir_all(dir).unwrap_or_else(|e| panic!("{}: {e}", dir.display()));
-        std::fs::write(&golden, rendered).unwrap_or_else(|e| panic!("{}: {e}", golden.display()));
+        fs::create_dir_all(dir).unwrap_or_else(|e| panic!("{}: {e}", dir.display()));
+        fs::write(&golden, rendered).unwrap_or_else(|e| panic!("{}: {e}", golden.display()));
         return;
     }
 
-    let expected = std::fs::read_to_string(&golden).unwrap_or_else(|e| {
+    let expected = fs::read_to_string(&golden).unwrap_or_else(|e| {
         panic!(
             "{}: {e}\nRun with {UPDATE}=1 to create it.",
             golden.display()

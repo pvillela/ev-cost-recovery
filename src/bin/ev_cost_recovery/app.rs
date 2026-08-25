@@ -1,7 +1,10 @@
 //! The window: the tab bar and which tab is drawn.
 
-use crate::state::{AppState, Tab};
-use crate::{about, convert, detail, reimbursement, surplus, theme};
+use crate::{
+    about, convert, detail, reimbursement,
+    state::{AppState, Tab},
+    surplus, theme,
+};
 use eframe::egui;
 
 pub const APP_NAME: &str = "EV Cost Recovery";

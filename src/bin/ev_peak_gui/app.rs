@@ -1,7 +1,10 @@
 //! The window: the tab bar, the landing screen, and which tab is drawn.
 
-use crate::state::{AppState, Tab};
-use crate::{about, convert, estimate, theme};
+use crate::{
+    about, convert, estimate,
+    state::{AppState, Tab},
+    theme,
+};
 use eframe::egui;
 
 pub const APP_NAME: &str = "EV Peak Power Contribution";

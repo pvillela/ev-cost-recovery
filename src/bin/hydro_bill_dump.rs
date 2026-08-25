@@ -1,11 +1,8 @@
 //! Reads a Toronto Hydro bill PDF and debug-prints the parsed
 //! [`HydroBill`](ev_cost_recovery::hydro_bill::HydroBill).
 
-use ev_cost_recovery::hydro_bill::pdf_text;
-use ev_cost_recovery::hydro_bill::{BillError, hydro_bill_from_pdf};
-use std::io;
-use std::path::Path;
-use std::process::ExitCode;
+use ev_cost_recovery::hydro_bill::{BillError, hydro_bill_from_pdf, pdf_text};
+use std::{env, error::Error, io, path::Path, process::ExitCode};
 
 const USAGE: &str = "\
 hydro_bill_dump -- what a Toronto Hydro bill PDF parses to.
@@ -31,7 +28,7 @@ Example:
 ";
 
 fn main() -> ExitCode {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let args: Vec<String> = env::args().skip(1).collect();
 
     if args.iter().any(|a| a == "-h" || a == "--help") {
         print!("{USAGE}");
@@ -55,7 +52,7 @@ fn main() -> ExitCode {
     }
 }
 
-fn run(input: &Path, lines_only: bool) -> Result<(), Box<dyn std::error::Error>> {
+fn run(input: &Path, lines_only: bool) -> Result<(), Box<dyn Error>> {
     if lines_only {
         let pages = pdf_text::read_pages(input)?;
         return match pdf_text::write_pages(&pages, &mut io::stdout().lock()) {

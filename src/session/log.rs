@@ -18,9 +18,12 @@
 //! could silently change which sessions feed an estimate — and the estimate would still look
 //! clean. The recomputed value always wins; the disagreement is logged and nothing else changes.
 
-use std::error::Error;
-use std::fmt::Write as _;
-use std::path::{Path, PathBuf};
+use std::{
+    error::Error,
+    fmt::Write as _,
+    fs,
+    path::{Path, PathBuf},
+};
 
 /// What a log records: either it is empty, or every line is something that needs a reader.
 #[derive(Debug, Default, Clone)]
@@ -83,7 +86,7 @@ impl RunLog {
         operation: &str,
     ) -> Result<PathBuf, Box<dyn Error>> {
         let path = log_path(output, suffix);
-        std::fs::write(&path, self.render(operation, output))?;
+        fs::write(&path, self.render(operation, output))?;
         Ok(path)
     }
 }

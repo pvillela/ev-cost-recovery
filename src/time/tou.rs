@@ -32,6 +32,7 @@
 use super::{holidays, local_date, local_hour, local_midnight};
 use crate::time::Interval;
 use jiff::civil::Date;
+use std::fmt;
 
 /// An Ontario Time-of-Use price period.
 ///
@@ -68,8 +69,8 @@ impl Tou {
     }
 }
 
-impl std::fmt::Display for Tou {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for Tou {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.as_str())
     }
 }
@@ -209,8 +210,8 @@ mod test {
     use crate::time::time_zone;
 
     use super::*;
-    use jiff::Timestamp;
-    use jiff::civil::date;
+    use jiff::{Timestamp, civil::date};
+    use std::time::Duration;
 
     fn local(y: i16, m: i8, d: i8, h: i8) -> Timestamp {
         local_hour(date(y, m, d), h as u8)
@@ -220,7 +221,7 @@ mod test {
     /// works for hour 23 and so that a daylight-saving day's hours are real elapsed hours rather
     /// than whatever the local clock reads an hour later.
     fn hour(y: i16, m: i8, d: i8, h: i8) -> Interval {
-        Interval::new(local(y, m, d, h), std::time::Duration::from_secs(3600))
+        Interval::new(local(y, m, d, h), Duration::from_secs(3600))
     }
 
     fn span(from: (i16, i8, i8, i8), to: (i16, i8, i8, i8)) -> Interval {
@@ -352,7 +353,7 @@ mod test {
             let day = span(from, to);
             let mut at = day.start;
             while at < day.end() {
-                let h = Interval::new(at, std::time::Duration::from_secs(3600));
+                let h = Interval::new(at, Duration::from_secs(3600));
                 assert!(tou_of(h).is_some(), "{at} straddles a boundary");
                 at = h.end();
                 checked += 1;
@@ -370,7 +371,7 @@ mod test {
             .to_zoned(time_zone())
             .unwrap()
             .timestamp();
-        let straddling = Interval::new(start, std::time::Duration::from_secs(3600));
+        let straddling = Interval::new(start, Duration::from_secs(3600));
         assert_eq!(tou_of(straddling), None);
         assert_eq!(tou_partition(straddling).len(), 2);
     }

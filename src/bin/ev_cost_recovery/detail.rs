@@ -3,12 +3,14 @@
 //! Nothing is computed here. The run on the other tab already built these three, and what this tab
 //! does is render them — so a figure shown here and the charge it produced cannot disagree.
 
-use crate::state::{SurplusState, WorkingDir};
-use crate::{theme, widgets};
+use crate::{
+    state::{SurplusState, WorkingDir},
+    theme, widgets,
+};
 use eframe::egui;
-use ev_cost_recovery::pure::peak_power::PricedInterval;
-use ev_cost_recovery::time::time_zone;
+use ev_cost_recovery::{pure::peak_power::PricedInterval, time::time_zone};
 use jiff::Zoned;
+use std::fs;
 
 pub fn ui(ui: &mut egui::Ui, state: &mut SurplusState, working: &mut WorkingDir) {
     let Some(outcome) = &state.outcome else {
@@ -87,7 +89,7 @@ fn export_row(ui: &mut egui::Ui, working: &mut WorkingDir, text: &str, default_n
                 .save_file()
         {
             working.remember(&path);
-            if let Err(e) = std::fs::write(&path, text) {
+            if let Err(e) = fs::write(&path, text) {
                 widgets::error_block(ui, &format!("{}: {e}", path.display()));
             }
         }

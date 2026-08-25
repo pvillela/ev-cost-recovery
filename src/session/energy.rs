@@ -96,8 +96,7 @@ pub fn tou_kwh(time_range: Interval, sessions: &[impl Deref<Target = Session>]) 
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::session::TIME_GRID_STEP;
-    use crate::session::test_support::session;
+    use crate::session::{TIME_GRID_STEP, test_support::session};
 
     /// The guard in [`tou_kwh`] is unreachable for any record that survives bucketing, and this is
     /// what establishes it: the adjusted span of a record whose end does not precede its start is

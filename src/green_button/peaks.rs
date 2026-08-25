@@ -4,13 +4,14 @@
 //! kVA happens once, in the sheet writer. The June 2026 invoice agrees with these figures to the
 //! digit, and it would not survive accumulating 744 floating-point divisions before summing them.
 
-use crate::green_button::{Anomaly, METER_INTERVAL, Reading, Readings};
-use crate::hydro_bill::BillingPeriod;
-use crate::markdown::{Left, h2, table, wrap};
-use crate::time::{Interval, Tou, is_off_peak, time_zone, tou_of};
+use crate::{
+    green_button::{Anomaly, METER_INTERVAL, Reading, Readings},
+    hydro_bill::BillingPeriod,
+    markdown::{Left, h2, table, wrap},
+    time::{Interval, Tou, is_off_peak, time_zone, tou_of},
+};
 use jiff::Timestamp;
-use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::{collections::BTreeMap, path::PathBuf};
 
 /// A reported maximum, and the state of the interval it was found in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -251,8 +252,7 @@ fn peak(
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::hydro_bill::BILL_END_DAY;
-    use crate::time::local_hour;
+    use crate::{hydro_bill::BILL_END_DAY, time::local_hour};
     use jiff::civil::date;
     use std::collections::BTreeSet;
 

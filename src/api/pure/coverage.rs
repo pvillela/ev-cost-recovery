@@ -9,12 +9,16 @@
 //!
 //! Nothing here opens anything. A `&Path` is read as a string.
 
-use crate::hydro_bill::{NotABillingPeriodEnding, billing_period_dates};
-use crate::session::file_name::{report_coverage, reports_cover};
+use crate::{
+    hydro_bill::{NotABillingPeriodEnding, billing_period_dates},
+    session::file_name::{report_coverage, reports_cover},
+};
 use jiff::civil::Date;
-use std::error::Error;
-use std::fmt;
-use std::path::{Path, PathBuf};
+use std::{
+    error::Error,
+    fmt,
+    path::{Path, PathBuf},
+};
 
 // Re-exported because it is what this module's function returns and what `CoverageError` carries,
 // so a caller cannot spell either without it. Its own module is where it is documented.

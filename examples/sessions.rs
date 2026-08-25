@@ -1,5 +1,5 @@
 use ev_cost_recovery::session::{Session, excel::session_list};
-use std::{path::PathBuf, process::ExitCode};
+use std::{env, path::PathBuf, process::ExitCode};
 
 const USAGE: &str = "\
 Lists the charging sessions in a converted session report workbook.
@@ -39,7 +39,7 @@ const SPIKE_RECAP: &str = "  These sessions report zero Active_Charge_Time, so t
 ";
 
 fn main() -> ExitCode {
-    let args: Vec<PathBuf> = std::env::args_os().skip(1).map(PathBuf::from).collect();
+    let args: Vec<PathBuf> = env::args_os().skip(1).map(PathBuf::from).collect();
     if args.is_empty() || args.iter().any(|a| a == "-h" || a == "--help") {
         println!("{USAGE}");
         return if args.is_empty() {

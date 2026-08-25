@@ -18,13 +18,14 @@
 //! parser must not have. `ToUnicode` below reads the same CMaps and returns an error when it
 //! cannot.
 
-use std::collections::{BTreeMap, HashMap};
-use std::error::Error;
-use std::io::{self, Write};
-use std::path::Path;
+use std::{
+    collections::{BTreeMap, HashMap},
+    error::Error,
+    io::{self, Write},
+    path::Path,
+};
 
-use lopdf::content::Operation;
-use lopdf::{Document, Object, ObjectId};
+use lopdf::{Document, Object, ObjectId, content::Operation};
 
 /// How far apart two baselines may be and still count as one row, in points.
 ///

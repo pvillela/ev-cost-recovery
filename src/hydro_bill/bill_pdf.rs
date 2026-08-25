@@ -17,14 +17,18 @@
 //! [`super::pdf_text`] supplies the positioned text and knows nothing of bills; everything that
 //! knows what a Toronto Hydro bill looks like is here.
 
-use std::error::Error;
-use std::fmt;
-use std::path::{Path, PathBuf};
+use std::{
+    error::Error,
+    fmt,
+    path::{Path, PathBuf},
+};
 
 use jiff::civil::Date;
 
-use crate::hydro_bill::bill::HydroBill;
-use crate::hydro_bill::pdf_text::{self, Fragment, Line};
+use crate::hydro_bill::{
+    bill::HydroBill,
+    pdf_text::{self, Fragment, Line},
+};
 
 /// Where the charges column ends, in PDF points from the left edge of the page.
 ///
