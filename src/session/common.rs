@@ -918,7 +918,7 @@ impl fmt::Display for Anomaly {
 /// [`Session::anomalies`] instead, and travels with it — including out to a workbook and back
 /// through the `anomalies` column.
 ///
-/// Returned by both readers — [`csv_sessions`](crate::session::csv::csv_sessions) from the CSV,
+/// Returned by both readers — the private `csv::csv_sessions` from the CSV,
 /// and `excel::historic::xlsx_to_sessions` from a workbook written from it — because the grouping
 /// is a property of the sessions, not of the file they were read out of. The workbook reader is
 /// behind the `historic` feature; the CSV one is what the API uses. The writing direction returns

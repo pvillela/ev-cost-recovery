@@ -4,7 +4,11 @@ pub use common::*;
 mod energy;
 pub use energy::*;
 
-pub mod csv;
+// Crate-private. Its one entry point, `csv_sessions`, is called from `api::io` and from `excel`,
+// and by nothing outside the crate: the API takes paths and hands back figures, never a `Sessions`.
+// Keeping the module private keeps `SessionCsvError` -- the type that call returns -- off the
+// public surface too, which is where it belongs while nothing outside matches on it.
+pub(crate) mod csv;
 
 pub mod file_name;
 

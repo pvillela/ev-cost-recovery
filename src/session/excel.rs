@@ -153,7 +153,7 @@ const COLUMNS: &[(&str, Source)] = &[
 /// Every session in the report is written to the workbook, anomalous ones included: the sheet is a
 /// faithful rendering of the session report, and which sessions take part in an estimate is decided
 /// on the reading side. A caller that wants the sessions and not the sheet can skip the workbook
-/// entirely and call [`csv_sessions`](super::csv::csv_sessions), which runs the same parse.
+/// entirely and call the private `csv::csv_sessions`, which runs the same parse.
 ///
 /// # Errors
 ///
@@ -568,7 +568,7 @@ pub mod historic {
     ///
     /// Sorting into the three buckets of [`Sessions`] happens here rather than at conversion time,
     /// because the workbook is meant to be a faithful rendering of the session report. The rules are
-    /// `Sessions::from_session_lists`'s, shared with [`csv_sessions`](crate::session::csv::csv_sessions) so the two readers
+    /// `Sessions::from_session_lists`'s, shared with the private `csv::csv_sessions` so the two readers
     /// cannot disagree.
     ///
     /// `avg_kw` is recomputed here rather than read from the sheet's `avg_kw` column, which
@@ -576,7 +576,7 @@ pub mod historic {
     /// or `NaN`, which is the honest reading; the estimating logic substitutes a finite value.
     ///
     /// A `<stem>.xlsx.read.log` is written beside the workbook, listing any stored column that
-    /// disagreed with the recomputed value. That channel has no counterpart in [`csv_sessions`](crate::session::csv::csv_sessions),
+    /// disagreed with the recomputed value. That channel has no counterpart in the private `csv::csv_sessions`,
     /// which reads the source and so has nothing to compare against.
     ///
     /// # Errors

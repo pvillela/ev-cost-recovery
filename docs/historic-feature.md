@@ -29,7 +29,8 @@ used by the Convert tab.
 
 ## Why the split falls there
 
-The API reaches sessions from the CSV, through `session::csv::csv_sessions`. The workbook is a
+The API reaches sessions from the CSV, through the crate-private `session::csv::csv_sessions`. The
+workbook is a
 faithful rendering of that same CSV, so reading one back gets you to the same place by a longer
 road, plus one thing the CSV route cannot offer: a comparison of the workbook's stored derived
 columns against the recomputed values, logged to `<stem>.xlsx.read.log`. That comparison is the

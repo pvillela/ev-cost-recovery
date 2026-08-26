@@ -121,3 +121,25 @@ change with a reason behind it.
 **The general shape**, worth recognising next time: a public item whose only external callers are
 tests is a test hatch, whether or not it is named like one. `for_test` was the marked case;
 `period_values` was the unmarked one, and it was the one doing the damage.
+
+## The same question, asked of `session::csv`
+
+Settled the same way, the same day, once `csv_sessions` had a structured error type to return.
+
+`session::csv` was a public module whose one remaining public item was `csv_sessions`; everything
+else in it — `SessionRows`, `Row`, `csv_session_rows` — was already `pub(super)`. Its callers are
+`api::io` and `session::excel`, both inside the crate, and four `#[cfg(test)]` modules. Nothing
+outside reaches it: the API takes paths and hands back figures, never a `Sessions`.
+
+The module is now `pub(crate)`, and `csv_sessions` and `SessionCsvError` with it. That last part is
+the point worth keeping: a reader's error type is only as public as the function returning it needs
+it to be. Of the four readers, only `BillError` has a genuine external consumer —
+`hydro_bill_dump` calls `is_layout()` to change the advice it prints. `GbReadError` and
+`ChargesReportError` are named by nothing outside their own modules, and are public only because
+`read_gb_feed` and `charges_report` are.
+
+`ReadError`'s doc used to offer a downcast to `BillError` "for a caller that wants to ask". Nothing
+in the crate or its binaries ever downcast to anything. The doc now records that as a fact about
+the implementation rather than as a contract.
+
+Rendered public items: 285 at the time of the survey, 281 after this and the `for_test` removal.

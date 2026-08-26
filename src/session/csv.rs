@@ -72,7 +72,7 @@ const REQUIRED_HEADERS: &[&str] = &[
 /// Only whole-file failures are here. A per-row *judgement* call is not an error: it is carried on
 /// [`Session::anomalies`] and summarised in the log, because the row still yields a session.
 #[derive(Debug)]
-pub enum SessionCsvError {
+pub(crate) enum SessionCsvError {
     /// The file could not be opened, or is not a readable CSV.
     Unreadable { path: PathBuf, cause: ::csv::Error },
 
@@ -177,7 +177,7 @@ impl Error for SessionCsvError {
 /// header from the private `REQUIRED_HEADERS` is missing, or a timestamp or duration does not
 /// parse. Per-row judgement calls do not abort the read; they are carried on each
 /// [`Session::anomalies`] and summarised in the log.
-pub fn csv_sessions(path: &Path) -> Result<Sessions, SessionCsvError> {
+pub(crate) fn csv_sessions(path: &Path) -> Result<Sessions, SessionCsvError> {
     read_sessions(path)
 }
 

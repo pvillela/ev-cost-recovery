@@ -6,8 +6,8 @@
 //! from "wrong file", and it is the second of those that would quietly halve an estimate.
 //!
 //! Nothing here opens anything. A `&Path` is read as a string, which is why this sits beside
-//! [`csv`](super::csv) rather than inside it: that module turns the file into [`Session`](super::Session)s,
-//! and this one never gets that far.
+//! the private `session::csv` rather than inside it: that module turns the file into
+//! [`Session`](super::Session)s, and this one never gets that far.
 //!
 //! What billing period the dates read here have to cover is not a question about a file name, so it
 //! is not answered here. [`api::pure::coverage`](crate::pure::coverage) joins the two.

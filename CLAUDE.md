@@ -53,7 +53,9 @@ that actually went wrong, not a general principle.
   `BillError` (`src/hydro_bill/bill_pdf.rs`) is the model; `GbReadError`
   (`src/green_button/read_xml.rs`), `SessionCsvError` (`src/session/csv.rs`) and
   `ChargesReportError` (`src/charges_report.rs`) follow it. All four readers now do; there is no
-  remaining place in the crate where a path reaches a message by string formatting.
+  remaining place in the crate where a path reaches a message by string formatting. Being
+  structured is separate from being public — `SessionCsvError` is `pub(crate)`, because the
+  function that returns it is.
 
 - **A wrapper that adds the path must not wrap a cause that already carries one.** When
   `SessionCsvError` gained its `path` field, `ConversionError::Write` — which prints the path,
@@ -71,6 +73,13 @@ that actually went wrong, not a general principle.
   imports directly below it. Three integration tests said "through the public API" and went through
   the workbook round-trip; nobody noticed for months, because prose is not compiled. When the
   shortcut is shorter, say the test is a unit test — do not describe it as the API path.
+
+- **An error type is only as public as the function that returns it needs it to be.** Of the four
+  readers, only `BillError` has a real external consumer — `hydro_bill_dump` calls `is_layout()` to
+  change its advice. The other three are reached by nothing outside the crate, so their visibility
+  follows their function's: `csv_sessions` is `pub(crate)`, so `SessionCsvError` is too. Do not
+  publish an error type on the theory that someone might downcast to it; `ReadError` carried that
+  promise for months and nothing ever did.
 
 - **A public item whose only external callers are tests is a test hatch, named like one or not.**
   Before adding an export so a test can reach something, check what the test actually needs — the

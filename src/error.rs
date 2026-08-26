@@ -15,7 +15,7 @@ use umya_spreadsheet::XlsxError;
 /// deliberately not written into the message. All four causes are structured types that name their
 /// own file, each from a `path` field of its own —
 /// [`GbReadError`](crate::green_button::GbReadError),
-/// [`SessionCsvError`](crate::session::csv::SessionCsvError),
+/// the private `session::csv::SessionCsvError`,
 /// [`ChargesReportError`](crate::charges_report::ChargesReportError) and
 /// [`BillError`](crate::hydro_bill::BillError). Writing it here as well produced
 /// `data/x.XML: data/x.XML: ...`.
@@ -42,9 +42,12 @@ pub enum ReadError {
 
     /// A Toronto Hydro bill PDF could not be read, or is not laid out the way one is read.
     ///
-    /// [`BillError::is_layout`](crate::hydro_bill::BillError::is_layout) tells those two apart,
-    /// and `cause` downcasts to [`BillError`](crate::hydro_bill::BillError) for a caller that
-    /// wants to ask.
+    /// Which of those it is, this does not say. `cause` is a
+    /// [`BillError`](crate::hydro_bill::BillError), whose
+    /// [`is_layout`](crate::hydro_bill::BillError::is_layout) tells the two apart — but nothing
+    /// downcasts to it today, so treat that as a fact about the current implementation rather than
+    /// as a contract. If telling them apart from outside is ever wanted, say so in the variant
+    /// rather than leaving a caller to guess at the boxed type.
     Bill {
         path: PathBuf,
         cause: Box<dyn Error>,

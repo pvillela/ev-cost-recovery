@@ -85,7 +85,7 @@ pub use crate::{
 /// say what each holds.
 ///
 /// Nothing here writes. Each report read returns its `csv.read` log unwritten on the result's
-/// `notes` -- see [`csv_sessions`](crate::session::csv::csv_sessions) -- and
+/// `notes` -- see the private `session::csv::csv_sessions` -- and
 /// [`SessionNotes::write_logs`](crate::session::SessionNotes::write_logs) is what a binary calls
 /// to put one beside its input.
 ///
@@ -138,7 +138,7 @@ pub fn peak_power(
 /// names. Which is given first makes no difference; the names say what each holds.
 ///
 /// Nothing here writes. Each report read returns its `csv.read` log unwritten on the result's
-/// `notes` -- see [`csv_sessions`](crate::session::csv::csv_sessions) -- and
+/// `notes` -- see the private `session::csv::csv_sessions` -- and
 /// [`SessionNotes::write_logs`](crate::session::SessionNotes::write_logs) is what a binary calls
 /// to put one beside its input.
 ///
@@ -194,7 +194,7 @@ pub fn peak_power_cost(
 /// from the call yields a total that is simply too low, with nothing in the figures to say so.
 ///
 /// Nothing here writes. Each report read returns its `csv.read` log unwritten on the result's
-/// `notes` -- see [`csv_sessions`](crate::session::csv::csv_sessions) -- and
+/// `notes` -- see the private `session::csv::csv_sessions` -- and
 /// [`SessionNotes::write_logs`](crate::session::SessionNotes::write_logs) is what a binary calls
 /// to put one beside its input.
 ///
@@ -236,7 +236,7 @@ pub fn energy(
 /// names. Which is given first makes no difference; the names say what each holds.
 ///
 /// Nothing here writes. Each report read returns its `csv.read` log unwritten on the result's
-/// `notes` -- see [`csv_sessions`](crate::session::csv::csv_sessions) -- and
+/// `notes` -- see the private `session::csv::csv_sessions` -- and
 /// [`SessionNotes::write_logs`](crate::session::SessionNotes::write_logs) is what a binary calls
 /// to put one beside its input.
 ///
@@ -289,7 +289,7 @@ pub fn energy_cost(
 /// the call yields a figure that is simply too low, with nothing in it to say so.
 ///
 /// Nothing here writes. Each report read returns its `csv.read` log unwritten on the result's
-/// `notes` -- see [`csv_sessions`](crate::session::csv::csv_sessions) -- and
+/// `notes` -- see the private `session::csv::csv_sessions` -- and
 /// [`SessionNotes::write_logs`](crate::session::SessionNotes::write_logs) is what a binary calls
 /// to put one beside its input.
 ///
@@ -339,7 +339,7 @@ pub fn cost_recovery(
 /// names. Which is given first makes no difference; the names say what each holds.
 ///
 /// Nothing here writes. Each report read returns its `csv.read` log unwritten on the result's
-/// `notes` -- see [`csv_sessions`](crate::session::csv::csv_sessions) -- and
+/// `notes` -- see the private `session::csv::csv_sessions` -- and
 /// [`SessionNotes::write_logs`](crate::session::SessionNotes::write_logs) is what a binary calls
 /// to put one beside its input.
 ///
@@ -412,7 +412,7 @@ pub fn cost_recovery_surplus(
 /// exactly like an underpayment.
 ///
 /// Nothing here writes. The report's `csv.read` log comes back unwritten on the result's `notes` --
-/// see [`csv_sessions`](crate::session::csv::csv_sessions) -- and
+/// see the private `session::csv::csv_sessions` -- and
 /// [`SessionNotes::write_logs`](crate::session::SessionNotes::write_logs) is what a binary calls to
 /// put it beside its input.
 ///
