@@ -22,17 +22,13 @@
 use crate::{
     api::pure,
     charges_report::charges_report,
-    error::ReadError,
+    error::{ConversionError, ReadError},
     green_button::{read_gb_feed, read_gb_for_billing_period, write_gb_workbook},
     hydro_bill::{BILL_END_DAY, hydro_bill_from_pdf},
     session::{self, Sessions, csv::csv_sessions},
 };
 use jiff::civil::Date;
-use std::{
-    error::Error,
-    fmt,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
 // Re-exported rather than merely imported: these name what the functions here return, and a caller
 // should not have to know which module a call delegates to in order to spell that.
@@ -97,11 +93,7 @@ pub fn peak_power(
     // caller who has handed in the wrong month finds out before a byte is parsed.
     pure::check_reports_cover_period(billing_period_ending, &[session_csv1, session_csv2])?;
 
-    let gb_period_values = read_gb_for_billing_period(gb_xml, billing_period_ending, BILL_END_DAY)
-        .map_err(|cause| ReadError::GreenButton {
-            path: gb_xml.to_path_buf(),
-            cause,
-        })?;
+    let gb_period_values = read_gb_for_billing_period(gb_xml, billing_period_ending, BILL_END_DAY)?;
     let sessions = read_sessions(&[session_csv1, session_csv2])?;
 
     pure::peak_power(billing_period_ending, gb_period_values, &sessions).map_err(|cause| {
@@ -161,11 +153,7 @@ pub fn peak_power_cost(
     // before a year of meter readings is.
     pure::check_reports_cover_period(billing_period_ending, &[session_csv1, session_csv2])?;
 
-    let gb_period_values = read_gb_for_billing_period(gb_xml, billing_period_ending, BILL_END_DAY)
-        .map_err(|cause| ReadError::GreenButton {
-            path: gb_xml.to_path_buf(),
-            cause,
-        })?;
+    let gb_period_values = read_gb_for_billing_period(gb_xml, billing_period_ending, BILL_END_DAY)?;
     let sessions = read_sessions(&[session_csv1, session_csv2])?;
 
     pure::peak_power_cost(&bill, gb_period_values, &sessions).map_err(|cause| ApiError::PeakPower {
@@ -363,11 +351,7 @@ pub fn cost_recovery_surplus(
 
     pure::check_reports_cover_period(billing_period_ending, &[session_csv1, session_csv2])?;
 
-    let gb_period_values = read_gb_for_billing_period(gb_xml, billing_period_ending, BILL_END_DAY)
-        .map_err(|cause| ReadError::GreenButton {
-            path: gb_xml.to_path_buf(),
-            cause,
-        })?;
+    let gb_period_values = read_gb_for_billing_period(gb_xml, billing_period_ending, BILL_END_DAY)?;
     let sessions = read_sessions(&[session_csv1, session_csv2])?;
 
     pure::cost_recovery_surplus(
@@ -504,12 +488,8 @@ pub fn session_csv_to_xlsx(
     // The path is not passed on: `session::excel::session_csv_to_xlsx` derives the same one from
     // the same function, and taking it as an argument there would let a caller send the workbook
     // somewhere the check above never looked at.
-    session::session_csv_to_xlsx(session_csv).map_err(|cause| {
-        ApiError::Conversion(ConversionError::Write {
-            path: output_path,
-            cause,
-        })
-    })
+    let ret = session::session_csv_to_xlsx(session_csv)?;
+    Ok(ret)
 }
 
 /// Converts a Toronto Hydro Green Button export into the peak-values workbook beside it.
@@ -543,80 +523,9 @@ pub fn gb_xml_to_xlsx(
 ) -> Result<GbWriteReport, ApiError> {
     let output_path =
         checked_workbook_path(xml_path, xml_path.with_extension("xlsx"), on_existing)?;
-
     let feed = read_gb_feed(xml_path)?;
-
-    let written = write_gb_workbook(&output_path, &feed, BILL_END_DAY).map_err(|cause| {
-        ApiError::Conversion(ConversionError::Write {
-            path: output_path.clone(),
-            cause,
-        })
-    })?;
-
+    let written = write_gb_workbook(&output_path, &feed, BILL_END_DAY)?;
     Ok(written)
-}
-
-// --------------------------------------------------------------------------------------------
-// What can go wrong
-//
-// The two kinds this module raises on its own rather than passing on from `pure`. Both reach a
-// caller inside the `ApiError` every function above returns, so neither is named in a signature --
-// which is why they sit below the functions rather than above them.
-
-/// A workbook could not be produced from the file it was to be converted from.
-///
-/// Raised only by the two conversions. What the input could not be *read* as is
-/// [`ReadError`]; this is about the output.
-#[derive(Debug)]
-pub enum ConversionError {
-    /// The workbook's name would be the input's own, so the conversion would read and write one
-    /// file. Reached by handing in something already named `.xlsx`.
-    OutputWouldBeInput { path: PathBuf },
-
-    /// A file already stands where the workbook would go, and the caller asked to be refused.
-    ///
-    /// Refusing is the default rather than a courtesy: the figures in these workbooks get
-    /// reconciled against real invoices by hand, and a silent overwrite is how that work is lost.
-    /// Move the existing file, delete it, or call again with
-    /// [`OnExistingWorkbook::Replace`].
-    OutputExists { path: PathBuf },
-
-    /// The workbook could not be built or could not be written.
-    Write {
-        path: PathBuf,
-        cause: Box<dyn Error>,
-    },
-}
-
-impl fmt::Display for ConversionError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::OutputWouldBeInput { path } => write!(
-                f,
-                "{} is already an .xlsx file, so converting it would read and write the same file",
-                path.display()
-            ),
-            Self::OutputExists { path } => write!(
-                f,
-                "{} already exists. Move or delete it first, or ask for it to be replaced -- a \
-                 conversion never overwrites its output unless told to.",
-                path.display()
-            ),
-            // The path is written in, unlike `ReadError`'s: the writers name no file of their own,
-            // so without it a caller is told a workbook could not be written and left to guess
-            // which.
-            Self::Write { path, cause } => write!(f, "{}: {cause}", path.display()),
-        }
-    }
-}
-
-impl Error for ConversionError {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        match self {
-            Self::OutputWouldBeInput { .. } | Self::OutputExists { .. } => None,
-            Self::Write { cause, .. } => Some(cause.as_ref()),
-        }
-    }
 }
 
 // --------------------------------------------------------------------------------------------

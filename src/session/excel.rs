@@ -13,7 +13,10 @@ use super::{
     Anomaly, AnomalyKind, SourceLog,
     csv::{SessionRows, csv_session_rows},
 };
-use crate::time::{serial_of_civil, serial_of_duration, serial_of_instant};
+use crate::{
+    error::ConversionError,
+    time::{serial_of_civil, serial_of_duration, serial_of_instant},
+};
 use std::{
     error::Error,
     path::{Path, PathBuf},
@@ -152,10 +155,13 @@ const COLUMNS: &[(&str, Source)] = &[
 /// header is missing, a timestamp or duration does not parse, or the workbook cannot be written.
 /// Per-row judgement calls do not abort the conversion; they are collected in
 /// [`ConversionReport::anomalies`].
-pub fn session_csv_to_xlsx(path: &Path) -> Result<SessionWriteReport, Box<dyn Error>> {
+pub fn session_csv_to_xlsx(path: &Path) -> Result<SessionWriteReport, ConversionError> {
     // The path, once, for every way this can fail. See `csv::session_list` for why it is done here
     // rather than at each site.
-    convert_session_csv(path).map_err(|e| format!("{}: {e}", path.display()).into())
+    convert_session_csv(path).map_err(|cause| ConversionError::Write {
+        path: path.to_path_buf(),
+        cause,
+    })
 }
 
 fn convert_session_csv(path: &Path) -> Result<SessionWriteReport, Box<dyn Error>> {

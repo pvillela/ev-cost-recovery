@@ -11,7 +11,7 @@ use crate::{
     time::local_date,
 };
 use jiff::civil::Date;
-use std::{error::Error, fs, path::Path};
+use std::{fs, path::Path};
 
 /// Reads the Green Button XML at `xml_path` and returns the values for the billing period ending
 /// on `period_ending`.
@@ -37,8 +37,11 @@ pub fn read_gb_for_billing_period(
     xml_path: &Path,
     period_ending: Date,
     bill_end_day: i8,
-) -> Result<PeriodValues, Box<dyn Error>> {
-    check_calendar(period_ending, bill_end_day)?;
+) -> Result<PeriodValues, ReadError> {
+    check_calendar(period_ending, bill_end_day).map_err(|e| ReadError::GreenButton {
+        path: xml_path.to_path_buf(),
+        cause: e.into(),
+    })?;
     let feed = read_gb_feed(xml_path)?;
     let readings = feed.readings().from_source(xml_path);
 
@@ -49,12 +52,15 @@ pub fn read_gb_for_billing_period(
         .into_iter()
         .find(|p| p.period.ending == period_ending)
         .ok_or_else(|| {
-            format!(
+            let cause = format!(
                 "{}: no readings in the billing period ending {period_ending}. {}",
                 xml_path.display(),
                 coverage(&readings)
-            )
-            .into()
+            );
+            ReadError::GreenButton {
+                path: xml_path.to_path_buf(),
+                cause: cause.into(),
+            }
         })
 }
 
@@ -73,7 +79,7 @@ pub fn read_gb_feed(xml_path: &Path) -> Result<Feed, ReadError> {
 ///
 /// Runs before the file is opened, so a caller who has mixed up two calendars is told that rather
 /// than being sent looking at the export.
-fn check_calendar(period_ending: Date, bill_end_day: i8) -> Result<(), Box<dyn Error>> {
+fn check_calendar(period_ending: Date, bill_end_day: i8) -> Result<(), String> {
     // Both checks belong here rather than to `BillingPeriod::ending_on`, which asserts the second
     // and would build an invalid `Date` on the first. Either way it panics, and these arguments
     // come from a caller.
@@ -82,15 +88,13 @@ fn check_calendar(period_ending: Date, bill_end_day: i8) -> Result<(), Box<dyn E
             "bill_end_day is {bill_end_day}; a billing period must close on day 1 to \
              {MAX_BILL_END_DAY} of the month, since it starts on the day after and that day has \
              to exist in February"
-        )
-        .into());
+        ));
     }
     if period_ending.day() != bill_end_day {
         return Err(format!(
             "{period_ending} cannot end a billing period that closes on day {bill_end_day} of the \
              month; the closing date and the calendar disagree"
-        )
-        .into());
+        ));
     }
     Ok(())
 }

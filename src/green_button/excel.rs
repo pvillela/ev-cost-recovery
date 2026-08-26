@@ -27,17 +27,17 @@
 //! column name cannot be defeated by a capitalisation difference.
 
 use crate::{
+    error::ConversionError,
     green_button::{Anomaly, Feed, Peak, PeriodValues, Reading, period_values},
     time::{serial_of_date, serial_of_instant, serial_of_local},
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
-    error::Error,
     path::{Path, PathBuf},
 };
 use umya_spreadsheet::{
     HorizontalAlignmentValues, Pane, PaneStateValues, PaneValues, VerticalAlignmentValues,
-    Worksheet, writer,
+    Worksheet, XlsxError, writer,
 };
 
 const GENERAL_FORMAT: &str = "General";
@@ -283,7 +283,9 @@ pub fn write_gb_workbook(
     path: &Path,
     feed: &Feed,
     bill_end_day: i8,
-) -> Result<GbWriteReport, Box<dyn Error>> {
+) -> Result<GbWriteReport, ConversionError> {
+    let err_mapper = |e: XlsxError| ConversionError::from_xlsx_error(e, path);
+
     let readings = feed.readings();
     let periods = period_values(&readings, bill_end_day);
 
@@ -303,7 +305,7 @@ pub fn write_gb_workbook(
     let mut book = umya_spreadsheet::new_file_empty_worksheet();
 
     let peak_rows: Vec<Vec<Out>> = periods.iter().rev().map(|p| peak_row(p, feed)).collect();
-    let sheet = book.new_sheet("Peak_values")?;
+    let sheet = book.new_sheet("Peak_values").map_err(err_mapper)?;
     write_sheet(sheet, "PEAK VALUES", PEAK_COLUMNS, true, &peak_rows);
 
     let interval_rows: Vec<Vec<Out>> = readings
@@ -312,7 +314,7 @@ pub fn write_gb_workbook(
         .rev()
         .map(|r| interval_row(r, readings.anomalies.get(&r.start), feed))
         .collect();
-    let sheet = book.new_sheet("Interval_values")?;
+    let sheet = book.new_sheet("Interval_values").map_err(err_mapper)?;
     write_sheet(
         sheet,
         "INTERVAL VALUES",
@@ -321,7 +323,7 @@ pub fn write_gb_workbook(
         &interval_rows,
     );
 
-    writer::xlsx::write(&book, path)?;
+    writer::xlsx::write(&book, path).map_err(err_mapper)?;
     Ok(report)
 }
 
