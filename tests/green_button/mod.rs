@@ -1,6 +1,7 @@
+// No `invoice` module: the invoice reconciliation needs the crate-private `period_values`, so it
+// lives in `src/green_button/invoice_tests.rs`.
 mod fixtures_golden;
 mod full_feed;
-mod invoice;
 mod read_xml;
 
 use crate::common::{fixture_in, fixtures_dir_in};

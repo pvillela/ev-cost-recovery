@@ -10,8 +10,8 @@
 //! The fast-tier fixtures each prove one rule in isolation; this is the only check that the rules
 //! hold together over the whole dataset.
 
-use ev_cost_recovery::green_button::{Anomaly, for_test::parse_espi_xml};
-use std::{fs, path::PathBuf};
+use ev_cost_recovery::green_button::{Anomaly, read_gb_feed};
+use std::path::PathBuf;
 
 fn feed_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -21,11 +21,14 @@ fn feed_path() -> PathBuf {
 #[test]
 #[ignore = "parses the full 18 MB export"]
 fn the_real_export_parses_to_three_complete_hourly_series() {
-    let xml = fs::read_to_string(feed_path()).expect(
-        "the sample export is not in the repository: put \
-         data/TH_Electric_Usage_23-11-2024_to_24-06-2026.XML in place before running this",
-    );
-    let feed = parse_espi_xml(&xml).expect("the sample export must parse");
+    // `read_gb_feed` names the file in both of its errors, so the message below adds only what it
+    // cannot know: that this particular file is expected to be absent from most checkouts.
+    let feed = read_gb_feed(&feed_path()).unwrap_or_else(|e| {
+        panic!(
+            "{e}\nThe sample export is not in the repository: put \
+             data/TH_Electric_Usage_23-11-2024_to_24-06-2026.XML in place before running this."
+        )
+    });
 
     // 579 days x 24 hours, per docs/Toronto_Hydro_Object_Model.md.
     for (name, series) in [("kWh", &feed.kwh), ("kW", &feed.kw), ("kVA", &feed.kva)] {

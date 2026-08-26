@@ -51,11 +51,13 @@ pub struct PeriodValues {
     /// reports the hours.
     pub anomalies: Vec<(Timestamp, Anomaly)>,
 
-    /// The export these figures were read from, carried through from
-    /// [`Readings::source`](crate::green_button::Readings).
+    /// The export these figures were read from, carried through from the private `Readings`.
     ///
-    /// `None` when the readings came from a string rather than a file. An anomaly counted above is
-    /// a fact about a file, and this is the only thing here that says which one.
+    /// `None` when the readings came from a string rather than a file. Every route a caller can
+    /// take reaches this through
+    /// [`read_gb_for_billing_period`](crate::green_button::read_gb_for_billing_period), which
+    /// always sets it. An anomaly counted above is a fact about a file, and this is the only thing
+    /// here that says which one.
     pub source: Option<PathBuf>,
 }
 
@@ -167,7 +169,14 @@ impl MeterNotes {
 ///
 /// `bill_end_day` is the day of the month the bill closes on, which is what decides where one
 /// period ends and the next begins. See [`BillingPeriod`].
-pub fn period_values(readings: &Readings, bill_end_day: i8) -> Vec<PeriodValues> {
+///
+/// `pub(crate)` rather than public. It takes a [`Readings`], which is the parsed feed's internal
+/// form and is not part of the API, and nothing outside this crate asks for every period as
+/// values: [`read_gb_for_billing_period`](super::read_gb_for_billing_period) gives a caller the
+/// one period an invoice concerns, and [`write_gb_workbook`](super::write_gb_workbook) puts all of
+/// them in a sheet. Exporting it so that a test could reach it would have been the wrong way
+/// round; the tests that need it are `super::invoice_tests` and `super::pipeline_tests`.
+pub(crate) fn period_values(readings: &Readings, bill_end_day: i8) -> Vec<PeriodValues> {
     let mut grouped: BTreeMap<BillingPeriod, Vec<&Reading>> = BTreeMap::new();
     for reading in &readings.rows {
         grouped

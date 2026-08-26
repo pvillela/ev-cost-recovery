@@ -6,18 +6,28 @@
 //!
 //! The invoice covers `MAY 23 2026 TO JUN 23 2026`, which is the period the `billed_period`
 //! fixture carries in full.
+//!
+//! A unit test rather than an integration test, and in a file of its own rather than inside
+//! another module's test block. It needs [`period_values`](super::period_values), which is
+//! `pub(crate)`: producing every period's figures as values is not something the API offers, and
+//! widening the API so that a test can reach it would be the wrong way round. Its fixtures come
+//! from `tests/fixtures/green_button/` through [`golden::fixture`](crate::golden::fixture) — the
+//! same files an integration test would have opened.
 
-use ev_cost_recovery::{
-    green_button::{for_test::parse_espi_xml, period_values},
+use crate::{
+    golden,
+    green_button::{period_values, read_gb_feed},
     hydro_bill::BILL_END_DAY,
     time::{Interval, Tou, tou_of},
 };
 use jiff::civil::date;
-use std::{collections::HashMap, fs, time::Duration};
-
-use super::fixture;
+use std::{collections::HashMap, fs, path::PathBuf, time::Duration};
 
 const HOUR: Duration = Duration::from_secs(3600);
+
+fn fixture(name: &str) -> PathBuf {
+    golden::fixture(&format!("green_button/{name}"))
+}
 
 /// The `key value` pairs from the invoice fixture, comments and blanks skipped.
 fn invoice() -> HashMap<String, String> {
@@ -46,8 +56,7 @@ fn agrees_with_truncated(generated: f64, printed: f64) -> bool {
 #[test]
 fn the_billed_period_reproduces_the_invoice() {
     let invoice = invoice();
-    let xml = fs::read_to_string(fixture("billed_period.XML")).unwrap();
-    let feed = parse_espi_xml(&xml).unwrap();
+    let feed = read_gb_feed(&fixture("billed_period.XML")).unwrap();
     let readings = feed.readings();
 
     let ending = date(2026, 6, 23);
@@ -106,8 +115,7 @@ fn the_billed_period_reproduces_the_invoice() {
 fn the_tou_buckets_reproduce_the_invoice() {
     let invoice = invoice();
     let loss_factor = number(&invoice, "loss_factor");
-    let xml = fs::read_to_string(fixture("billed_period.XML")).unwrap();
-    let feed = parse_espi_xml(&xml).unwrap();
+    let feed = read_gb_feed(&fixture("billed_period.XML")).unwrap();
     let readings = feed.readings();
 
     let period = period_values(&readings, BILL_END_DAY)

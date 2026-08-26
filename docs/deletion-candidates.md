@@ -83,9 +83,41 @@ decision from you:
 None of these is a deletion candidate. They are public because something outside the crate renders
 them.
 
-## One thing this survey does not cover
+## `green_button::for_test`, and what came of it
 
-`green_button::for_test` re-exports all of `espi` so four integration tests can build a `Feed` by
-hand. It is `#[doc(hidden)]` as of 2026-08-26, so rustdoc renders no page for it and the survey
-above cannot see it. Whether it should exist at all — rather than the tests reaching a feed through
-`read_gb_feed` and a fixture file — is a real question and is not answered here.
+A first version of this document said `for_test` existed so that four integration tests could
+"build a `Feed` by hand", and left open whether it should exist at all. The first half was wrong
+and the second is now settled. Recording both, because the reasoning generalises.
+
+**What the tests were actually doing.** All five call sites read a fixture file and parsed it:
+
+```rust
+let xml = fs::read_to_string(<a fixture path>).unwrap();
+let feed = parse_espi_xml(&xml).unwrap();
+```
+
+None built a feed by hand and none edited the XML in memory. That is `read_gb_feed`'s whole body,
+and `read_gb_feed` was already public. So the export was not letting the tests reach something
+otherwise unreachable — it was letting them re-implement, by hand, a function sitting next to the
+one they imported. Removing it *deleted* duplication rather than creating any.
+
+**What actually kept it alive.** `period_values` was public, and it takes a `&Readings` — a type
+reachable only through `for_test`. Nothing in `src/api/`, `src/bin/` or the desktop app called it;
+its only external callers were three test sites. It was a test hatch with no marking on it, and
+`for_test` was quietly holding its signature together.
+
+**Settled 2026-08-26.** `period_values` is `pub(crate)`, `Readings` stays private, `for_test` is
+gone, and the three test sites moved into `src/green_button/` as `invoice_tests` and
+`pipeline_tests` — the same treatment three session tests got the same day, for the same reason.
+The two integration tests that only needed a parsed feed stayed in `tests/` and call
+`read_gb_feed`.
+
+The alternative was to widen: export `Readings` beside `Feed` and keep `period_values` public. It
+was rejected because nothing in this crate or its five binaries wants every period as values, and
+because widening the API so that a test can stay outside is the opposite of the judgement applied
+everywhere else in that day's work. When a real caller appears, exporting it then is a two-line
+change with a reason behind it.
+
+**The general shape**, worth recognising next time: a public item whose only external callers are
+tests is a test hatch, whether or not it is named like one. `for_test` was the marked case;
+`period_values` was the unmarked one, and it was the one doing the damage.

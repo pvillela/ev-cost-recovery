@@ -32,7 +32,7 @@
 
 use super::{fixture, fixtures_dir};
 use ev_cost_recovery::{
-    green_button::{for_test::parse_espi_xml, write_gb_workbook},
+    green_button::{read_gb_feed, write_gb_workbook},
     hydro_bill::BILL_END_DAY,
 };
 use std::{cmp, env, fmt::Write as _, fs, path::Path, process};
@@ -59,9 +59,9 @@ fn each_fixture_matches_its_golden() {
     let mut failures = Vec::new();
 
     for name in FIXTURES {
-        let xml = fs::read_to_string(fixture(&format!("{name}.XML")))
-            .unwrap_or_else(|e| panic!("{name}.XML: {e}"));
-        let feed = parse_espi_xml(&xml).unwrap_or_else(|e| panic!("{name}.XML: {e}"));
+        // No `{name}.XML:` prefix on the panic: `GbReadError` names the file itself, from its own
+        // `path` field.
+        let feed = read_gb_feed(&fixture(&format!("{name}.XML"))).unwrap_or_else(|e| panic!("{e}"));
 
         // A scratch directory per fixture, since tests run in parallel and the writer refuses to
         // overwrite. A normal test run never writes into tests/fixtures.

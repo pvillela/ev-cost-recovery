@@ -66,6 +66,12 @@ that actually went wrong, not a general principle.
   the workbook round-trip; nobody noticed for months, because prose is not compiled. When the
   shortcut is shorter, say the test is a unit test — do not describe it as the API path.
 
+- **A public item whose only external callers are tests is a test hatch, named like one or not.**
+  Before adding an export so a test can reach something, check what the test actually needs — the
+  four `green_button` tests behind `for_test` were re-implementing `read_gb_feed`'s two lines by
+  hand, and the export that really held the API open was the unmarked `period_values`. The fix is
+  to move the test into `src/` beside what it tests, not to widen the API so it can stay outside.
+
 - **`tests/` should not need `--features historic`.** `grep -rn historic tests/` is expected to find
   nothing. A test that needs it is either testing the legacy path deliberately, in which case it
   belongs in `src/` beside that code, or it is taking a shortcut. See

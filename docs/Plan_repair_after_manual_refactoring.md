@@ -441,6 +441,13 @@ are untouched. `peak.rs` goes back to pure, and its `#[cfg]`-gated `use std::pat
 
 ### Step 6 — Close `for_test`
 
+> **Superseded, same day.** `#[doc(hidden)]` was done as written below, and then the follow-up
+> question Step 10 raised got answered: the tests never needed the export at all, because they were
+> re-implementing `read_gb_feed` by hand. `for_test` is deleted, `period_values` is `pub(crate)`,
+> and the three test sites that needed it moved into `src/green_button/`. See
+> [`deletion-candidates.md`](deletion-candidates.md), "`green_button::for_test`, and what came of
+> it".
+
 `src/green_button/mod.rs:21` — mark it `#[doc(hidden)]` and say in a comment that it exists for
 `tests/` and is not API. Keeps the four integration tests working, keeps it out of the docs and out
 of what a caller is invited to use.

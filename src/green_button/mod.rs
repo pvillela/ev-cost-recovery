@@ -18,11 +18,15 @@ pub use peaks::*;
 mod read_xml;
 pub use read_xml::*;
 
-// A seam for `tests/`, not API. `espi` is private because nothing outside this module should be
-// building a `Feed` by hand; the integration tests do exactly that, and they run out of process so
-// `pub(crate)` cannot reach them. `#[doc(hidden)]` is what keeps it out of the rendered docs and
-// out of what a caller is invited to use. Nothing in `src/` may go through here.
-#[doc(hidden)]
-pub mod for_test {
-    pub use super::espi::*;
-}
+// Two test modules of their own, rather than `#[cfg(test)]` blocks inside a source file: both need
+// `period_values`, which is `pub(crate)`, and neither belongs beside any one of the modules it
+// draws on. They read fixtures from `tests/fixtures/green_button/` through `golden::fixture`.
+//
+// There is no `for_test` escape hatch. There was one -- a public re-export of all of `espi`, so
+// that integration tests could call `parse_espi_xml` -- and it turned out those tests were each
+// doing `fs::read_to_string` followed by a parse, which is `read_gb_feed`'s whole body. They call
+// that instead now, and the tests that also needed `period_values` moved in here.
+#[cfg(test)]
+mod invoice_tests;
+#[cfg(test)]
+mod pipeline_tests;
