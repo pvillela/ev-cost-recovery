@@ -1,3 +1,5 @@
+What I did over 3 rounds of refactoring and clean-up, over commits 0b4f33, e2c3c1, f55c05 on 2026-08-26:
+
 I would like to refactor the library code with the following principles:
 - The crate's focus will be on the `api` module and the `ev_cost_recovery` GUI binary.
 - Most sub-modules of the top-level modules will be pure, i.e., will only contain types and pure functions, i.e., no state, no I/O.

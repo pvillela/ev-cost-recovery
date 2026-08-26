@@ -51,8 +51,13 @@ Regenerating without reading the diff turns them into a rubber stamp.
 
 | What | Regenerate with |
 |---|---|
-| Session reports and the site-load table | `UPDATE_REPORT_GOLDEN=1 cargo test --test integration -- session::report_rendering` |
+| Session reports and the site-load table | `UPDATE_REPORT_GOLDEN=1 cargo test -- session::` |
 | Green Button fixture dumps and the committed standard workbook | `UPDATE_GOLDEN=1 cargo test --test integration -- green_button::fixtures_golden` |
+
+The session goldens straddle two targets: the rendered reports are produced by a unit test in
+`src/session/report_rendering_tests.rs` (the renderer's input is crate-internal), while the
+site-load table is pinned from `tests/session/site_load_golden.rs`. The unfiltered `cargo test`
+above runs both. Neither needs `--features historic`.
 
 Test binaries were consolidated into `tests/integration.rs` when the two projects merged, so
 `--test <file>` no longer selects anything. The form above names the binary and then filters by
@@ -71,7 +76,7 @@ Three files are pinned byte for byte, all under `tests/fixtures/`:
 Regenerate all of them with one command:
 
 ```sh
-UPDATE_REPORT_GOLDEN=1 cargo test --test report_rendering
+UPDATE_REPORT_GOLDEN=1 cargo test
 ```
 
 Then **read the diff before committing it**. That is the entire value of the mechanism: the files
@@ -100,7 +105,7 @@ makes the check in §1 meaningful.
 Regenerate with:
 
 ```
-UPDATE_GOLDEN=1 cargo test --test fixtures_golden
+UPDATE_GOLDEN=1 cargo test --test integration -- green_button::fixtures_golden
 ```
 
 Then **read the diff before committing it**. That is the entire value of the mechanism. Regenerating
@@ -171,11 +176,15 @@ Change one free constant, run the suite, and confirm only the golden-fixture tes
 ```sh
 # In src/session/site_load.rs, temporarily: BREAKER_RATING_A = 40.0 -> 32.0
 cargo test --no-fail-fast
+cargo test --no-fail-fast --features historic
 # Expect failures only from golden-file comparisons:
-#   session::report_rendering::rendered_reports_match_their_golden_files
-#   session::report_rendering::the_site_load_table_matches_its_golden_file
+#   session::report_rendering_tests::rendered_reports_match_their_golden_files   (--lib)
+#   session::site_load_golden::the_site_load_table_matches_its_golden_file       (--test integration)
 # Then revert.
 ```
+
+Both commands, because `historic` gates whole targets: without the feature the two legacy binaries
+are not compiled, and with it the default build is never exercised.
 
 `--no-fail-fast` matters. Each target — the library, each binary, each file under `tests/` — runs as
 its own executable, and without it the first one to fail hides whatever the others would have said.
@@ -272,7 +281,7 @@ glossary is generated from `Display`, so there is one wording to maintain rather
 in `report.rs`.
 
 **Whether it excludes.** `InconsistentDuration` is the only kind that removes a session from the
-estimates, and it does so where the buckets are sorted, in `SessionReport::new`. Everything else is
+estimates, and it does so where the buckets are sorted, in `Sessions::from_session_lists`. Everything else is
 informational: the session still counts towards every figure. If a new kind should exclude, that is
 a decision to make explicitly and to record in README's "Other" section — not something that
 follows from adding the variant.
@@ -295,7 +304,7 @@ panics otherwise, and that is deliberate.
 Nothing legitimate violates it. `conn_duration` is unsigned, so the soundness test's
 `conn_start + conn_duration < adj_conn_end` cannot hold unless `conn_start < adj_conn_end` — an
 inverted session is therefore always flagged `InconsistentDuration` and sorted into
-`SessionReport::excluded`, and `interval_estimates` never puts an excluded session in front of the
+`Sessions::excluded`, and `estimates_from_sessions` never puts an excluded session in front of the
 estimating logic. Reaching the panic means one got somewhere it should not have, which is worth a
 crash rather than a plausible-looking answer.
 

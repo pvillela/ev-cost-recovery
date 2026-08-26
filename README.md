@@ -115,7 +115,8 @@ container setup.
 
 The code is `src/bin/ev_cost_recovery/`. Every decision lives in `state.rs`, which has no `egui` in
 it, so what could be *wrong* rather than merely ugly is unit-tested without a window. The widget
-modules above it — `surplus.rs` and `detail.rs` — are meant to be thin enough to check by eye.
+modules above it — `surplus.rs`, `detail.rs`, `reimbursement.rs` and `convert.rs`, one per tab —
+are meant to be thin enough to check by eye.
 
 ## The four modules
 
@@ -162,14 +163,24 @@ still to be written.
 ## Building, and the command line
 
 ```sh
-cargo build --release      # the desktop app, ev_cost_recovery
-cargo test                 # everything
-cargo run --example sessions -- <workbook.xlsx>
+cargo build --release      # the desktop app, ev_cost_recovery -- and nothing else
+cargo test                 # the default build
+cargo test --features historic   # and the legacy workbook-reading half
+```
+
+Two of the binaries and one example sit behind the `historic` feature, so `cargo build --release`
+does not produce them and `cargo test` does not compile them. That is deliberate — see
+[`docs/historic-feature.md`](docs/historic-feature.md) — and it is why the tests are two commands:
+neither covers the other.
+
+```sh
+cargo build --features historic --bin ev_peak_cli --bin ev_peak_gui
+cargo run --features historic --example sessions -- <workbook.xlsx>
 ```
 
 The command-line tools are `ev_csv_to_xlsx` (session report to workbook), `ev_peak_cli` (estimate
-over an interval), `gb_peak_values` (Green Button feed to workbook) and `hydro_bill_dump` (a bill
-PDF's figures). Each prints its usage when run with no arguments.
+over an interval, `historic`), `gb_peak_values` (Green Button feed to workbook) and
+`hydro_bill_dump` (a bill PDF's figures). Each prints its usage when run with no arguments.
 
 Six more report on one billing period. `peak_power_cli` gives the kW and kVA peaks, estimated from
 a Green Button export and the two session reports spanning the period. `energy_cli` gives the

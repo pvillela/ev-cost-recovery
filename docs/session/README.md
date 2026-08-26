@@ -20,6 +20,13 @@ They are constrained as follows:
 
 ## Workflow
 
+> **This workflow is the `historic` half of the crate.** Its second step — reading a workbook back
+> to estimate from it — lives behind the `historic` cargo feature, along with the two binaries that
+> drive it. A default `cargo build` does not produce them. See
+> [`docs/historic-feature.md`](../historic-feature.md) for what that gates and why, and build with
+> `--features historic` to follow the steps below. The desktop app answers the billing-period
+> question by a different route and needs no feature.
+
 This is the typical workflow used with this software to estimate the impact of EV charging activity on a particular Toronto Hydro bill:
 
 - Preliminary steps (out of scope for this software):
@@ -41,7 +48,7 @@ The desktop app, `ev_cost_recovery`, does not cover these two steps. It answers 
 | Command                                                      | Purpose                                                      |
 | ------------------------------------------------------------ | ------------------------------------------------------------ |
 | `ev_csv_to_xlsx <SESSION_REPORT.csv>...`                     | Converts a session report to a workbook, computing the derived columns and flagging rows that need review. Takes several files at once. |
-| `ev_peak_cli <SESSION_REPORT.xlsx> <YYYY-MM-DD HH:MM [EST\|EDT]> [15m\|1h]` | Prints the peak estimate report for one interval of interest. |
+| `ev_peak_cli <SESSION_REPORT.xlsx> <YYYY-MM-DD HH:MM [EST\|EDT]> [15m\|1h]` | Prints the peak estimate report for one interval of interest. Needs `--features historic`. |
 
 `ev_peak_cli` takes the interval start in **local time (ET)**. The length defaults to `1h` when the start is on the hour and `15m` otherwise. An interval breaking the boundary rules described earlier is rejected rather than estimated.
 
@@ -203,7 +210,7 @@ Evolute's own description of how the installation behaves when several vehicles 
   - The flag cannot distinguish a reused id from two reports disagreeing about one session; from the merge the two look identical. Neither is treated as fatal, because refusing the first would make June 2026 unestimatable, and the judgement belongs to a reader who can go back to the source rows.
 - Sessions with zero `Energy_Use` and non-zero `Active_Charge_Time` do not contribute to `energy_based_kw` and `energy_based_kva` but they do contribute to `count_based_kw` and `count_based_kva`.
 - A session with zero `Active_Charge_Time` delivered energy in no time at all, so its average power is unbounded or undefined.
-  - The Excel `avg_kw` cell shows `#DIV/0!` so the fault is visible in the sheet. Both `session_list` functions return the session as a *spike*, held apart from the normal sessions fed to the peak logic.
+  - The Excel `avg_kw` cell shows `#DIV/0!` so the fault is visible in the sheet. Both readers — `csv_sessions` from the CSV, and `xlsx_to_sessions` from a workbook, the latter behind `historic` — return the session as a *spike*, held apart from the normal sessions fed to the peak logic.
   - Spikes are worth reviewing individually for their effect on the building's demand charge.
   - The power estimating logic treats spikes as follows:
     - If `Energy_Use == 0`, set `avg_kw` to 0. These sessions do not contribute to `energy_based_kw` and `energy_based_kva` but they do contribute to `count_based_kw` and `count_based_kva`.

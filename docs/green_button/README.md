@@ -127,14 +127,15 @@ Output was also compared against the workbook the previous Python implementation
 cargo build --release
 cargo test                              # unit tests, four fixture feeds, the invoice check
 cargo test -- --ignored                 # adds the full 18 MB export
-UPDATE_GOLDEN=1 cargo test --test fixtures_golden   # regenerate goldens, then read the diff
+UPDATE_GOLDEN=1 cargo test --test integration -- green_button::fixtures_golden   # then read the diff
 ```
 
 ## Repository layout
 
 | | |
 |---|---|
-| `src/green_button/espi.rs` | reads the ESPI feed, following its links |
+| `src/green_button/espi.rs` | parses the ESPI feed from a string, following its links |
+| `src/green_button/read_xml.rs` | opens the file: `read_gb_feed`, and `read_gb_for_billing_period` for one invoice's period. This is what `api::io` calls |
 | `src/time/holidays.rs`, `src/time/tou.rs` | the Ontario calendar and price periods — shared with `sessions`, hence `time` |
 | `src/green_button/billing.rs`, `src/green_button/peaks.rs` | periods, expected interval counts, the four maxima |
 | `src/green_button/excel.rs` | the workbook, driven by two column tables |
