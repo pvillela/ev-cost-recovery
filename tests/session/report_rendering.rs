@@ -1,3 +1,5 @@
+//! Requires feature "historic".
+//!
 //! Golden-file tests for the rendered [`ev_peak_contrib::IntervalEstimates`].
 //!
 //! Each case pairs an input CSV in `tests/fixtures/` with the report it must produce, checked
@@ -27,7 +29,7 @@
 //! ```
 
 use ev_cost_recovery::{
-    session::{excel::session_csv_to_xlsx, interval_estimates, site_load_report},
+    session::{session_csv_to_xlsx, site_load_report, xlsx_to_interval_estimates},
     time::Interval,
 };
 use jiff::Timestamp;
@@ -65,8 +67,8 @@ fn render(stem: &str, lo: &str, hi: &str) -> String {
         .output_path;
     let (lo, hi): (Timestamp, Timestamp) = (lo.parse().unwrap(), hi.parse().unwrap());
     let interval = Interval::from_start_end(lo, hi);
-    let report =
-        interval_estimates(interval, &xlsx).unwrap_or_else(|e| panic!("{stem} estimates: {e}"));
+    let report = xlsx_to_interval_estimates(interval, &xlsx)
+        .unwrap_or_else(|e| panic!("{stem} estimates: {e}"));
 
     let rendered = report.to_markdown();
     // Display must agree, or there would be two renderings to keep in step.

@@ -1,13 +1,12 @@
-use super::{
-    Anomaly, Bracket, RSegment, RSession, SEGMENT_DURATION, Segment, Sessions, SourceLog,
-    excel::session_list,
-};
+use super::{Anomaly, Bracket, RSegment, RSession, SEGMENT_DURATION, Segment, Sessions, SourceLog};
 use crate::time::Interval;
-use std::{
-    error::Error,
-    path::{Path, PathBuf},
-    rc::Rc,
-};
+use std::{error::Error, path::PathBuf, rc::Rc};
+
+#[cfg(feature = "historic")]
+use super::excel::historic::xlsx_to_sessions;
+
+#[cfg(feature = "historic")]
+use std::path::Path;
 
 /// Estimates for an interval of interest.
 ///
@@ -98,11 +97,15 @@ impl EstimateSet {
     }
 }
 
+#[cfg(feature = "historic")]
 /// Produces EV maximum power estimates for the interval of interest `ioi` and the session
 /// report at `path`.
-pub fn interval_estimates(ioi: Interval, path: &Path) -> Result<IntervalEstimates, Box<dyn Error>> {
-    let session_report = session_list(path)?;
-    Ok(estimates_from_report(
+pub fn xlsx_to_interval_estimates(
+    ioi: Interval,
+    path: &Path,
+) -> Result<IntervalEstimates, Box<dyn Error>> {
+    let session_report = xlsx_to_sessions(path)?;
+    Ok(estimates_from_sessions(
         ioi,
         vec![path.to_path_buf()],
         &session_report,
@@ -118,19 +121,19 @@ pub fn interval_estimates(ioi: Interval, path: &Path) -> Result<IntervalEstimate
 ///
 /// Takes the report by reference so one set of sessions can feed several intervals of interest
 /// without being read again — `peak_power` estimates over two.
-pub(crate) fn estimates_from_report(
+pub(crate) fn estimates_from_sessions(
     ioi: Interval,
     sources: Vec<PathBuf>,
-    report: &Sessions,
+    sessions: &Sessions,
 ) -> IntervalEstimates {
     // Spikes take part in the estimates on the same footing as any other session. A spike's raw
     // energy over charge time is infinite or NaN, either of which would swamp or poison any
     // segment it entered, and [`Session::avg_kw`] substitutes a finite figure for exactly that
     // reason — so nothing has to be done to a spike here. See docs/session/README.md, "Other".
-    let rsessions: Vec<RSession> = report
+    let rsessions: Vec<RSession> = sessions
         .sessions
         .iter()
-        .chain(&report.spikes)
+        .chain(&sessions.spikes)
         .cloned()
         .collect();
     let segments = segments_for_ioi(ioi, &rsessions);
@@ -140,7 +143,7 @@ pub(crate) fn estimates_from_report(
         .collect();
     let energy_based_seg_estimate = maximal_segment_estimate(&segments, |seg| seg.agg_kw().mid());
     let count_based_seg_estimate = maximal_segment_estimate(&segments, |seg| seg.agg_count().mid());
-    let session_anomalies = collect_session_anomalies(&ioi, &rsessions, &report.anomalies);
+    let session_anomalies = collect_session_anomalies(&ioi, &rsessions, &sessions.anomalies);
 
     IntervalEstimates {
         sources,
@@ -152,8 +155,8 @@ pub(crate) fn estimates_from_report(
         // `excluded` sessions contradict themselves and take no part in any estimate, but they are
         // still reported: a caller judging an estimate needs to know what was left out. See
         // docs/session/README.md, "Other".
-        excluded_sessions: report.excluded.clone(),
-        logs: report.logs.clone(),
+        excluded_sessions: sessions.excluded.clone(),
+        logs: sessions.logs.clone(),
     }
 }
 

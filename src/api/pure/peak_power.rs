@@ -26,7 +26,7 @@ use crate::{
     },
     markdown::{Left, Right, amounts, field, h1, h2, rounding_note, table},
     session::{
-        Bracket, EstimateSet, IntervalEstimates, SessionNotes, Sessions, estimates_from_report,
+        Bracket, EstimateSet, IntervalEstimates, SessionNotes, Sessions, estimates_from_sessions,
     },
     time::Interval,
 };
@@ -322,8 +322,8 @@ pub fn peak_power(
     // Both estimates come off the one report, so the two figures cannot be drawn from different
     // session data.
     let sources = sessions.sources.clone();
-    let kw_estimates = estimates_from_report(kw_ioi, sources.clone(), sessions);
-    let kva_estimates = estimates_from_report(kva_ioi, sources, sessions);
+    let kw_estimates = estimates_from_sessions(kw_ioi, sources.clone(), sessions);
+    let kva_estimates = estimates_from_sessions(kva_ioi, sources, sessions);
     Ok(PowerEstimates {
         notes: notes_for_intervals(sessions, [&kw_estimates, &kva_estimates]),
         meter: gb_period_values.notes(),
@@ -418,7 +418,7 @@ pub fn peak_power_cost(
         let ioi = peak_interval(peak, unit, billing_period_ending)?;
         Ok::<_, PeakPowerError>(PricedInterval {
             unit,
-            estimates: estimates_from_report(ioi, sessions.sources.clone(), sessions),
+            estimates: estimates_from_sessions(ioi, sessions.sources.clone(), sessions),
         })
     };
 

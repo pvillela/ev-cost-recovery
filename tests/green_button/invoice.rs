@@ -8,7 +8,7 @@
 //! fixture carries in full.
 
 use ev_cost_recovery::{
-    green_button::{parse, period_values},
+    green_button::{parse_espi_xml, period_values},
     hydro_bill::BILL_END_DAY,
     time::{Interval, Tou, tou_of},
 };
@@ -47,7 +47,7 @@ fn agrees_with_truncated(generated: f64, printed: f64) -> bool {
 fn the_billed_period_reproduces_the_invoice() {
     let invoice = invoice();
     let xml = fs::read_to_string(fixture("billed_period.XML")).unwrap();
-    let feed = parse(&xml).unwrap();
+    let feed = parse_espi_xml(&xml).unwrap();
     let readings = feed.readings();
 
     let ending = date(2026, 6, 23);
@@ -107,7 +107,7 @@ fn the_tou_buckets_reproduce_the_invoice() {
     let invoice = invoice();
     let loss_factor = number(&invoice, "loss_factor");
     let xml = fs::read_to_string(fixture("billed_period.XML")).unwrap();
-    let feed = parse(&xml).unwrap();
+    let feed = parse_espi_xml(&xml).unwrap();
     let readings = feed.readings();
 
     let period = period_values(&readings, BILL_END_DAY)

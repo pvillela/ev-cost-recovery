@@ -14,5 +14,5 @@ pub use excel::*;
 mod peaks;
 pub use peaks::*;
 
-mod peaks_io;
-pub use peaks_io::*;
+mod read_xml;
+pub use read_xml::*;

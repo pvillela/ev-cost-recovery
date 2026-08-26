@@ -1,3 +1,5 @@
+//! Requires feature "historic".
+//!
 //! The `InconsistentDuration` band, exercised end to end through the public API.
 //!
 //! Unit tests in `session::excel` already pin the predicate. This pins the *consequence*: which
@@ -25,11 +27,7 @@
 //! `ZeroActiveChargeTime` — the two travel together by arithmetic, not coincidence.
 
 use ev_cost_recovery::{
-    session::{
-        AnomalyKind,
-        excel::{session_csv_to_xlsx, session_list},
-        interval_estimates,
-    },
+    session::{AnomalyKind, session_csv_to_xlsx, xlsx_to_interval_estimates, xlsx_to_sessions},
     time::Interval,
 };
 use jiff::Timestamp;
@@ -77,7 +75,7 @@ fn workbook() -> PathBuf {
 #[test]
 fn the_band_decides_which_sessions_reach_an_estimate() {
     let xlsx = workbook();
-    let report = session_list(&xlsx).expect("the workbook reads back");
+    let report = xlsx_to_sessions(&xlsx).expect("the workbook reads back");
 
     let mut excluded: Vec<&str> = report.excluded.iter().map(|s| s.id.as_str()).collect();
     excluded.sort_unstable();
@@ -100,7 +98,7 @@ fn the_band_decides_which_sessions_reach_an_estimate() {
 #[test]
 fn the_flag_and_the_exclusion_agree() {
     let xlsx = workbook();
-    let report = session_list(&xlsx).expect("the workbook reads back");
+    let report = xlsx_to_sessions(&xlsx).expect("the workbook reads back");
 
     for session in &report.excluded {
         assert!(
@@ -153,7 +151,7 @@ fn an_inverted_record_is_listed_rather_than_crashing() {
         LO.parse::<Timestamp>().unwrap(),
         HI.parse::<Timestamp>().unwrap(),
     );
-    let estimates = interval_estimates(interval, &xlsx).expect("estimating must not panic");
+    let estimates = xlsx_to_interval_estimates(interval, &xlsx).expect("estimating must not panic");
 
     let listed: Vec<&str> = estimates
         .excluded_sessions

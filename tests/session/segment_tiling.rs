@@ -1,3 +1,5 @@
+//! Requires feature "historic".
+//!
 //! How sessions land on the quarter-hour segments that tile an interval of interest.
 //!
 //! Driven through the public API only — a CSV in, an [`ev_peak_contrib::IntervalEstimates`] out —
@@ -29,8 +31,8 @@
 
 use ev_cost_recovery::{
     session::{
-        AnomalyKind, BREAKER_RATING_KW, IntervalEstimates, excel::session_csv_to_xlsx,
-        interval_estimates,
+        AnomalyKind, BREAKER_RATING_KW, IntervalEstimates, session_csv_to_xlsx,
+        xlsx_to_interval_estimates,
     },
     time::Interval,
 };
@@ -91,7 +93,7 @@ fn estimates() -> IntervalEstimates {
 
     let xlsx = session_csv_to_xlsx(&csv).unwrap().output_path;
     let interval = Interval::from_start_end(LO.parse().unwrap(), HI.parse().unwrap());
-    let report = interval_estimates(interval, &xlsx).unwrap();
+    let report = xlsx_to_interval_estimates(interval, &xlsx).unwrap();
 
     fs::remove_dir_all(&dir).ok();
     report

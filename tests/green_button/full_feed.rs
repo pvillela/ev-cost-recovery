@@ -10,7 +10,7 @@
 //! The fast-tier fixtures each prove one rule in isolation; this is the only check that the rules
 //! hold together over the whole dataset.
 
-use ev_cost_recovery::green_button::{Anomaly, parse};
+use ev_cost_recovery::green_button::{Anomaly, parse_espi_xml};
 use std::{fs, path::PathBuf};
 
 fn feed_path() -> PathBuf {
@@ -25,7 +25,7 @@ fn the_real_export_parses_to_three_complete_hourly_series() {
         "the sample export is not in the repository: put \
          data/TH_Electric_Usage_23-11-2024_to_24-06-2026.XML in place before running this",
     );
-    let feed = parse(&xml).expect("the sample export must parse");
+    let feed = parse_espi_xml(&xml).expect("the sample export must parse");
 
     // 579 days x 24 hours, per docs/Toronto_Hydro_Object_Model.md.
     for (name, series) in [("kWh", &feed.kwh), ("kW", &feed.kw), ("kVA", &feed.kva)] {

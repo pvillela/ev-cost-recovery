@@ -119,7 +119,7 @@ impl Readings {
 /// Returns an error if the XML is malformed, if any of the three series is absent, if a link
 /// needed to attribute an IntervalBlock to a series is missing or dangling, or if any reading
 /// covers something other than one hour.
-pub fn parse(xml: &str) -> Result<Feed, Box<dyn Error>> {
+pub fn parse_espi_xml(xml: &str) -> Result<Feed, Box<dyn Error>> {
     let doc = Document::parse(xml)?;
     let entries: Vec<Node> = doc
         .root_element()
@@ -451,7 +451,7 @@ mod test {
 
     #[test]
     fn the_link_chain_attributes_each_block_to_its_series() {
-        let feed = parse(&feed_xml("3600", "3600")).unwrap();
+        let feed = parse_espi_xml(&feed_xml("3600", "3600")).unwrap();
         assert_eq!(feed.kwh.values.len(), 2);
         assert_eq!(feed.kw.values.len(), 2);
         assert_eq!(feed.kva.values.len(), 2);
@@ -464,7 +464,7 @@ mod test {
     /// up the block's 86400 and reject the feed.
     #[test]
     fn the_blocks_own_interval_is_not_mistaken_for_a_readings_time_period() {
-        let feed = parse(&feed_xml("3600", "3600")).unwrap();
+        let feed = parse_espi_xml(&feed_xml("3600", "3600")).unwrap();
         assert!(
             feed.kwh
                 .values
@@ -474,13 +474,17 @@ mod test {
 
     #[test]
     fn a_non_hourly_reading_type_is_rejected() {
-        let err = parse(&feed_xml("900", "3600")).unwrap_err().to_string();
+        let err = parse_espi_xml(&feed_xml("900", "3600"))
+            .unwrap_err()
+            .to_string();
         assert!(err.contains("900s intervals"), "{err}");
     }
 
     #[test]
     fn a_non_hourly_reading_is_rejected() {
-        let err = parse(&feed_xml("3600", "1800")).unwrap_err().to_string();
+        let err = parse_espi_xml(&feed_xml("3600", "1800"))
+            .unwrap_err()
+            .to_string();
         assert!(err.contains("covers 1800s"), "{err}");
     }
 
@@ -488,7 +492,7 @@ mod test {
     fn a_missing_series_is_rejected() {
         let xml = feed_xml("3600", "3600")
             .replace(r#"<espi:uom>61</espi:uom>"#, "<espi:uom>9</espi:uom>");
-        let err = parse(&xml).unwrap_err().to_string();
+        let err = parse_espi_xml(&xml).unwrap_err().to_string();
         assert!(err.contains("no kVA series"), "{err}");
     }
 
@@ -496,7 +500,7 @@ mod test {
     /// one.
     #[test]
     fn a_gap_becomes_a_placeholder_row() {
-        let feed = parse(&feed_xml("3600", "3600")).unwrap();
+        let feed = parse_espi_xml(&feed_xml("3600", "3600")).unwrap();
         let mut feed = feed;
         // Drop the second hour from every series, then add a fourth hour, leaving a two-hour hole.
         let hole = Timestamp::from_second(1732341600).unwrap();
@@ -541,7 +545,7 @@ mod test {
     <link rel="self" href="ib/kwh2/1"/><link rel="related" href="mr/kwh2"/></entry>
 </feed>"#;
         let xml = feed_xml("3600", "3600").replace("</feed>", extra);
-        let err = parse(&xml).unwrap_err().to_string();
+        let err = parse_espi_xml(&xml).unwrap_err().to_string();
         assert!(err.contains("both carry uom 72"), "{err}");
         assert!(err.contains("rt/kwh"), "{err}");
     }
@@ -560,7 +564,7 @@ mod test {
     <link rel="self" href="ib/kwh/2"/><link rel="related" href="mr/kwh"/></entry>
 </feed>"#;
         let xml = feed_xml("3600", "3600").replace("</feed>", extra);
-        let feed = parse(&xml).unwrap();
+        let feed = parse_espi_xml(&xml).unwrap();
         assert_eq!(feed.kwh.values.len(), 3);
         assert_eq!(feed.kwh.power_of_ten, -3);
     }
@@ -574,7 +578,7 @@ mod test {
     /// Here it costs nothing and the reading after the hole says what happened.
     #[test]
     fn an_implausible_hole_is_flagged_rather_than_filled() {
-        let mut feed = parse(&feed_xml("3600", "3600")).unwrap();
+        let mut feed = parse_espi_xml(&feed_xml("3600", "3600")).unwrap();
         let second = Timestamp::from_second(1732341600).unwrap();
         // 200 years on. Well past the bound, and still inside the range `Timestamp` can hold --
         // a corrupt value can reach the end of that range, but a test cannot use one there.
@@ -609,7 +613,7 @@ mod test {
     /// The bound must not be so eager that it swallows the case the placeholders exist for.
     #[test]
     fn an_outage_sized_hole_is_still_filled() {
-        let mut feed = parse(&feed_xml("3600", "3600")).unwrap();
+        let mut feed = parse_espi_xml(&feed_xml("3600", "3600")).unwrap();
         let second = Timestamp::from_second(1732341600).unwrap();
         // Three days past the reading it replaces, so 72 hours are missing between the first
         // reading and this one.
@@ -654,7 +658,7 @@ mod test {
             "the fixture still has readings"
         );
 
-        let err = parse(&stripped).unwrap_err().to_string();
+        let err = parse_espi_xml(&stripped).unwrap_err().to_string();
         assert!(err.contains("carries no readings"), "{err}");
         assert!(
             err.contains("kWh"),
@@ -665,7 +669,7 @@ mod test {
     /// A timestamp present in one series and not another is reported rather than zero-filled.
     #[test]
     fn a_missing_companion_is_reported_not_zeroed() {
-        let mut feed = parse(&feed_xml("3600", "3600")).unwrap();
+        let mut feed = parse_espi_xml(&feed_xml("3600", "3600")).unwrap();
         let at = Timestamp::from_second(1732338000).unwrap();
         feed.kw.values.remove(&at);
         let readings = feed.readings();

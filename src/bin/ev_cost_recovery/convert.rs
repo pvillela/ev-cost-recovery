@@ -12,7 +12,7 @@ use crate::{
     theme, widgets,
 };
 use eframe::egui;
-use ev_cost_recovery::io::{GbConversionReport, OnExistingWorkbook};
+use ev_cost_recovery::io::{GbWriteReport, OnExistingWorkbook};
 use std::path::Path;
 
 pub fn ui(ui: &mut egui::Ui, state: &mut ConvertState, working: &mut WorkingDir) {
@@ -216,10 +216,10 @@ fn session_outcome(ui: &mut egui::Ui, outcome: &SessionWorkbook) {
     widgets::monospace_lines(ui, &outcome.anomalies.join("\n"));
 }
 
-fn gb_outcome(ui: &mut egui::Ui, outcome: &GbConversionReport) {
-    written(ui, &outcome.output_path);
+fn gb_outcome(ui: &mut egui::Ui, outcome: &GbWriteReport) {
+    written(ui, &outcome.path);
 
-    let report = &outcome.written;
+    let report = &outcome;
     ui.add_space(10.0);
     ui.label(format!(
         "{} billing periods, {} intervals",

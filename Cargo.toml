@@ -24,6 +24,9 @@ roxmltree = "0.21.1"
 # represent the template's 13.8pt rows or 1.39-wide spacers.
 umya-spreadsheet = "3.0.1"
 
+[features]
+historic = [] # code that does not support library API
+
 # The file dialogs. Everywhere but Linux the default backend is the native one and there is
 # nothing to choose.
 [target."cfg(not(target_os = \"linux\"))".dependencies]
@@ -57,3 +60,11 @@ debug = "line-tables-only"
 # The app is downloaded as a single file, so the debug symbols are worth removing: they are most
 # of the binary and nothing in the field reads them.
 strip = "symbols"
+
+[[bin]]
+name = "ev_peak_gui"
+required-features = ["historic"]
+
+[[bin]]
+name = "ev_peak_cli"
+required-features = ["historic"]

@@ -1,4 +1,4 @@
-use ev_cost_recovery::session::excel::session_csv_to_xlsx;
+use ev_cost_recovery::session::session_csv_to_xlsx;
 use std::{env, path::PathBuf, process::ExitCode};
 
 const USAGE: &str = "\

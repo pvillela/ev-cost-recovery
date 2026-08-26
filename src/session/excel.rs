@@ -9,20 +9,14 @@
 //! parsed is written there and read back here, and it is what removes a session from the
 //! estimates. See [`AnomalyKind`].
 
-use crate::time::{
-    duration_of_serial, instant_of_serial, serial_of_civil, serial_of_duration, serial_of_instant,
-};
-
 use super::{
-    Anomaly, AnomalyKind, RSession, RunLog, Session, Sessions, SourceLog,
-    csv::{self, SessionRows},
+    Anomaly, AnomalyKind, SourceLog,
+    csv::{SessionRows, csv_session_rows},
 };
-use jiff::Timestamp;
+use crate::time::{serial_of_civil, serial_of_duration, serial_of_instant};
 use std::{
-    collections::HashMap,
     error::Error,
     path::{Path, PathBuf},
-    rc::Rc,
 };
 use umya_spreadsheet::{Comment, HorizontalAlignmentValues, Workbook, Worksheet};
 
@@ -35,7 +29,7 @@ const TOTAL_FEE_FORMAT: &str = "0.00";
 
 /// Outcome of converting one CSV file. The reading direction returns a [`Sessions`] instead.
 #[derive(Debug)]
-pub struct ConversionReport {
+pub struct SessionWriteReport {
     /// Where the workbook was written.
     pub output_path: PathBuf,
     /// Rows that needed a judgement call. Empty for a clean conversion.
@@ -158,26 +152,16 @@ const COLUMNS: &[(&str, Source)] = &[
 /// header is missing, a timestamp or duration does not parse, or the workbook cannot be written.
 /// Per-row judgement calls do not abort the conversion; they are collected in
 /// [`ConversionReport::anomalies`].
-pub fn session_csv_to_xlsx(path: &Path) -> Result<ConversionReport, Box<dyn Error>> {
+pub fn session_csv_to_xlsx(path: &Path) -> Result<SessionWriteReport, Box<dyn Error>> {
     // The path, once, for every way this can fail. See `csv::session_list` for why it is done here
     // rather than at each site.
     convert_session_csv(path).map_err(|e| format!("{}: {e}", path.display()).into())
 }
 
-/// Where [`session_csv_to_xlsx`] puts the workbook for `csv`: beside it, with the extension
-/// replaced.
-///
-/// Public so that a caller which has to decide *before* the conversion runs — whether the file is
-/// already there, whether it would be the input itself — asks this rather than deriving the name a
-/// second time and drifting from it.
-pub fn workbook_path(csv: &Path) -> PathBuf {
-    csv.with_extension("xlsx")
-}
+fn convert_session_csv(path: &Path) -> Result<SessionWriteReport, Box<dyn Error>> {
+    let rows = csv_session_rows(path)?;
 
-fn convert_session_csv(path: &Path) -> Result<ConversionReport, Box<dyn Error>> {
-    let rows = csv::session_rows(path)?;
-
-    let output_path = workbook_path(path);
+    let output_path = path.with_extension("xlsx");
     let mut book = umya_spreadsheet::new_file();
     write_sheet(&mut book, &output_path, &rows)?;
 
@@ -191,7 +175,7 @@ fn convert_session_csv(path: &Path) -> Result<ConversionReport, Box<dyn Error>> 
         log: rows.log,
     };
 
-    Ok(ConversionReport {
+    Ok(SessionWriteReport {
         output_path,
         anomalies: rows.anomalies,
         log,
@@ -523,298 +507,304 @@ fn set_widths(sheet: &mut Worksheet) {
 // Excel input
 // ---------------------------------------------------------------------------
 
-/// Sheet columns that make a workbook a session report. The reading-side counterpart of the
-/// required CSV headers in [`super::csv`].
-///
-/// This is deliberately wider than the set [`session_list`] strictly consumes. A workbook missing
-/// any of these is not a rendering of a session report, and guessing at its contents would produce
-/// peak numbers that cannot be trusted. `anomalies` in particular is load-bearing: without it every
-/// session would silently look clean, and inconsistent ones would fold back into the estimates.
-const REQUIRED_SHEET_HEADERS: &[&str] = &[
-    "Charge_Session_ID",
-    "conn_start_utc",
-    "conn_end_utc",
-    "adj_conn_end_utc",
-    "Conn_Duration",
-    "Active_Charge_Time",
-    "Energy_Use",
-    "anomalies",
-];
+#[cfg(feature = "historic")]
+pub mod historic {
+    use jiff::Timestamp;
 
-/// Sheet header name to its 1-based column number.
-type SheetHeaders = HashMap<String, u32>;
-
-/// Reads a workbook written by [`session_csv_to_xlsx`] and returns the charging sessions it
-/// describes, ready for the peak power contribution logic.
-///
-/// Columns are located by the header names in row 1, not by position, so inserting or reordering
-/// columns in the sheet does not silently shift what is read. Only the private
-/// `REQUIRED_SHEET_HEADERS` are consulted; the first worksheet is used.
-///
-/// Sorting into the three buckets of [`Sessions`] happens here rather than at conversion time,
-/// because the workbook is meant to be a faithful rendering of the session report. The rules are
-/// `Sessions::from_session_lists`'s, shared with [`csv::session_list`] so the two readers
-/// cannot disagree.
-///
-/// `avg_kw` is recomputed here rather than read from the sheet's `avg_kw` column, which
-/// holds a formula whose cached value this crate never writes. For a spike that leaves it infinite
-/// or `NaN`, which is the honest reading; the estimating logic substitutes a finite value.
-///
-/// A `<stem>.xlsx.read.log` is written beside the workbook, listing any stored column that
-/// disagreed with the recomputed value. That channel has no counterpart in [`csv::session_list`],
-/// which reads the source and so has nothing to compare against.
-///
-/// # Errors
-///
-/// Returns `Err` if the workbook cannot be read, a required column is missing, any cell in a row
-/// that has a `Charge_Session_ID` does not hold the number it should, or the `anomalies` column
-/// holds a token that is not an [`AnomalyKind`] variant name. A workbook that cannot be read in
-/// full is one whose peak numbers cannot be trusted, so no row is skipped quietly.
-/// Rows with no `Charge_Session_ID` at all are treated as trailing blanks and ignored.
-pub fn session_list(path: &Path) -> Result<Sessions, Box<dyn Error>> {
-    // The path, once, for every way this can fail. See `csv::session_list` for why it is done here
-    // rather than at each site.
-    read_session_list(path).map_err(|e| format!("{}: {e}", path.display()).into())
-}
-
-fn read_session_list(path: &Path) -> Result<Sessions, Box<dyn Error>> {
-    let book = umya_spreadsheet::reader::xlsx::read(path)?;
-    let sheet = book.sheet(0)?;
-    let headers = sheet_headers(sheet)?;
-
-    let mut log = RunLog::new();
-    // One allocation for the workbook, shared by every session read from it.
-    let source = Rc::new(path.to_path_buf());
-    let mut sessions: Vec<RSession> = Vec::new();
-    // Held apart from `Session::anomalies` because a stale cell is a fact about this workbook, not
-    // about the record: the CSV it was written from disagrees with nothing.
-    let mut discrepancies: Vec<Anomaly> = Vec::new();
-    for row in 2..=sheet.highest_row() {
-        let id = sheet
-            .value((headers["Charge_Session_ID"], row))
-            .trim()
-            .to_owned();
-        if id.is_empty() {
-            continue;
-        }
-
-        let energy_use = number(sheet, &headers, "Energy_Use", row)?;
-        let charge_time = duration_of_serial(number(sheet, &headers, "Active_Charge_Time", row)?);
-        let anomalies = anomaly_kinds(sheet, &headers, row)?;
-        let session = Rc::new(Session {
-            path: source.clone(),
-            row: row as usize,
-            id,
-            conn_start: instant_of_serial(number(sheet, &headers, "conn_start_utc", row)?)?,
-            conn_end: instant_of_serial(number(sheet, &headers, "conn_end_utc", row)?)?,
-            conn_duration: duration_of_serial(number(sheet, &headers, "Conn_Duration", row)?),
-            charge_time,
-            energy_use,
-            anomalies,
-        });
-
-        if check_stored_columns(sheet, &headers, row, &session, &mut log) {
-            discrepancies.push(Anomaly {
-                session: session.clone(),
-                kind: AnomalyKind::WorkbookDiscrepancy,
-            });
-        }
-
-        sessions.push(session);
-    }
-
-    let log = SourceLog {
-        source: path.to_path_buf(),
-        suffix: "xlsx.read",
-        operation: "Read back from workbook",
-        log,
+    use crate::{
+        session::{RSession, RunLog, Session, Sessions},
+        time::{duration_of_serial, instant_of_serial},
     };
 
-    // Through the merge for the same reason `csv::session_list` is: it is where a shared
-    // `Charge_Session_ID` is noticed, and one file can carry one as readily as two can.
-    let mut report =
-        Sessions::from_session_lists(vec![sessions], vec![path.to_path_buf()], vec![log]);
-    report.anomalies.extend(discrepancies);
-    Ok(report)
-}
+    use super::*;
+    use std::{collections::HashMap, rc::Rc};
 
-/// Compares the workbook's stored derived columns against what the [`Session`] methods recompute,
-/// noting any disagreement in the run log.
-///
-/// Returns whether any column disagreed, which the caller raises as
-/// [`AnomalyKind::WorkbookDiscrepancy`] against the session — on [`Sessions::anomalies`], never on
-/// [`Session::anomalies`], since a disagreement belongs to the workbook rather than to the
-/// instantiated session.
-///
-/// **The recomputed value always wins.** Nothing here changes a `Session`. Letting a stale cell
-/// feed the estimates would make an edited workbook silently change which sessions count, which is
-/// why the flag this raises is one nothing branches on.
-///
-/// `adj_conn_duration` and `avg_kw` hold formulas. This crate writes the formula and no cached
-/// value, so Excel has to have opened and saved the workbook for one to be there. A missing cached
-/// value is therefore the normal state of a freshly written workbook and not a finding at all: the
-/// column is skipped, and neither the log nor the flag says anything about it.
-fn check_stored_columns(
-    sheet: &Worksheet,
-    headers: &SheetHeaders,
-    row: u32,
-    session: &Session,
-    log: &mut RunLog,
-) -> bool {
-    let id = &session.id;
-    let mut disagreed = false;
+    /// Sheet columns that make a workbook a session report. The reading-side counterpart of the
+    /// required CSV headers in [`super::csv`].
+    ///
+    /// This is deliberately wider than the set [`session_list`] strictly consumes. A workbook missing
+    /// any of these is not a rendering of a session report, and guessing at its contents would produce
+    /// peak numbers that cannot be trusted. `anomalies` in particular is load-bearing: without it every
+    /// session would silently look clean, and inconsistent ones would fold back into the estimates.
+    const REQUIRED_SHEET_HEADERS: &[&str] = &[
+        "Charge_Session_ID",
+        "conn_start_utc",
+        "conn_end_utc",
+        "adj_conn_end_utc",
+        "Conn_Duration",
+        "Active_Charge_Time",
+        "Energy_Use",
+        "anomalies",
+    ];
 
-    let mut check_instant = |name: &str, expected: Timestamp, disagreed: &mut bool| {
-        let Some(&col) = headers.get(name) else {
-            return; // not a required header; absence is not a discrepancy
+    /// Sheet header name to its 1-based column number.
+    type SheetHeaders = HashMap<String, u32>;
+
+    /// Reads a workbook written by [`session_csv_to_xlsx`] and returns the charging sessions it
+    /// describes, ready for the peak power contribution logic.
+    ///
+    /// Columns are located by the header names in row 1, not by position, so inserting or reordering
+    /// columns in the sheet does not silently shift what is read. Only the private
+    /// `REQUIRED_SHEET_HEADERS` are consulted; the first worksheet is used.
+    ///
+    /// Sorting into the three buckets of [`Sessions`] happens here rather than at conversion time,
+    /// because the workbook is meant to be a faithful rendering of the session report. The rules are
+    /// `Sessions::from_session_lists`'s, shared with [`csv::session_list`] so the two readers
+    /// cannot disagree.
+    ///
+    /// `avg_kw` is recomputed here rather than read from the sheet's `avg_kw` column, which
+    /// holds a formula whose cached value this crate never writes. For a spike that leaves it infinite
+    /// or `NaN`, which is the honest reading; the estimating logic substitutes a finite value.
+    ///
+    /// A `<stem>.xlsx.read.log` is written beside the workbook, listing any stored column that
+    /// disagreed with the recomputed value. That channel has no counterpart in [`csv::session_list`],
+    /// which reads the source and so has nothing to compare against.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if the workbook cannot be read, a required column is missing, any cell in a row
+    /// that has a `Charge_Session_ID` does not hold the number it should, or the `anomalies` column
+    /// holds a token that is not an [`AnomalyKind`] variant name. A workbook that cannot be read in
+    /// full is one whose peak numbers cannot be trusted, so no row is skipped quietly.
+    /// Rows with no `Charge_Session_ID` at all are treated as trailing blanks and ignored.
+    pub fn xlsx_to_sessions(path: &Path) -> Result<Sessions, Box<dyn Error>> {
+        // The path, once, for every way this can fail. See `csv::session_list` for why it is done here
+        // rather than at each site.
+        read_sessions(path).map_err(|e| format!("{}: {e}", path.display()).into())
+    }
+
+    fn read_sessions(path: &Path) -> Result<Sessions, Box<dyn Error>> {
+        let book = umya_spreadsheet::reader::xlsx::read(path)?;
+        let sheet = book.sheet(0)?;
+        let headers = sheet_headers(sheet)?;
+
+        let mut log = RunLog::new();
+        // One allocation for the workbook, shared by every session read from it.
+        let source = Rc::new(path.to_path_buf());
+        let mut sessions: Vec<RSession> = Vec::new();
+        // Held apart from `Session::anomalies` because a stale cell is a fact about this workbook, not
+        // about the record: the CSV it was written from disagrees with nothing.
+        let mut discrepancies: Vec<Anomaly> = Vec::new();
+        for row in 2..=sheet.highest_row() {
+            let id = sheet
+                .value((headers["Charge_Session_ID"], row))
+                .trim()
+                .to_owned();
+            if id.is_empty() {
+                continue;
+            }
+
+            let energy_use = number(sheet, &headers, "Energy_Use", row)?;
+            let charge_time =
+                duration_of_serial(number(sheet, &headers, "Active_Charge_Time", row)?);
+            let anomalies = anomaly_kinds(sheet, &headers, row)?;
+            let session = Rc::new(Session {
+                path: source.clone(),
+                row: row as usize,
+                id,
+                conn_start: instant_of_serial(number(sheet, &headers, "conn_start_utc", row)?)?,
+                conn_end: instant_of_serial(number(sheet, &headers, "conn_end_utc", row)?)?,
+                conn_duration: duration_of_serial(number(sheet, &headers, "Conn_Duration", row)?),
+                charge_time,
+                energy_use,
+                anomalies,
+            });
+
+            if check_stored_columns(sheet, &headers, row, &session, &mut log) {
+                discrepancies.push(Anomaly {
+                    session: session.clone(),
+                    kind: AnomalyKind::WorkbookDiscrepancy,
+                });
+            }
+
+            sessions.push(session);
+        }
+
+        let log = SourceLog {
+            source: path.to_path_buf(),
+            suffix: "xlsx.read",
+            operation: "Read back from workbook",
+            log,
         };
-        match sheet.value((col, row)).trim().parse::<f64>() {
-            Ok(serial) => match instant_of_serial(serial) {
-                Ok(stored) if stored != expected => {
+
+        // Through the merge for the same reason `csv::session_list` is: it is where a shared
+        // `Charge_Session_ID` is noticed, and one file can carry one as readily as two can.
+        let mut report =
+            Sessions::from_session_lists(vec![sessions], vec![path.to_path_buf()], vec![log]);
+        report.anomalies.extend(discrepancies);
+        Ok(report)
+    }
+
+    /// Compares the workbook's stored derived columns against what the [`Session`] methods recompute,
+    /// noting any disagreement in the run log.
+    ///
+    /// Returns whether any column disagreed, which the caller raises as
+    /// [`AnomalyKind::WorkbookDiscrepancy`] against the session — on [`Sessions::anomalies`], never on
+    /// [`Session::anomalies`], since a disagreement belongs to the workbook rather than to the
+    /// instantiated session.
+    ///
+    /// **The recomputed value always wins.** Nothing here changes a `Session`. Letting a stale cell
+    /// feed the estimates would make an edited workbook silently change which sessions count, which is
+    /// why the flag this raises is one nothing branches on.
+    ///
+    /// `adj_conn_duration` and `avg_kw` hold formulas. This crate writes the formula and no cached
+    /// value, so Excel has to have opened and saved the workbook for one to be there. A missing cached
+    /// value is therefore the normal state of a freshly written workbook and not a finding at all: the
+    /// column is skipped, and neither the log nor the flag says anything about it.
+    fn check_stored_columns(
+        sheet: &Worksheet,
+        headers: &SheetHeaders,
+        row: u32,
+        session: &Session,
+        log: &mut RunLog,
+    ) -> bool {
+        let id = &session.id;
+        let mut disagreed = false;
+
+        let mut check_instant = |name: &str, expected: Timestamp, disagreed: &mut bool| {
+            let Some(&col) = headers.get(name) else {
+                return; // not a required header; absence is not a discrepancy
+            };
+            match sheet.value((col, row)).trim().parse::<f64>() {
+                Ok(serial) => match instant_of_serial(serial) {
+                    Ok(stored) if stored != expected => {
+                        *disagreed = true;
+                        log.note(format!(
+                            "row {row} ({id}): stored {name} is {stored}, recomputed {expected}; \
+                         using the recomputed value"
+                        ));
+                    }
+                    Ok(_) => {}
+                    Err(e) => {
+                        *disagreed = true;
+                        log.note(format!(
+                            "row {row} ({id}): {name} is not a valid instant: {e}"
+                        ));
+                    }
+                },
+                Err(_) => {
                     *disagreed = true;
                     log.note(format!(
+                    "row {row} ({id}): {name} does not hold a number; using the recomputed value"
+                ));
+                }
+            }
+        };
+        check_instant(
+            "adj_conn_start_utc",
+            session.adj_conn_start(),
+            &mut disagreed,
+        );
+        check_instant("adj_conn_end_utc", session.adj_conn_end(), &mut disagreed);
+
+        // `adj_duration` subtracts one adjusted bound from the other and panics if they are inverted.
+        // This runs before the exclusion sort, so an `InconsistentDuration` row reaches here — and the
+        // whole point of check 1 is that such a row exists. Skip the column rather than compute it: a
+        // stored duration for a session that has no duration is not a discrepancy worth a line.
+        let adj_duration = (session.adj_conn_start() <= session.adj_conn_end())
+            .then(|| serial_of_duration(session.adj_duration()));
+        let expected_values: Vec<(&str, f64)> = adj_duration
+            .map(|d| ("adj_conn_duration", d))
+            .into_iter()
+            .chain([("avg_kw", session.avg_kw())])
+            .collect();
+
+        for (name, expected) in expected_values {
+            let Some(&col) = headers.get(name) else {
+                continue;
+            };
+            let raw = sheet.value((col, row));
+            let raw = raw.trim();
+            // A formula this crate wrote and Excel has not yet evaluated. Nothing to compare against,
+            // so nothing to report: an absent cached value is the normal state of a freshly written
+            // workbook rather than a disagreement with it.
+            if raw.is_empty() {
+                continue;
+            }
+            match raw.parse::<f64>() {
+                // Serials and kilowatts both come back through floating point, so compare to the
+                // resolution the sheet actually shows rather than for equality.
+                Ok(stored) if (stored - expected).abs() > 1e-6 => {
+                    disagreed = true;
+                    log.note(format!(
                         "row {row} ({id}): stored {name} is {stored}, recomputed {expected}; \
-                         using the recomputed value"
+                     using the recomputed value"
                     ));
                 }
                 Ok(_) => {}
-                Err(e) => {
-                    *disagreed = true;
+                Err(_) => {
+                    disagreed = true;
                     log.note(format!(
-                        "row {row} ({id}): {name} is not a valid instant: {e}"
-                    ));
+                    "row {row} ({id}): {name} does not hold a number; using the recomputed value"
+                ));
                 }
-            },
-            Err(_) => {
-                *disagreed = true;
-                log.note(format!(
-                    "row {row} ({id}): {name} does not hold a number; using the recomputed value"
-                ));
             }
         }
-    };
-    check_instant(
-        "adj_conn_start_utc",
-        session.adj_conn_start(),
-        &mut disagreed,
-    );
-    check_instant("adj_conn_end_utc", session.adj_conn_end(), &mut disagreed);
 
-    // `adj_duration` subtracts one adjusted bound from the other and panics if they are inverted.
-    // This runs before the exclusion sort, so an `InconsistentDuration` row reaches here — and the
-    // whole point of check 1 is that such a row exists. Skip the column rather than compute it: a
-    // stored duration for a session that has no duration is not a discrepancy worth a line.
-    let adj_duration = (session.adj_conn_start() <= session.adj_conn_end())
-        .then(|| serial_of_duration(session.adj_duration()));
-    let expected_values: Vec<(&str, f64)> = adj_duration
-        .map(|d| ("adj_conn_duration", d))
-        .into_iter()
-        .chain([("avg_kw", session.avg_kw())])
-        .collect();
-
-    for (name, expected) in expected_values {
-        let Some(&col) = headers.get(name) else {
-            continue;
-        };
-        let raw = sheet.value((col, row));
-        let raw = raw.trim();
-        // A formula this crate wrote and Excel has not yet evaluated. Nothing to compare against,
-        // so nothing to report: an absent cached value is the normal state of a freshly written
-        // workbook rather than a disagreement with it.
-        if raw.is_empty() {
-            continue;
-        }
-        match raw.parse::<f64>() {
-            // Serials and kilowatts both come back through floating point, so compare to the
-            // resolution the sheet actually shows rather than for equality.
-            Ok(stored) if (stored - expected).abs() > 1e-6 => {
-                disagreed = true;
-                log.note(format!(
-                    "row {row} ({id}): stored {name} is {stored}, recomputed {expected}; \
-                     using the recomputed value"
-                ));
-            }
-            Ok(_) => {}
-            Err(_) => {
-                disagreed = true;
-                log.note(format!(
-                    "row {row} ({id}): {name} does not hold a number; using the recomputed value"
-                ));
-            }
-        }
+        disagreed
     }
 
-    disagreed
-}
-
-/// Parses the `anomalies` cell. An unrecognised token is an error rather than a shrug: it means the
-/// workbook was written by something this crate does not know, and the sessions it excludes cannot
-/// be determined.
-fn anomaly_kinds(
-    sheet: &Worksheet,
-    headers: &SheetHeaders,
-    row: u32,
-) -> Result<Vec<AnomalyKind>, Box<dyn Error>> {
-    sheet
-        .value((headers["anomalies"], row))
-        .split(',')
-        .map(str::trim)
-        .filter(|token| !token.is_empty())
-        .map(|token| {
-            AnomalyKind::from_token(token).ok_or_else(|| -> Box<dyn Error> {
-                format!("row {row}, column `anomalies`: unknown anomaly {token:?}").into()
+    /// Parses the `anomalies` cell. An unrecognised token is an error rather than a shrug: it means the
+    /// workbook was written by something this crate does not know, and the sessions it excludes cannot
+    /// be determined.
+    fn anomaly_kinds(
+        sheet: &Worksheet,
+        headers: &SheetHeaders,
+        row: u32,
+    ) -> Result<Vec<AnomalyKind>, Box<dyn Error>> {
+        sheet
+            .value((headers["anomalies"], row))
+            .split(',')
+            .map(str::trim)
+            .filter(|token| !token.is_empty())
+            .map(|token| {
+                AnomalyKind::from_token(token).ok_or_else(|| -> Box<dyn Error> {
+                    format!("row {row}, column `anomalies`: unknown anomaly {token:?}").into()
+                })
             })
+            .collect()
+    }
+
+    pub(super) fn sheet_headers(sheet: &Worksheet) -> Result<SheetHeaders, Box<dyn Error>> {
+        let mut headers = SheetHeaders::new();
+        for col in 1..=sheet.highest_column() {
+            let name = sheet.value((col, 1)).trim().to_owned();
+            if !name.is_empty() {
+                // First wins, so a duplicated header cannot displace the column it shadows.
+                headers.entry(name).or_insert(col);
+            }
+        }
+
+        for required in REQUIRED_SHEET_HEADERS {
+            if !headers.contains_key(*required) {
+                return Err(format!("missing required column `{required}`").into());
+            }
+        }
+        Ok(headers)
+    }
+
+    /// Reads a numeric cell. `name` must be one of [`REQUIRED_SHEET_HEADERS`], which
+    /// [`sheet_headers`] has already proven present.
+    fn number(
+        sheet: &Worksheet,
+        headers: &SheetHeaders,
+        name: &str,
+        row: u32,
+    ) -> Result<f64, Box<dyn Error>> {
+        let col = headers[name];
+        sheet.value_number((col, row)).ok_or_else(|| {
+            let found = sheet.value((col, row));
+            format!("row {row}, column `{name}`: expected a number, found {found:?}").into()
         })
-        .collect()
-}
-
-fn sheet_headers(sheet: &Worksheet) -> Result<SheetHeaders, Box<dyn Error>> {
-    let mut headers = SheetHeaders::new();
-    for col in 1..=sheet.highest_column() {
-        let name = sheet.value((col, 1)).trim().to_owned();
-        if !name.is_empty() {
-            // First wins, so a duplicated header cannot displace the column it shadows.
-            headers.entry(name).or_insert(col);
-        }
     }
-
-    for required in REQUIRED_SHEET_HEADERS {
-        if !headers.contains_key(*required) {
-            return Err(format!("missing required column `{required}`").into());
-        }
-    }
-    Ok(headers)
-}
-
-/// Reads a numeric cell. `name` must be one of [`REQUIRED_SHEET_HEADERS`], which
-/// [`sheet_headers`] has already proven present.
-fn number(
-    sheet: &Worksheet,
-    headers: &SheetHeaders,
-    name: &str,
-    row: u32,
-) -> Result<f64, Box<dyn Error>> {
-    let col = headers[name];
-    sheet.value_number((col, row)).ok_or_else(|| {
-        let found = sheet.value((col, row));
-        format!("row {row}, column `{name}`: expected a number, found {found:?}").into()
-    })
 }
 
 #[cfg(test)]
 // cargo test --lib -- session::excel::test --nocapture
 mod test {
     use super::*;
-    use crate::session::{
-        BREAKER_RATING_KW,
-        test_support::{timing_anomalies, timing_anomalies_in_cell},
-    };
-    use jiff::{civil, tz::TimeZone};
-    use std::{env, fs, process, time::Duration};
-
-    fn utc(dt: civil::DateTime) -> Timestamp {
-        dt.to_zoned(TimeZone::UTC).unwrap().timestamp()
-    }
+    use crate::session::test_support::{timing_anomalies, timing_anomalies_in_cell};
+    use std::{env, fs, process};
 
     /// A scratch directory of its own per test, since these run in parallel within one process.
     fn temp_dir(tag: &str) -> PathBuf {
@@ -1018,6 +1008,74 @@ CKT-7,,Toronto,,Station-7,Evolute Inc.,FLO,G5,S13577,,2026-06-02 08:00,2026-06-0
         fs::remove_dir_all(&dir).ok();
     }
 
+    /// The conversion report's anomalies carry rows of the file they were read from, which for a
+    /// conversion is the CSV. The two halves of a resolved DST fold therefore share a row number:
+    /// they came from one record, and the `-EDT`/`-EST` suffix on the id is what tells them apart.
+    #[test]
+    fn conversion_report_anomalies_carry_source_rows() {
+        const CSV: &str = "\
+Charge_Session_ID,Conn_DateTime_Start,Conn_DateTime_End,Conn_Duration,Active_Charge_Time,Energy_Use
+S1,2026-11-01 01:10,2026-11-01 01:40,0:30:00,0:29:00,2.9
+S2,2026-11-02 08:00,2026-11-02 08:00,0:00:00,0:00:00,4.2
+";
+        let dir = temp_dir("excel_rows");
+        let csv_path = dir.join("Session_Report_Test.csv");
+        fs::write(&csv_path, CSV).unwrap();
+        let report = session_csv_to_xlsx(&csv_path).unwrap();
+
+        let items: Vec<_> = report
+            .anomalies
+            .iter()
+            .filter(|a| a.kind != AnomalyKind::ExcessiveAvgKw)
+            .map(|a| (a.session.row, a.session.id.as_str(), a.kind))
+            .collect();
+        assert_eq!(
+            items,
+            [
+                (2, "S1-EDT", AnomalyKind::DstAmbiguousDuplicated),
+                (2, "S1-EST", AnomalyKind::DstAmbiguousDuplicated),
+                // CSV row 3. It sits on workbook row 4, the duplication above having pushed it
+                // down, but the workbook row is the workbook's business and not this report's.
+                (3, "S2", AnomalyKind::ZeroActiveChargeTime),
+            ]
+        );
+
+        fs::remove_dir_all(&dir).ok();
+    }
+}
+
+#[cfg(test)]
+mod test_historic {
+    use super::historic::*;
+    use super::*;
+    use crate::{
+        session::{
+            BREAKER_RATING_KW, RSession, Sessions,
+            csv::csv_sessions,
+            test_support::{timing_anomalies, timing_anomalies_in_cell},
+        },
+        time::instant_of_serial,
+    };
+    use jiff::{Timestamp, civil, tz::TimeZone};
+    use std::{env, fs, process, time::Duration};
+
+    fn utc(dt: civil::DateTime) -> Timestamp {
+        dt.to_zoned(TimeZone::UTC).unwrap().timestamp()
+    }
+
+    /// A scratch directory of its own per test, since these run in parallel within one process.
+    fn temp_dir(tag: &str) -> PathBuf {
+        let dir = env::temp_dir().join(format!("ev_peak_excel_{}_{tag}", process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    const FIXTURE: &str = "\
+UR_ID,Location_Address,Location_City,Location_Postal_Code,Station_ID,Station_Network_Provider,Station_Make,Station_Model,Charge_Session_ID,User_ID,Conn_DateTime_Start,Conn_DateTime_End,Conn_Duration,Charge_Duration,Active_Charge_Time,Charging_Level,Energy_Use,Total_Fee,Vehicle_Make,Vehicle_Model,Vehicle_Year
+CKT-7,,Toronto,,Station-7,Evolute Inc.,FLO,G5,S69865,,2026-06-01 16:22,2026-06-01 21:29,5:07:53,5:07:53,5:07:52,Level 2,30.6,5.63,VinFast,Vf8,2024
+CKT-7,,Toronto,,Station-7,Evolute Inc.,FLO,G5,S13577,,2026-06-02 08:00,2026-06-02 08:00,0:00:11,0:00:11,0:00:10,Level 2,0,0,VinFast,Vf8,2024
+";
+
     /// A record whose start falls in the fold and whose end cannot discriminate the two offsets
     /// occupies two workbook rows. Each gets its own row number, its own id and its own cell, so
     /// the pair produces two anomaly items rather than one shared between them.
@@ -1046,7 +1104,7 @@ S2,2026-11-02 08:00,2026-11-02 09:00,1:00:00,0:59:00,5.9
         assert_eq!(sheet.value((col(Source::SessionId), 4)), "S2");
 
         // And the reader recovers all of it.
-        let report = session_list(&xlsx).unwrap();
+        let report = xlsx_to_sessions(&xlsx).unwrap();
         let ids: Vec<_> = report.sessions.iter().map(|s| s.id.as_str()).collect();
         assert_eq!(ids, ["S1-EDT", "S1-EST", "S2"]);
         assert_eq!(report.sessions[0].row, 2);
@@ -1083,8 +1141,8 @@ S4,2026-06-03 09:00,2026-06-03 09:00,0:00:00,0:00:00,4.2
         fs::write(&csv_path, CSV).unwrap();
         let xlsx = session_csv_to_xlsx(&csv_path).unwrap().output_path;
 
-        let from_csv = csv::session_list(&csv_path).unwrap();
-        let from_xlsx = session_list(&xlsx).unwrap();
+        let from_csv = csv_sessions(&csv_path).unwrap();
+        let from_xlsx = xlsx_to_sessions(&xlsx).unwrap();
 
         let ids = |r: &Sessions| {
             let bucket = |b: &[RSession]| b.iter().map(|s| s.id.clone()).collect::<Vec<String>>();
@@ -1112,41 +1170,6 @@ S4,2026-06-03 09:00,2026-06-03 09:00,0:00:00,0:00:00,4.2
         fs::remove_dir_all(&dir).ok();
     }
 
-    /// The conversion report's anomalies carry rows of the file they were read from, which for a
-    /// conversion is the CSV. The two halves of a resolved DST fold therefore share a row number:
-    /// they came from one record, and the `-EDT`/`-EST` suffix on the id is what tells them apart.
-    #[test]
-    fn conversion_report_anomalies_carry_source_rows() {
-        const CSV: &str = "\
-Charge_Session_ID,Conn_DateTime_Start,Conn_DateTime_End,Conn_Duration,Active_Charge_Time,Energy_Use
-S1,2026-11-01 01:10,2026-11-01 01:40,0:30:00,0:29:00,2.9
-S2,2026-11-02 08:00,2026-11-02 08:00,0:00:00,0:00:00,4.2
-";
-        let dir = temp_dir("excel_rows");
-        let csv_path = dir.join("Session_Report_Test.csv");
-        fs::write(&csv_path, CSV).unwrap();
-        let report = session_csv_to_xlsx(&csv_path).unwrap();
-
-        let items: Vec<_> = report
-            .anomalies
-            .iter()
-            .filter(|a| a.kind != AnomalyKind::ExcessiveAvgKw)
-            .map(|a| (a.session.row, a.session.id.as_str(), a.kind))
-            .collect();
-        assert_eq!(
-            items,
-            [
-                (2, "S1-EDT", AnomalyKind::DstAmbiguousDuplicated),
-                (2, "S1-EST", AnomalyKind::DstAmbiguousDuplicated),
-                // CSV row 3. It sits on workbook row 4, the duplication above having pushed it
-                // down, but the workbook row is the workbook's business and not this report's.
-                (3, "S2", AnomalyKind::ZeroActiveChargeTime),
-            ]
-        );
-
-        fs::remove_dir_all(&dir).ok();
-    }
-
     /// A session whose start, end and duration contradict each other cannot be placed on a
     /// timeline. It is written to the sheet, flagged, and kept out of the estimates.
     #[test]
@@ -1157,7 +1180,7 @@ S1,2026-06-01 16:22,2026-06-01 21:29,5:07:53,5:07:52,30.6
 S2,2026-06-02 10:00,2026-06-02 09:00,0:10:00,0:09:00,1.5
 ";
         let xlsx = convert("inconsistent", CSV);
-        let report = session_list(&xlsx).unwrap();
+        let report = xlsx_to_sessions(&xlsx).unwrap();
 
         assert_eq!(report.sessions.len(), 1);
         assert_eq!(report.sessions[0].id, "S1");
@@ -1188,7 +1211,7 @@ S2,2026-06-02 10:00,2026-06-02 09:00,0:10:00,0:09:00,1.5
             .set_value_string("SomethingElse");
         umya_spreadsheet::writer::xlsx::write(&book, &xlsx).unwrap();
 
-        let err = session_list(&xlsx).unwrap_err().to_string();
+        let err = xlsx_to_sessions(&xlsx).unwrap_err().to_string();
         assert!(err.contains("SomethingElse"), "{err}");
         fs::remove_dir_all(xlsx.parent().unwrap()).ok();
     }
@@ -1239,7 +1262,7 @@ CKT-7,,Toronto,,Station-7,Evolute Inc.,FLO,G5,S00002,,2026-06-03 10:00,2026-06-0
             .set_value_number(moved);
         umya_spreadsheet::writer::xlsx::write(&book, &xlsx).unwrap();
 
-        let report = session_list(&xlsx).unwrap();
+        let report = xlsx_to_sessions(&xlsx).unwrap();
         let session = &report.sessions[0];
 
         // Recomputed, not read: the edited cell had no effect on the session at all.
@@ -1298,7 +1321,7 @@ CKT-7,,Toronto,,Station-7,Evolute Inc.,FLO,G5,S00002,,2026-06-03 10:00,2026-06-0
     #[test]
     fn an_unevaluated_formula_is_not_a_discrepancy() {
         let xlsx = convert("unevaluated", FIXTURE);
-        let report = session_list(&xlsx).unwrap();
+        let report = xlsx_to_sessions(&xlsx).unwrap();
 
         assert!(
             !report
@@ -1318,7 +1341,7 @@ CKT-7,,Toronto,,Station-7,Evolute Inc.,FLO,G5,S00002,,2026-06-03 10:00,2026-06-0
     #[test]
     fn session_list_reads_back_what_was_written() {
         let xlsx = convert("session_list", FIXTURE);
-        let report = session_list(&xlsx).unwrap();
+        let report = xlsx_to_sessions(&xlsx).unwrap();
 
         // Beside the workbook, under its own suffix, so it cannot collide with the convert log or
         // with the CSV reader's.
@@ -1379,7 +1402,7 @@ CKT-7,,Toronto,,Station-7,Evolute Inc.,FLO,G5,S00002,,2026-06-03 10:00,2026-06-0
     #[test]
     fn zero_active_charge_time_becomes_a_spike() {
         let xlsx = convert("spike", SPIKE_FIXTURE);
-        let report = session_list(&xlsx).unwrap();
+        let report = xlsx_to_sessions(&xlsx).unwrap();
 
         assert_eq!(report.sessions.len(), 1);
         let ordinary = &report.sessions[0];
@@ -1424,7 +1447,7 @@ CKT-7,,Toronto,,Station-7,Evolute Inc.,FLO,G5,S00002,,2026-06-03 10:00,2026-06-0
             .set_value_string("Renamed");
         umya_spreadsheet::writer::xlsx::write(&book, &xlsx).unwrap();
 
-        let err = session_list(&xlsx).unwrap_err().to_string();
+        let err = xlsx_to_sessions(&xlsx).unwrap_err().to_string();
         assert!(err.contains("conn_start_utc"), "{err}");
         fs::remove_dir_all(xlsx.parent().unwrap()).ok();
 
@@ -1438,7 +1461,7 @@ CKT-7,,Toronto,,Station-7,Evolute Inc.,FLO,G5,S00002,,2026-06-03 10:00,2026-06-0
             .set_value_string("n/a");
         umya_spreadsheet::writer::xlsx::write(&book, &xlsx).unwrap();
 
-        let err = session_list(&xlsx).unwrap_err().to_string();
+        let err = xlsx_to_sessions(&xlsx).unwrap_err().to_string();
         assert!(err.contains("Energy_Use") && err.contains("row 2"), "{err}");
         fs::remove_dir_all(xlsx.parent().unwrap()).ok();
     }

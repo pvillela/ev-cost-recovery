@@ -1,5 +1,7 @@
+//! Requires feature "historic".
+
 use ev_cost_recovery::{
-    session::{IoiLength, checked_interval, interval_estimates},
+    session::{IoiLength, checked_interval, xlsx_to_interval_estimates},
     time::{Interval, TZ_OFFSETS},
 };
 use jiff::civil;
@@ -75,7 +77,7 @@ fn main() -> ExitCode {
         }
     };
 
-    match interval_estimates(interval, &path) {
+    match xlsx_to_interval_estimates(interval, &path) {
         Ok(report) => {
             // The library hands its run log back rather than writing it; a binary is where it
             // lands. Written before the report is printed, so a failure is not buried under it.

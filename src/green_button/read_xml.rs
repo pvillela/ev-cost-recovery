@@ -5,7 +5,7 @@
 //! the feed does not reach that period rather than handed nothing. This module is that call.
 
 use crate::{
-    green_button::{PeriodValues, Readings, parse, period_values},
+    green_button::{PeriodValues, Readings, parse_espi_xml, period_values},
     hydro_bill::MAX_BILL_END_DAY,
     time::local_date,
 };
@@ -32,7 +32,7 @@ use std::{error::Error, fs, path::Path};
 /// `1..=MAX_BILL_END_DAY`, or if the feed carries no reading in the period asked for. The last is
 /// an error rather than an empty row: a caller checking an invoice against a period the export
 /// does not reach needs to be told so, not handed zeroes.
-pub fn period_values_xml(
+pub fn read_gb_xml(
     xml_path: &Path,
     period_ending: Date,
     bill_end_day: i8,
@@ -43,7 +43,7 @@ pub fn period_values_xml(
     // the underlying error would not: a bare "No such file or directory" says nothing a reader can
     // act on. A caller that has the path already should therefore not add it again.
     let xml = fs::read_to_string(xml_path).map_err(|e| format!("{}: {e}", xml_path.display()))?;
-    let feed = parse(&xml).map_err(|e| format!("{}: {e}", xml_path.display()))?;
+    let feed = parse_espi_xml(&xml).map_err(|e| format!("{}: {e}", xml_path.display()))?;
     // The one place that knows which file these came from, since `parse` is handed a string.
     let readings = feed.readings().from_source(xml_path);
 
@@ -112,7 +112,7 @@ mod test {
     /// The arguments are checked before the file is, so a mismatched calendar is reported as such
     /// rather than as a missing file.
     fn err_for(ending: Date, bill_end_day: i8) -> String {
-        period_values_xml(
+        read_gb_xml(
             &PathBuf::from("/nonexistent/feed.XML"),
             ending,
             bill_end_day,
@@ -155,7 +155,7 @@ mod test {
         if !xml.exists() {
             return; // The export is not in every checkout.
         }
-        let values = period_values_xml(xml, date(2026, 6, 23), BILL_END_DAY)
+        let values = read_gb_xml(xml, date(2026, 6, 23), BILL_END_DAY)
             .expect("the export covers the June 2026 period");
         assert_eq!(values.source.as_deref(), Some(xml));
     }

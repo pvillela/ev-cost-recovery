@@ -1,4 +1,6 @@
-use ev_cost_recovery::session::{Session, excel::session_list};
+//! Requires feature "historic".
+
+use ev_cost_recovery::session::{Session, xlsx_to_sessions};
 use std::{env, path::PathBuf, process::ExitCode};
 
 const USAGE: &str = "\
@@ -51,7 +53,7 @@ fn main() -> ExitCode {
 
     let mut failed = false;
     for path in &args {
-        match session_list(path) {
+        match xlsx_to_sessions(path) {
             Ok(report) => {
                 println!("{}", path.display());
                 for session in &report.sessions {

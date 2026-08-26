@@ -1,3 +1,5 @@
+//! Requires feature "historic"
+//!
 //! The app's state, and every decision about it, with no egui in sight.
 //!
 //! The widget code above this is meant to be thin enough to check by eye; everything that could be
@@ -7,9 +9,8 @@
 
 use ev_cost_recovery::{
     session::{
-        ConversionReport, HourEntry, IntervalEstimates, IoiLength, Sessions, checked_interval,
-        excel::{session_csv_to_xlsx, session_list},
-        hours_of, interval_estimates,
+        HourEntry, IntervalEstimates, IoiLength, SessionWriteReport, Sessions, checked_interval,
+        hours_of, session_csv_to_xlsx, xlsx_to_interval_estimates, xlsx_to_sessions,
     },
     time::{Interval, TZ_OFFSETS, time_zone},
 };
@@ -112,7 +113,7 @@ impl ConvertState {
         self.confirm_overwrite = None;
         let Some(csv) = self.csv.clone() else { return };
         match session_csv_to_xlsx(&csv) {
-            Ok(ConversionReport {
+            Ok(SessionWriteReport {
                 output_path,
                 anomalies,
                 log,
@@ -218,7 +219,7 @@ impl EstimateState {
     pub fn select_workbook(&mut self, path: PathBuf) {
         self.clear_results();
         self.carried_over = false;
-        match session_list(&path) {
+        match xlsx_to_sessions(&path) {
             Ok(report) => {
                 // Written here rather than by the reader, for the reason `convert` gives above.
                 if let Err(e) = report.write_logs() {
@@ -312,7 +313,7 @@ impl EstimateState {
                 return;
             }
         };
-        match interval_estimates(interval, &workbook.path) {
+        match xlsx_to_interval_estimates(interval, &workbook.path) {
             Ok(report) => {
                 self.outcome = Some(EstimateOutcome {
                     text: report.to_markdown(),

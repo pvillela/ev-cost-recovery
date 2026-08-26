@@ -1,7 +1,7 @@
 //! Turns a Toronto Hydro Green Button export into the peak-values workbook.
 
 use ev_cost_recovery::{
-    green_button::{Feed, parse, write_workbook},
+    green_button::{Feed, parse_espi_xml, write_gb_workbook},
     hydro_bill::{BILL_END_DAY, bill_start_day},
     time::{holidays, local_date},
 };
@@ -84,11 +84,11 @@ fn run(input: &Path) -> Result<(), Box<dyn Error>> {
     }
 
     let xml = fs::read_to_string(input).map_err(|e| format!("{}: {e}", input.display()))?;
-    let feed = parse(&xml)?;
+    let feed = parse_espi_xml(&xml)?;
 
     report_holidays(&feed);
 
-    let report = write_workbook(&output, &feed, BILL_END_DAY)?;
+    let report = write_gb_workbook(&output, &feed, BILL_END_DAY)?;
     println!("{}", output.display());
     eprintln!(
         "{} billing periods, {} intervals",

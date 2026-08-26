@@ -7,11 +7,11 @@
 
 use ev_cost_recovery::{
     io::{
-        CostRecoveryRates, CostRecoverySurplus, GbConversionReport, OnExistingWorkbook,
+        CostRecoveryRates, CostRecoverySurplus, GbWriteReport, OnExistingWorkbook,
         ReimbursementReconciliation, cost_recovery_surplus, gb_xml_to_xlsx,
         reconcile_evolute_reimbursement, session_csv_to_xlsx,
     },
-    session::{excel::workbook_path as session_workbook_path, file_name::report_coverage},
+    session::file_name::report_coverage,
 };
 use jiff::civil;
 use std::path::{Path, PathBuf};
@@ -599,7 +599,7 @@ impl Conversion for SessionConversion {
     type Outcome = SessionWorkbook;
 
     fn workbook(input: &Path) -> PathBuf {
-        session_workbook_path(input)
+        input.with_extension("xlsx")
     }
 
     fn run(input: &Path, on_existing: OnExistingWorkbook) -> Result<SessionWorkbook, String> {
@@ -625,13 +625,13 @@ impl Conversion for SessionConversion {
 pub struct GbConversion;
 
 impl Conversion for GbConversion {
-    type Outcome = GbConversionReport;
+    type Outcome = GbWriteReport;
 
     fn workbook(input: &Path) -> PathBuf {
         input.with_extension("xlsx")
     }
 
-    fn run(input: &Path, on_existing: OnExistingWorkbook) -> Result<GbConversionReport, String> {
+    fn run(input: &Path, on_existing: OnExistingWorkbook) -> Result<GbWriteReport, String> {
         gb_xml_to_xlsx(input, on_existing).map_err(|e| format!("{}: {e}", input.display()))
     }
 }

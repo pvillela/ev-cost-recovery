@@ -26,20 +26,18 @@
 //! default, and machine names are `lower_snake_case` throughout so that reading a sheet back by
 //! column name cannot be defeated by a capitalisation difference.
 
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    error::Error,
-    path::Path,
-};
-
-use umya_spreadsheet::{
-    HorizontalAlignmentValues, Pane, PaneStateValues, PaneValues, VerticalAlignmentValues,
-    Worksheet, writer,
-};
-
 use crate::{
     green_button::{Anomaly, Feed, Peak, PeriodValues, Reading, period_values},
     time::{serial_of_date, serial_of_instant, serial_of_local},
+};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    error::Error,
+    path::{Path, PathBuf},
+};
+use umya_spreadsheet::{
+    HorizontalAlignmentValues, Pane, PaneStateValues, PaneValues, VerticalAlignmentValues,
+    Worksheet, writer,
 };
 
 const GENERAL_FORMAT: &str = "General";
@@ -84,7 +82,7 @@ const DEFAULT_COL_WIDTH: f64 = 8.6796875;
 
 /// How a column is formatted. Both its number format and its alignment follow from this.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum Kind {
+enum ColKind {
     Date,
     Count,
     Num,
@@ -95,7 +93,7 @@ enum Kind {
     Spacer,
 }
 
-impl Kind {
+impl ColKind {
     fn number_format(self) -> &'static str {
         match self {
             Self::Date => DATE_FORMAT,
@@ -122,11 +120,11 @@ struct Col {
     machine: &'static str,
     /// Row-3 human header, worded as the Toronto Hydro invoice words it.
     header: &'static str,
-    kind: Kind,
+    kind: ColKind,
     width: f64,
 }
 
-const fn col(machine: &'static str, header: &'static str, kind: Kind, width: f64) -> Col {
+const fn col(machine: &'static str, header: &'static str, kind: ColKind, width: f64) -> Col {
     Col {
         machine,
         header,
@@ -135,101 +133,101 @@ const fn col(machine: &'static str, header: &'static str, kind: Kind, width: f64
     }
 }
 
-const SPACER: Col = col("", "", Kind::Spacer, 1.39);
+const SPACER: Col = col("", "", ColKind::Spacer, 1.39);
 
 /// `Peak_values`, in order. Four value groups, each ending in the TOU period its interval fell in.
 const PEAK_COLUMNS: &[Col] = &[
     col(
         "billing_period_ending",
         "Billing period ending",
-        Kind::Date,
+        ColKind::Date,
         14.14,
     ),
     col(
         "nbr_of_intervals",
         "Number of intervals",
-        Kind::Count,
+        ColKind::Count,
         10.35,
     ),
     SPACER,
-    col("kwh", "kWh used", Kind::Num, 14.01),
+    col("kwh", "kWh used", ColKind::Num, 14.01),
     SPACER,
-    col("max_kw", "Demand kW", Kind::Num, 9.72),
+    col("max_kw", "Demand kW", ColKind::Num, 9.72),
     col(
         "max_kw_interval",
         "Demand kW interval (local time)",
-        Kind::LocalDt,
+        ColKind::LocalDt,
         20.45,
     ),
     col(
         "max_kw_interval_utc",
         "Demand kW interval (UTC)",
-        Kind::UtcDt,
+        ColKind::UtcDt,
         18.44,
     ),
-    col("max_kw_kva", "kVA at interval", Kind::Num, 9.72),
-    col("max_kw_tou", "TOU", Kind::Text, 9.72),
+    col("max_kw_kva", "kVA at interval", ColKind::Num, 9.72),
+    col("max_kw_tou", "TOU", ColKind::Text, 9.72),
     SPACER,
-    col("max_kw_nop", "Peak kW 7-7", Kind::Num, 9.72),
+    col("max_kw_nop", "Peak kW 7-7", ColKind::Num, 9.72),
     col(
         "max_kw_nop_interval",
         "Peak kW 7-7 interval (local time)",
-        Kind::LocalDt,
+        ColKind::LocalDt,
         20.45,
     ),
     col(
         "max_kw_nop_interval_utc",
         "Peak kW 7-7 interval (UTC)",
-        Kind::UtcDt,
+        ColKind::UtcDt,
         18.44,
     ),
-    col("max_kw_nop_kva", "kVA at interval", Kind::Num, 9.72),
-    col("max_kw_nop_tou", "TOU", Kind::Text, 9.72),
+    col("max_kw_nop_kva", "kVA at interval", ColKind::Num, 9.72),
+    col("max_kw_nop_tou", "TOU", ColKind::Text, 9.72),
     SPACER,
-    col("max_kva", "Demand kVA", Kind::Num, 9.72),
+    col("max_kva", "Demand kVA", ColKind::Num, 9.72),
     col(
         "max_kva_interval",
         "Demand kVA interval (local time)",
-        Kind::LocalDt,
+        ColKind::LocalDt,
         20.45,
     ),
     col(
         "max_kva_interval_utc",
         "Demand kVA interval (UTC)",
-        Kind::UtcDt,
+        ColKind::UtcDt,
         18.44,
     ),
     // The template labelled this "kVA at interval"; the value is a kW.
-    col("max_kva_kw", "kW at interval", Kind::Num, 9.72),
-    col("max_kva_tou", "TOU", Kind::Text, 9.72),
+    col("max_kva_kw", "kW at interval", ColKind::Num, 9.72),
+    col("max_kva_tou", "TOU", ColKind::Text, 9.72),
     SPACER,
-    col("max_kva_nop", "Peak kVA 7-7", Kind::Num, 9.72),
+    col("max_kva_nop", "Peak kVA 7-7", ColKind::Num, 9.72),
     col(
         "max_kva_nop_interval",
         "Peak kVA 7-7 interval (local time)",
-        Kind::LocalDt,
+        ColKind::LocalDt,
         20.45,
     ),
     col(
         "max_kva_nop_interval_utc",
         "Peak kVA 7-7 interval (UTC)",
-        Kind::UtcDt,
+        ColKind::UtcDt,
         18.44,
     ),
-    col("max_kva_nop_kw", "kW at interval", Kind::Num, 9.72),
-    col("max_kva_nop_tou", "TOU", Kind::Text, 9.72),
+    col("max_kva_nop_kw", "kW at interval", ColKind::Num, 9.72),
+    col("max_kva_nop_tou", "TOU", ColKind::Text, 9.72),
     SPACER,
-    col("anomalies", "Anomalies", Kind::Text, 28.0),
+    col("anomalies", "Anomalies", ColKind::Text, 28.0),
 ];
 
 /// `Interval_values`, in order. One header row, since every name here is already the machine name.
 const INTERVAL_COLUMNS: &[Col] = &[
-    col("interval", "interval", Kind::LocalDt, 20.45),
-    col("interval_utc", "interval_utc", Kind::UtcDt, 18.44),
-    col("kwh", "kwh", Kind::Num, 11.38),
-    col("kw", "kw", Kind::Num, 11.38),
-    col("kva", "kva", Kind::Num, 11.38),
-    col("anomalies", "anomalies", Kind::Text, 28.0),
+    col("interval", "interval", ColKind::LocalDt, 20.45),
+    col("interval_utc", "interval_utc", ColKind::UtcDt, 18.44),
+    col("kwh", "kwh", ColKind::Num, 11.38),
+    col("kw", "kw", ColKind::Num, 11.38),
+    col("kva", "kva", ColKind::Num, 11.38),
+    col("anomalies", "anomalies", ColKind::Text, 28.0),
 ];
 
 /// One cell's content. Dates and date-times are serials, told apart only by their number format —
@@ -263,7 +261,8 @@ impl Out {
 
 /// What was written, for the CLI to report.
 #[derive(Debug, Clone, Default)]
-pub struct WriteReport {
+pub struct GbWriteReport {
+    pub path: PathBuf,
     pub interval_rows: usize,
     pub period_rows: usize,
     /// Periods whose interval count is not what a complete period should hold.
@@ -280,15 +279,16 @@ pub struct WriteReport {
 ///
 /// Returns an error if the workbook cannot be built or the file cannot be written. It is the
 /// caller's job to have established that `path` does not already exist.
-pub fn write_workbook(
+pub fn write_gb_workbook(
     path: &Path,
     feed: &Feed,
     bill_end_day: i8,
-) -> Result<WriteReport, Box<dyn Error>> {
+) -> Result<GbWriteReport, Box<dyn Error>> {
     let readings = feed.readings();
     let periods = period_values(&readings, bill_end_day);
 
-    let mut report = WriteReport {
+    let mut report = GbWriteReport {
+        path: path.to_path_buf(),
         interval_rows: readings.rows.len(),
         period_rows: periods.len(),
         incomplete_periods: periods.iter().filter(|p| !p.is_complete()).count(),
@@ -352,7 +352,7 @@ fn write_sheet(
         sheet
             .column_dimension_mut(&column_letters(c))
             .set_width(column.width);
-        if column.kind == Kind::Spacer {
+        if column.kind == ColKind::Spacer {
             continue;
         }
         set_label(sheet, c, header_row, column.header, column.kind);
@@ -388,7 +388,7 @@ fn write_sheet(
         for (i, out) in row.iter().enumerate() {
             let c = i as u32 + 1;
             let kind = columns[i].kind;
-            if kind == Kind::Spacer {
+            if kind == ColKind::Spacer {
                 continue;
             }
             match &out.cell {
@@ -413,7 +413,7 @@ fn write_sheet(
     freeze_panes(sheet);
 }
 
-fn set_text(sheet: &mut Worksheet, col: u32, row: u32, text: &str, kind: Kind, fill: bool) {
+fn set_text(sheet: &mut Worksheet, col: u32, row: u32, text: &str, kind: ColKind, fill: bool) {
     sheet.cell_mut((col, row)).set_value_string(text);
     style_cell(sheet, col, row, kind, fill);
 }
@@ -448,14 +448,14 @@ fn set_title(sheet: &mut Worksheet, title: &str) {
 /// LibreOffice applies column formatting, and its own column A carries `General` regardless. A
 /// number format has no effect on a text cell, so reproducing that would mean a special case for
 /// no visible difference.
-fn set_label(sheet: &mut Worksheet, col: u32, row: u32, text: &str, kind: Kind) {
+fn set_label(sheet: &mut Worksheet, col: u32, row: u32, text: &str, kind: ColKind) {
     sheet.cell_mut((col, row)).set_value_string(text);
     let style = sheet.style_mut((col, row));
     style.number_format_mut().set_format_code(GENERAL_FORMAT);
     style.alignment_mut().set_horizontal(kind.horizontal());
 }
 
-fn style_cell(sheet: &mut Worksheet, col: u32, row: u32, kind: Kind, fill: bool) {
+fn style_cell(sheet: &mut Worksheet, col: u32, row: u32, kind: ColKind, fill: bool) {
     let style = sheet.style_mut((col, row));
     style
         .number_format_mut()
@@ -594,7 +594,7 @@ mod test {
         for columns in [PEAK_COLUMNS, INTERVAL_COLUMNS] {
             let names: Vec<&str> = columns
                 .iter()
-                .filter(|c| c.kind != Kind::Spacer)
+                .filter(|c| c.kind != ColKind::Spacer)
                 .map(|c| c.machine)
                 .collect();
             let unique: BTreeSet<&str> = names.iter().copied().collect();
@@ -611,7 +611,7 @@ mod test {
     #[test]
     fn every_machine_name_is_lower_snake_case() {
         for columns in [PEAK_COLUMNS, INTERVAL_COLUMNS] {
-            for c in columns.iter().filter(|c| c.kind != Kind::Spacer) {
+            for c in columns.iter().filter(|c| c.kind != ColKind::Spacer) {
                 assert!(
                     c.machine
                         .chars()
@@ -629,7 +629,7 @@ mod test {
         assert_eq!(
             PEAK_COLUMNS
                 .iter()
-                .filter(|c| c.kind == Kind::Spacer)
+                .filter(|c| c.kind == ColKind::Spacer)
                 .count(),
             6
         );
@@ -645,19 +645,22 @@ mod test {
     /// The template left-aligns the billing-period column throughout and centres everything else.
     #[test]
     fn only_the_billing_period_column_is_left_aligned() {
-        assert_eq!(Kind::Date.horizontal(), HorizontalAlignmentValues::Left);
+        assert_eq!(ColKind::Date.horizontal(), HorizontalAlignmentValues::Left);
         for kind in [
-            Kind::Count,
-            Kind::Num,
-            Kind::LocalDt,
-            Kind::UtcDt,
-            Kind::Text,
+            ColKind::Count,
+            ColKind::Num,
+            ColKind::LocalDt,
+            ColKind::UtcDt,
+            ColKind::Text,
         ] {
             assert_eq!(kind.horizontal(), HorizontalAlignmentValues::Center);
         }
-        assert_eq!(PEAK_COLUMNS[0].kind, Kind::Date);
+        assert_eq!(PEAK_COLUMNS[0].kind, ColKind::Date);
         assert_eq!(
-            PEAK_COLUMNS.iter().filter(|c| c.kind == Kind::Date).count(),
+            PEAK_COLUMNS
+                .iter()
+                .filter(|c| c.kind == ColKind::Date)
+                .count(),
             1
         );
     }

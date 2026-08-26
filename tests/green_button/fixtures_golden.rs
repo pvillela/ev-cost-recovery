@@ -32,7 +32,7 @@
 
 use super::{fixture, fixtures_dir};
 use ev_cost_recovery::{
-    green_button::{parse, write_workbook},
+    green_button::{parse_espi_xml, write_gb_workbook},
     hydro_bill::BILL_END_DAY,
 };
 use std::{cmp, env, fmt::Write as _, fs, path::Path, process};
@@ -61,7 +61,7 @@ fn each_fixture_matches_its_golden() {
     for name in FIXTURES {
         let xml = fs::read_to_string(fixture(&format!("{name}.XML")))
             .unwrap_or_else(|e| panic!("{name}.XML: {e}"));
-        let feed = parse(&xml).unwrap_or_else(|e| panic!("{name}.XML: {e}"));
+        let feed = parse_espi_xml(&xml).unwrap_or_else(|e| panic!("{name}.XML: {e}"));
 
         // A scratch directory per fixture, since tests run in parallel and the writer refuses to
         // overwrite. A normal test run never writes into tests/fixtures.
@@ -69,7 +69,7 @@ fn each_fixture_matches_its_golden() {
         fs::create_dir_all(&dir).unwrap();
         let workbook = dir.join(format!("{name}.xlsx"));
         let _ = fs::remove_file(&workbook);
-        write_workbook(&workbook, &feed, BILL_END_DAY).unwrap();
+        write_gb_workbook(&workbook, &feed, BILL_END_DAY).unwrap();
 
         let actual = dump(&workbook);
 

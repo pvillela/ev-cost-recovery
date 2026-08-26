@@ -22,9 +22,9 @@
 use crate::{
     api::pure,
     charges_report::charges_report,
-    green_button::{self, period_values_xml},
+    green_button::{parse_espi_xml, read_gb_xml, write_gb_workbook},
     hydro_bill::{BILL_END_DAY, hydro_bill_from_pdf},
-    session::{Sessions, csv, excel},
+    session::{self, Sessions, csv::csv_sessions},
 };
 use jiff::civil::Date;
 use std::{
@@ -47,8 +47,8 @@ pub use crate::{
             recovery::{CostRecovery, CostRecoveryRates, CostRecoveryStretch, CostRecoverySurplus},
         },
     },
-    green_button::WriteReport,
-    session::ConversionReport,
+    green_button::GbWriteReport,
+    session::SessionWriteReport,
 };
 
 // --------------------------------------------------------------------------------------------
@@ -97,7 +97,7 @@ pub fn peak_power(
     pure::check_reports_cover_period(billing_period_ending, &[session_csv1, session_csv2])?;
 
     let gb_period_values =
-        period_values_xml(gb_xml, billing_period_ending, BILL_END_DAY).map_err(|cause| {
+        read_gb_xml(gb_xml, billing_period_ending, BILL_END_DAY).map_err(|cause| {
             ReadError::GreenButton {
                 path: gb_xml.to_path_buf(),
                 cause,
@@ -163,7 +163,7 @@ pub fn peak_power_cost(
     pure::check_reports_cover_period(billing_period_ending, &[session_csv1, session_csv2])?;
 
     let gb_period_values =
-        period_values_xml(gb_xml, billing_period_ending, BILL_END_DAY).map_err(|cause| {
+        read_gb_xml(gb_xml, billing_period_ending, BILL_END_DAY).map_err(|cause| {
             ReadError::GreenButton {
                 path: gb_xml.to_path_buf(),
                 cause,
@@ -367,7 +367,7 @@ pub fn cost_recovery_surplus(
     pure::check_reports_cover_period(billing_period_ending, &[session_csv1, session_csv2])?;
 
     let gb_period_values =
-        period_values_xml(gb_xml, billing_period_ending, BILL_END_DAY).map_err(|cause| {
+        read_gb_xml(gb_xml, billing_period_ending, BILL_END_DAY).map_err(|cause| {
             ReadError::GreenButton {
                 path: gb_xml.to_path_buf(),
                 cause,
@@ -503,29 +503,18 @@ pub enum OnExistingWorkbook {
 pub fn session_csv_to_xlsx(
     session_csv: &Path,
     on_existing: OnExistingWorkbook,
-) -> Result<ConversionReport, ApiError> {
-    workbook_path(session_csv, excel::workbook_path(session_csv), on_existing)?;
+) -> Result<SessionWriteReport, ApiError> {
+    let output_path = session_csv.with_extension("xlsx");
+    checked_workbook_path(session_csv, output_path.clone(), on_existing)?;
     // The path is not passed on: `session::excel::session_csv_to_xlsx` derives the same one from
     // the same function, and taking it as an argument there would let a caller send the workbook
     // somewhere the check above never looked at.
-    excel::session_csv_to_xlsx(session_csv).map_err(|cause| {
+    session::session_csv_to_xlsx(session_csv).map_err(|cause| {
         ApiError::Conversion(ConversionError::Write {
-            path: excel::workbook_path(session_csv),
+            path: output_path,
             cause,
         })
     })
-}
-
-/// What [`gb_xml_to_xlsx`] produced.
-///
-/// A pair rather than a single type, because [`WriteReport`] is the workbook writer's own account
-/// of what it put in the sheets and knows nothing about where the file went.
-#[derive(Debug, Clone)]
-pub struct GbConversionReport {
-    /// Where the workbook was written.
-    pub output_path: PathBuf,
-    /// What went into it.
-    pub written: WriteReport,
 }
 
 /// Converts a Toronto Hydro Green Button export into the peak-values workbook beside it.
@@ -556,30 +545,26 @@ pub struct GbConversionReport {
 pub fn gb_xml_to_xlsx(
     gb_xml: &Path,
     on_existing: OnExistingWorkbook,
-) -> Result<GbConversionReport, ApiError> {
-    let output_path = workbook_path(gb_xml, gb_xml.with_extension("xlsx"), on_existing)?;
+) -> Result<GbWriteReport, ApiError> {
+    let output_path = checked_workbook_path(gb_xml, gb_xml.with_extension("xlsx"), on_existing)?;
 
     let xml = fs::read_to_string(gb_xml).map_err(|cause| ReadError::GreenButton {
         path: gb_xml.to_path_buf(),
         cause: Box::new(cause),
     })?;
-    let feed = green_button::parse(&xml).map_err(|cause| ReadError::GreenButton {
+    let feed = parse_espi_xml(&xml).map_err(|cause| ReadError::GreenButton {
         path: gb_xml.to_path_buf(),
         cause,
     })?;
 
-    let written =
-        green_button::write_workbook(&output_path, &feed, BILL_END_DAY).map_err(|cause| {
-            ApiError::Conversion(ConversionError::Write {
-                path: output_path.clone(),
-                cause,
-            })
-        })?;
+    let written = write_gb_workbook(&output_path, &feed, BILL_END_DAY).map_err(|cause| {
+        ApiError::Conversion(ConversionError::Write {
+            path: output_path.clone(),
+            cause,
+        })
+    })?;
 
-    Ok(GbConversionReport {
-        output_path,
-        written,
-    })
+    Ok(written)
 }
 
 // --------------------------------------------------------------------------------------------
@@ -770,7 +755,7 @@ fn bill_source(cause: &EnergyError, bill_pdf: Option<&Path>) -> Option<PathBuf> 
 ///
 /// [`OnExistingWorkbook::Replace`] waives only the second refusal. An input that is its own output
 /// is refused either way: there is no reading a file that the writer has already truncated.
-fn workbook_path(
+fn checked_workbook_path(
     input: &Path,
     output: PathBuf,
     on_existing: OnExistingWorkbook,
@@ -799,7 +784,7 @@ fn read_sessions(paths: &[&Path]) -> Result<Sessions, ReadError> {
     let mut reports = Vec::with_capacity(paths.len());
     for path in paths {
         reports.push(
-            csv::session_list(path).map_err(|cause| ReadError::SessionReport {
+            csv_sessions(path).map_err(|cause| ReadError::SessionReport {
                 path: path.to_path_buf(),
                 cause,
             })?,
@@ -823,7 +808,7 @@ mod test {
         // Handing in something already named `.xlsx` would read and write one file.
         let xlsx = Path::new("book.xlsx");
         assert!(matches!(
-            workbook_path(
+            checked_workbook_path(
                 xlsx,
                 xlsx.with_extension("xlsx"),
                 OnExistingWorkbook::Refuse
@@ -833,7 +818,7 @@ mod test {
 
         // A file already standing where the workbook would go is not overwritten unasked.
         assert!(matches!(
-            workbook_path(
+            checked_workbook_path(
                 Path::new("Cargo.lock"),
                 PathBuf::from("Cargo.toml"),
                 OnExistingWorkbook::Refuse
@@ -843,7 +828,7 @@ mod test {
 
         // Nothing in the way, so the conversion may proceed and is told where to put it.
         assert_eq!(
-            workbook_path(
+            checked_workbook_path(
                 Path::new("data/Session_Report_June_1_2026-June_30_2026.csv"),
                 PathBuf::from("data/no_such_workbook_here.xlsx"),
                 OnExistingWorkbook::Refuse
@@ -860,7 +845,7 @@ mod test {
     fn asking_to_replace_waives_only_the_existing_file() {
         // The file is there and would be overwritten, which is what was asked for.
         assert_eq!(
-            workbook_path(
+            checked_workbook_path(
                 Path::new("Cargo.lock"),
                 PathBuf::from("Cargo.toml"),
                 OnExistingWorkbook::Replace
@@ -872,21 +857,13 @@ mod test {
         // An input that is its own output stays refused. There would be nothing left to read.
         let xlsx = Path::new("book.xlsx");
         assert!(matches!(
-            workbook_path(
+            checked_workbook_path(
                 xlsx,
                 xlsx.with_extension("xlsx"),
                 OnExistingWorkbook::Replace
             ),
             Err(ConversionError::OutputWouldBeInput { .. })
         ));
-    }
-
-    /// The session conversion asks `session::excel` where the workbook goes rather than deriving
-    /// the name itself, so the file it checks and the file it writes cannot come apart.
-    #[test]
-    fn the_session_workbook_is_named_in_one_place() {
-        let csv = Path::new("data/Session_Report_June_1_2026-June_30_2026.csv");
-        assert_eq!(excel::workbook_path(csv), csv.with_extension("xlsx"));
     }
 
     /// A date that is not a closing date is the caller's mistake, and is reported as such rather

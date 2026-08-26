@@ -364,7 +364,7 @@ impl SessionOverlap {
 }
 
 /// Several files' sessions as one list, with what is wrong across them.
-pub struct MergedSessions {
+struct MergedSessions {
     /// Every session, in the order the lists were given, less the records collapsed as identical.
     pub sessions: Vec<RSession>,
     /// Anomalies that are not properties of any single record and so are not on
@@ -391,7 +391,7 @@ impl MergedSessions {
     ///
     /// One list in means there is nothing to collapse across files, and this is detection alone.
     /// That is how a single-file read gets the same flagging: it comes through here too.
-    pub(crate) fn merge_sessions(session_lists: Vec<Vec<RSession>>) -> Self {
+    fn merge_sessions(session_lists: Vec<Vec<RSession>>) -> Self {
         let mut sessions: Vec<RSession> = Vec::new();
         for list in session_lists {
             for session in list {
@@ -903,7 +903,7 @@ impl fmt::Display for Anomaly {
 }
 
 // ---------------------------------------------------------------------------
-// Session reports
+// Sessions
 // ---------------------------------------------------------------------------
 
 /// Sessions, grouped by how the peak power contribution logic must treat them, and what else is

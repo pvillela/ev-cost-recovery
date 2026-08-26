@@ -18,12 +18,11 @@
 //! The module is named for what it reads, so the `csv` crate is written `::csv` throughout to keep
 //! the two apart.
 
-use crate::time::{is_on_grid, local_datetime, time_zone, wall_clock_instant};
-
 use super::{
     Anomaly, AnomalyKind, BREAKER_RATING_KW, RSession, RunLog, Session, Sessions, SourceLog,
     TIME_GRID_STEP, duration_is_consistent,
 };
+use crate::time::{is_on_grid, local_datetime, time_zone, wall_clock_instant};
 use jiff::{
     SignedDuration, Timestamp, civil,
     tz::{AmbiguousOffset, TimeZone},
@@ -87,17 +86,17 @@ const REQUIRED_HEADERS: &[&str] = &[
 /// header from the private `REQUIRED_HEADERS` is missing, or a timestamp or duration does not
 /// parse. Per-row judgement calls do not abort the read; they are carried on each
 /// [`Session::anomalies`] and summarised in the log.
-pub fn session_list(path: &Path) -> Result<Sessions, Box<dyn Error>> {
+pub fn csv_sessions(path: &Path) -> Result<Sessions, Box<dyn Error>> {
     // Every error out of this function names the file it concerns, and does so in one place rather
     // than at each site that raises one. Some underlying errors carry the path and some do not --
     // the `csv` crate's do not, a per-row parse failure knows only its row -- so a caller could
     // rely on neither. It can now: the path is here, once, and a caller holding it should not add
     // it again.
-    read_session_list(path).map_err(|e| format!("{}: {e}", path.display()).into())
+    read_sessions(path).map_err(|e| format!("{}: {e}", path.display()).into())
 }
 
-fn read_session_list(path: &Path) -> Result<Sessions, Box<dyn Error>> {
-    let rows = session_rows(path)?;
+fn read_sessions(path: &Path) -> Result<Sessions, Box<dyn Error>> {
+    let rows = csv_session_rows(path)?;
     let log = SourceLog {
         source: path.to_path_buf(),
         suffix: "csv.read",
@@ -126,29 +125,25 @@ fn read_session_list(path: &Path) -> Result<Sessions, Box<dyn Error>> {
 /// a copy of the source row. Reach them through [`SessionRows::field`] and
 /// [`SessionRows::duration`], which keep the header lookup and the parsing on this side of the
 /// boundary.
-pub(crate) struct SessionRows {
+pub(super) struct SessionRows {
     headers: Headers,
     records: Vec<::csv::StringRecord>,
     /// One per output row, in report order. A record duplicated to resolve a DST fold yields two.
-    pub(crate) rows: Vec<Row>,
+    pub rows: Vec<Row>,
     /// Every judgement call made, numbered by output row rather than by CSV record.
-    pub(crate) anomalies: Vec<Anomaly>,
+    pub anomalies: Vec<Anomaly>,
     /// Unwritten. The caller writes it beside its own output file, under its own suffix.
-    pub(crate) log: RunLog,
+    pub log: RunLog,
 }
 
 impl SessionRows {
     /// The named CSV column for `row`, trimmed. Empty when the column is absent or blank.
-    pub(crate) fn field(&self, row: &Row, name: &str) -> &str {
+    pub fn field(&self, row: &Row, name: &str) -> &str {
         field(&self.headers, &self.records[row.record], name)
     }
 
     /// The named CSV column for `row` parsed as an elapsed time, or `None` when the cell is blank.
-    pub(crate) fn duration(
-        &self,
-        row: &Row,
-        name: &str,
-    ) -> Result<Option<Duration>, Box<dyn Error>> {
+    pub fn duration(&self, row: &Row, name: &str) -> Result<Option<Duration>, Box<dyn Error>> {
         let raw = self.field(row, name);
         if raw.is_empty() {
             return Ok(None);
@@ -161,7 +156,7 @@ impl SessionRows {
 ///
 /// Shared by [`session_list`] and [`super::excel::session_csv_to_xlsx`], which is what makes the
 /// two agree by construction rather than by inspection.
-pub(crate) fn session_rows(path: &Path) -> Result<SessionRows, Box<dyn Error>> {
+pub(super) fn csv_session_rows(path: &Path) -> Result<SessionRows, Box<dyn Error>> {
     let tz = time_zone();
     let (headers, records) = read_csv(path)?;
     // One allocation for the file, shared by every session read from it.
@@ -343,23 +338,23 @@ struct CsvSession {
 ///
 /// The pass-through CSV columns are not part of a `Session` and never should be, so the row keeps
 /// an index back into the records instead — see [`SessionRows::field`].
-pub(crate) struct Row {
+pub(super) struct Row {
     /// Index into [`SessionRows::records`], for the pass-through columns.
     record: usize,
-    pub(crate) session: RSession,
+    pub session: RSession,
     /// The two reported wall times, kept as written. `Session` holds instants, and the local
     /// columns must show what the report said rather than a re-derivation of it — those differ in
     /// the DST gap, where the reported wall time never occurred.
-    pub(crate) start_local: civil::DateTime,
-    pub(crate) end_local: civil::DateTime,
+    pub start_local: civil::DateTime,
+    pub end_local: civil::DateTime,
 }
 
 impl Row {
-    pub(crate) fn adj_start_local(&self) -> civil::DateTime {
+    pub fn adj_start_local(&self) -> civil::DateTime {
         local_datetime(self.session.adj_conn_start())
     }
 
-    pub(crate) fn adj_end_local(&self) -> civil::DateTime {
+    pub fn adj_end_local(&self) -> civil::DateTime {
         local_datetime(self.session.adj_conn_end())
     }
 }
@@ -983,7 +978,7 @@ S3,2026-06-03 09:00,2026-06-03 09:00,0:00:00,0:00:00,4.2
         let csv_path = dir.join("Session_Report_Test.csv");
         fs::write(&csv_path, CSV).unwrap();
 
-        let report = session_list(&csv_path).unwrap();
+        let report = csv_sessions(&csv_path).unwrap();
 
         assert_eq!(report.sessions.len(), 1);
         assert_eq!(report.sessions[0].id, "S1");
@@ -1019,7 +1014,7 @@ S1,2026-06-01 16:22,2026-06-01 21:29,5:07:53,5:07:52
         let csv_path = dir.join("Session_Report_Test.csv");
         fs::write(&csv_path, CSV).unwrap();
 
-        let err = session_list(&csv_path).unwrap_err().to_string();
+        let err = csv_sessions(&csv_path).unwrap_err().to_string();
         assert!(err.contains("Energy_Use"), "{err}");
 
         fs::remove_dir_all(&dir).ok();

@@ -8,8 +8,10 @@ pub mod csv;
 
 pub mod file_name;
 
-pub mod excel;
-pub use excel::ConversionReport;
+mod excel;
+#[cfg(feature = "historic")]
+pub use excel::historic::xlsx_to_sessions;
+pub use excel::{SessionWriteReport, session_csv_to_xlsx};
 
 mod log;
 pub use log::{RunLog, SourceLog};
