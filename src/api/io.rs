@@ -17,9 +17,12 @@
 //! file shows the API surface. Anything new goes in the section it belongs to rather than at the
 //! end.
 //!
-//! The error types these return are not declared here. [`ReadError`] and [`ConversionError`] are
-//! the crate's, in [`crate::error`], because the modules that raise them are; this file wraps what
-//! they hand back rather than inventing its own vocabulary for it.
+//! Two error types sit either side of this file, and which side follows from who *raises* them.
+//! [`ReadError`] is the API's own: nothing outside this file builds one, so it is declared beside
+//! [`ApiError`], the union it collapses into, and re-exported here because it is what a caller
+//! must name to match past `ApiError::Read`. [`ConversionError`] is
+//! the crate's, in [`crate::error`], because the two workbook writers return it and neither knows
+//! this module exists.
 //!
 //! # The seam, if a pure conversion is ever wanted
 //!
@@ -33,7 +36,7 @@
 use crate::{
     api::pure,
     charges_report::charges_report,
-    error::{ConversionError, ReadError},
+    error::ConversionError,
     green_button::{GbReadError, read_gb_feed, read_gb_for_billing_period, write_gb_workbook},
     hydro_bill::{BILL_END_DAY, hydro_bill_from_pdf},
     session::{self, Sessions, csv::csv_sessions},
@@ -47,6 +50,7 @@ pub use crate::{
     api::{
         error::{
             ApiError, CostRecoveryError, CostRecoverySurplusError, EnergyError, PeakPowerError,
+            ReadError,
         },
         pure::{
             additional::{ReimbursementError, ReimbursementReconciliation},

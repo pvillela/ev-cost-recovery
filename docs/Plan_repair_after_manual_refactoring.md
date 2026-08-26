@@ -44,6 +44,14 @@ that:
    `ConversionError` moved from `api::io` to a new `src/error.rs`, so a library module raises the
    typed error at its source instead of returning `Box<dyn Error>` for `api::io` to re-wrap.
 
+   > **Half of this was later reversed, 2026-08-26.** The test for whether a type belongs in
+   > `crate::error` is who *raises* it. `ConversionError` passes: `session::session_csv_to_xlsx`
+   > and `write_gb_workbook` both return it and neither depends on the API. `ReadError` fails —
+   > nothing outside `api::io` has ever built one — so it went back to `api::error`, beside the
+   > `ApiError` it collapses into, and is re-exported from `io`. That also made
+   > `api/mod.rs`'s own line, "`ReadError` with `io`", true again; it had been false since the
+   > move. The *goal* was right and the sorting was half wrong.
+
 4. **Quarantine the legacy path behind `historic`.** The xlsx round-trip
    (workbook → sessions → interval estimates) serves only `ev_peak_gui` and `ev_peak_cli`, not the
    API. It is now `session::excel::historic`, and those two binaries carry

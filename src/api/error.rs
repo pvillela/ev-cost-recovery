@@ -27,7 +27,80 @@ pub use crate::api::pure::{
     peak_power::PeakPowerError,
     recovery::{CostRecoveryError, CostRecoverySurplusError},
 };
-use crate::error::{ConversionError, ReadError};
+use crate::error::ConversionError;
+
+/// A source file could not be read.
+///
+/// Here rather than in [`crate::error`], which holds what the library modules raise: nothing
+/// outside [`io`](crate::io) ever builds one of these. Each variant wraps what the corresponding
+/// reader returned, so this is the API's own vocabulary for "an input could not be read", not a
+/// type any reader knows about. [`ConversionError`](crate::error::ConversionError), which
+/// travelled here with it once, stayed behind — the two workbook writers do raise that.
+///
+/// `path` is held for a caller that wants to act on which file failed rather than print it, and is
+/// deliberately not written into the message. All four causes are structured types that name their
+/// own file, each from a `path` field of its own —
+/// [`GbReadError`](crate::green_button::GbReadError),
+/// the private `session::csv::SessionCsvError`,
+/// [`ChargesReportError`](crate::charges_report::ChargesReportError) and
+/// [`BillError`](crate::hydro_bill::BillError). Writing it here as well produced
+/// `data/x.XML: data/x.XML: ...`.
+#[derive(Debug)]
+pub enum ReadError {
+    /// The Green Button export could not be read, could not be parsed, or carries no reading in
+    /// the billing period asked for.
+    GreenButton {
+        path: PathBuf,
+        cause: Box<dyn Error>,
+    },
+
+    /// A session report could not be read.
+    SessionReport {
+        path: PathBuf,
+        cause: Box<dyn Error>,
+    },
+
+    /// Evolute's Charges Report could not be read, or is not one.
+    ChargesReport {
+        path: PathBuf,
+        cause: Box<dyn Error>,
+    },
+
+    /// A Toronto Hydro bill PDF could not be read, or is not laid out the way one is read.
+    ///
+    /// Which of those it is, this does not say. `cause` is a
+    /// [`BillError`](crate::hydro_bill::BillError), whose
+    /// [`is_layout`](crate::hydro_bill::BillError::is_layout) tells the two apart — but nothing
+    /// downcasts to it today, so treat that as a fact about the current implementation rather than
+    /// as a contract. If telling them apart from outside is ever wanted, say so in the variant
+    /// rather than leaving a caller to guess at the boxed type.
+    Bill {
+        path: PathBuf,
+        cause: Box<dyn Error>,
+    },
+}
+
+impl fmt::Display for ReadError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::GreenButton { cause, .. }
+            | Self::SessionReport { cause, .. }
+            | Self::ChargesReport { cause, .. }
+            | Self::Bill { cause, .. } => cause.fmt(f),
+        }
+    }
+}
+
+impl Error for ReadError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::GreenButton { cause, .. }
+            | Self::SessionReport { cause, .. }
+            | Self::ChargesReport { cause, .. }
+            | Self::Bill { cause, .. } => Some(cause.as_ref()),
+        }
+    }
+}
 
 /// Every way an API call can fail, in one type, by the stage that failed.
 #[derive(Debug)]

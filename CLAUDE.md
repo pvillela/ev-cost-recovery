@@ -74,6 +74,12 @@ that actually went wrong, not a general principle.
   the workbook round-trip; nobody noticed for months, because prose is not compiled. When the
   shortcut is shorter, say the test is a unit test — do not describe it as the API path.
 
+- **An error type belongs where it is *raised*, not where it is rendered.** `crate::error` holds
+  what a library module returns — `ConversionError`, raised by both workbook writers, neither of
+  which depends on the API. `ReadError` is built only by `api::io`, so it lives in `api::error`
+  beside the union it collapses into and is re-exported from `io`. Moving both together looked
+  tidy and was half wrong.
+
 - **An error type is only as public as the function that returns it needs it to be.** Of the four
   readers, only `BillError` has a real external consumer — `hydro_bill_dump` calls `is_layout()` to
   change its advice. The other three are reached by nothing outside the crate, so their visibility
