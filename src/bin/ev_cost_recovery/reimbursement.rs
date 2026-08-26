@@ -13,7 +13,7 @@ use ev_cost_recovery::io::ReimbursementReconciliation;
 use std::fs;
 
 pub fn ui(ui: &mut egui::Ui, state: &mut ReimbursementState, working: &mut WorkingDir) {
-    widgets::heading(ui, "Evolute reimbursement");
+    widgets::heading(ui, "Evolute reimbursement reconciliation");
     widgets::note(
         ui,
         "What the cost-recovery rates earn over one calendar month, against what Evolute actually \
@@ -65,7 +65,7 @@ fn inputs(ui: &mut egui::Ui, state: &mut ReimbursementState, working: &mut Worki
         .min_col_width(LABEL_WIDTH)
         .num_columns(3)
         .show(ui, |ui| {
-            ui.label("Session report");
+            ui.label("Evolute Session Report");
             if ui.button("Choose…").clicked()
                 && let Some(path) = widgets::dialog(working)
                     .add_filter("Session report", &["csv", "CSV"])
@@ -84,7 +84,7 @@ fn inputs(ui: &mut egui::Ui, state: &mut ReimbursementState, working: &mut Worki
                 ui.end_row();
             }
 
-            ui.label("Charges Report");
+            ui.label("Evolute Charges Report");
             if ui.button("Choose…").clicked()
                 && let Some(path) = widgets::dialog(working)
                     .add_filter("Charges Report", &["csv", "CSV"])
@@ -97,16 +97,15 @@ fn inputs(ui: &mut egui::Ui, state: &mut ReimbursementState, working: &mut Worki
             ui.end_row();
         });
 
+    // Kept when the rest of this note went, because it is the one thing here that is not visible
+    // from the screen: both files are chosen by hand, and a refusal nobody was warned of reads as
+    // a fault rather than as the check it is.
     widgets::note(
         ui,
-        "Two of Evolute's documents for the same month, ordinarily filed together. The Session \
-         Report says what each session drew, and its file name is the only thing that says which \
-         month this is. The Charges Report says what Evolute billed for the month; its energy and \
-         dollar columns are each totalled. The energy total is compared with the kilowatt-hours \
-         priced from the Session Report, and the dollar total with the reimbursement entered \
-         below. If the two files turn out to cover different months, the reconciliation is refused \
-         rather than run.",
+        "If the two files turn out to cover different months, the reconciliation is refused rather \
+         than run.",
     );
+
     ui.add_space(10.0);
 
     // Collected across the grid and acted on after it, because `state` is borrowed field by field
@@ -239,15 +238,6 @@ fn headline(ui: &mut egui::Ui, r: &ReimbursementReconciliation) {
             ("Cost recovery earned", -r.cost_recovery_amount, false),
             ("Dollar variance", r.dollar_variance, true),
         ],
-    );
-
-    ui.add_space(8.0);
-    widgets::note(
-        ui,
-        "Two questions, and a month can fail either on its own. The remittance variance asks \
-         whether the money that arrived is what Evolute's own Charges Report says it billed; our \
-         rates play no part in it. The dollar variance then asks whether that money is what our \
-         rates come to for the month. Nothing on Toronto Hydro's bill is counted in either.",
     );
 }
 

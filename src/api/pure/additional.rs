@@ -473,7 +473,7 @@ impl fmt::Display for ReimbursementReconciliation {
             f,
             "{}",
             amounts(&[
-                ("kWh on Evolute's Charges Report", self.charges_report_kwh),
+                ("kWh on Evolute Charges Report", self.charges_report_kwh),
                 // Negative so the column adds down to the variance, as the money columns do.
                 ("kWh priced above", -self.tou_kwh.total_kwh()),
                 ("Energy variance", self.kwh_variance),
@@ -483,13 +483,11 @@ impl fmt::Display for ReimbursementReconciliation {
             f,
             "\n{}\n",
             wrap(
-                "The two figures come from different documents and are arrived at differently. \
-                 Evolute's is what its Charges Report billed the month on. Ours is the session \
-                 report's energy placed on a clock and cut at the month's own edges: a session \
-                 running across midnight on the first or the last day counts here for its own \
-                 part only, and a session the report carries but dates outside the month counts \
-                 for nothing. Whether that leaves a gap, and how large a gap is worth asking \
-                 about, is what this figure is here to show.",
+                "The two figures come from different documents and are arrived at differently. The \
+                 first is from Evolute's billing of users for EV charging during the month. The \
+                 second is computed from the Session Report. For a session running across \
+                 midnight on the first or the last day of the month, only the portion within the \
+                 month counts.",
                 "",
             )
         )?;
