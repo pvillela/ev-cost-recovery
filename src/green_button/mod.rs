@@ -18,6 +18,11 @@ pub use peaks::*;
 mod read_xml;
 pub use read_xml::*;
 
+// A seam for `tests/`, not API. `espi` is private because nothing outside this module should be
+// building a `Feed` by hand; the integration tests do exactly that, and they run out of process so
+// `pub(crate)` cannot reach them. `#[doc(hidden)]` is what keeps it out of the rendered docs and
+// out of what a caller is invited to use. Nothing in `src/` may go through here.
+#[doc(hidden)]
 pub mod for_test {
     pub use super::espi::*;
 }

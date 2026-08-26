@@ -32,6 +32,22 @@ fn path(relative: &str) -> PathBuf {
         .join(relative)
 }
 
+/// A fixture *input* under `tests/fixtures/`, for a test in `src/` whose subject is only reachable
+/// from inside the crate.
+///
+/// The same directory [`check`] reads its goldens from, resolved the same way, so an input and the
+/// rendering it is expected to produce sit beside each other whichever side of the crate the test
+/// lives on.
+///
+/// # Panics
+///
+/// When the fixture is not there. That is a broken checkout rather than a condition to handle.
+pub(crate) fn fixture(relative: &str) -> PathBuf {
+    let p = path(relative);
+    assert!(p.exists(), "missing fixture {}", p.display());
+    p
+}
+
 /// Checks `rendered` against the golden at `tests/fixtures/{relative}`, or rewrites it when
 /// [`UPDATE`] is set.
 ///

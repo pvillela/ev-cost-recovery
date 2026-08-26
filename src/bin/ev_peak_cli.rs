@@ -88,8 +88,8 @@ fn main() -> ExitCode {
             print!("{report}");
             ExitCode::SUCCESS
         }
-        // No path prefix: `interval_estimates` reads the workbook through
-        // `session::excel::session_list`, which names the file in every error it returns.
+        // No path prefix: `xlsx_to_interval_estimates` reads the workbook through
+        // `session::xlsx_to_sessions`, which names the file in every error it returns.
         Err(e) => {
             eprintln!("{e}");
             ExitCode::FAILURE

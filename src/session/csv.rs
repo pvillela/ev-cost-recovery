@@ -6,14 +6,15 @@
 //!
 //! Two ways out, sharing all of that:
 //!
-//! - [`session_list`] buckets the sessions for the peak power contribution logic, straight from
-//!   the CSV. No workbook is involved.
-//! - `session_rows` hands the rows over in report order, with the pass-through CSV fields still
-//!   reachable, which is what [`super::excel::session_csv_to_xlsx`] needs to render them.
+//! - [`csv_sessions`] buckets the sessions for the peak power contribution logic, straight from
+//!   the CSV. No workbook is involved, which is why it is the route the API takes.
+//! - `csv_session_rows` hands the rows over in report order, with the pass-through CSV fields
+//!   still reachable, which is what
+//!   [`session_csv_to_xlsx`](crate::session::session_csv_to_xlsx) needs to render them.
 //!
 //! Bucketing is lossy — it sorts sessions into three vectors and drops report order, the link back
 //! to the CSV record, and the reported wall times — so the writer cannot be built on
-//! [`session_list`]. Both sit on `session_rows` instead.
+//! [`csv_sessions`]. Both sit on `csv_session_rows` instead.
 //!
 //! The module is named for what it reads, so the `csv` crate is written `::csv` throughout to keep
 //! the two apart.
@@ -61,9 +62,11 @@ const REQUIRED_HEADERS: &[&str] = &[
 /// Reads the session report CSV at `path` and returns the charging sessions it describes, ready
 /// for the peak power contribution logic.
 ///
-/// The counterpart of [`super::excel::session_list`], and the way to reach the sessions without a
-/// workbook in between. The two agree on every figure — the workbook writer and this function are
-/// the same parse — but they differ in what they can tell you afterwards. A workbook has stored
+/// The counterpart of `excel::historic::xlsx_to_sessions`, and the way to reach the sessions
+/// without a workbook in between — which is the route the API takes, the workbook reader being
+/// behind the `historic` feature. The two agree on every figure — the workbook writer and this
+/// function are the same parse — but they differ in what they can tell you afterwards. A workbook
+/// has stored
 /// derived columns that may have been edited, so reading one compares them against the recomputed
 /// values and logs any disagreement. A CSV has nothing to compare against: it is the source.
 ///
@@ -116,7 +119,7 @@ fn read_sessions(path: &Path) -> Result<Sessions, Box<dyn Error>> {
 
 /// Every row one session report CSV yields, in the order the report states them.
 ///
-/// The unbucketed form of [`session_list`], for a caller that has to render the report rather than
+/// The unbucketed form of [`csv_sessions`], for a caller that has to render the report rather than
 /// estimate from it. It keeps what bucketing discards: report order, the pass-through CSV fields,
 /// and the reported wall times, which differ from a re-derivation inside the DST gap.
 ///
@@ -154,8 +157,8 @@ impl SessionRows {
 
 /// Parses `path` and resolves every record, without writing anything.
 ///
-/// Shared by [`session_list`] and [`super::excel::session_csv_to_xlsx`], which is what makes the
-/// two agree by construction rather than by inspection.
+/// Shared by [`csv_sessions`] and [`session_csv_to_xlsx`](crate::session::session_csv_to_xlsx),
+/// which is what makes the two agree by construction rather than by inspection.
 pub(super) fn csv_session_rows(path: &Path) -> Result<SessionRows, Box<dyn Error>> {
     let tz = time_zone();
     let (headers, records) = read_csv(path)?;
@@ -964,17 +967,17 @@ mod test {
     }
 
     /// The sessions reach the peak power contribution logic straight from the CSV, bucketed the
-    /// same way [`super::super::excel::session_list`] buckets them out of a workbook — one row per
+    /// same way `excel::historic::xlsx_to_sessions` buckets them out of a workbook — one row per
     /// bucket here, so all three rules are exercised.
     #[test]
-    fn session_list_buckets_straight_from_the_csv() {
+    fn csv_sessions_buckets_straight_from_the_csv() {
         const CSV: &str = "\
 Charge_Session_ID,Conn_DateTime_Start,Conn_DateTime_End,Conn_Duration,Active_Charge_Time,Energy_Use
 S1,2026-06-01 16:22,2026-06-01 21:29,5:07:53,5:07:52,30.6
 S2,2026-06-02 10:00,2026-06-02 09:00,0:10:00,0:09:00,1.5
 S3,2026-06-03 09:00,2026-06-03 09:00,0:00:00,0:00:00,4.2
 ";
-        let dir = temp_dir("session_list");
+        let dir = temp_dir("csv_sessions");
         let csv_path = dir.join("Session_Report_Test.csv");
         fs::write(&csv_path, CSV).unwrap();
 

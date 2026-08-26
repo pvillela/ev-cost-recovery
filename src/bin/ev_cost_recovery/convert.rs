@@ -219,18 +219,17 @@ fn session_outcome(ui: &mut egui::Ui, outcome: &SessionWorkbook) {
 fn gb_outcome(ui: &mut egui::Ui, outcome: &GbWriteReport) {
     written(ui, &outcome.path);
 
-    let report = &outcome;
     ui.add_space(10.0);
     ui.label(format!(
         "{} billing periods, {} intervals",
-        report.period_rows, report.interval_rows
+        outcome.period_rows, outcome.interval_rows
     ));
 
-    if report.incomplete_periods > 0 {
+    if outcome.incomplete_periods > 0 {
         ui.add_space(6.0);
         ui.label(format!(
             "{} period(s) do not hold a full billing period's intervals",
-            report.incomplete_periods
+            outcome.incomplete_periods
         ));
         widgets::note(
             ui,
@@ -239,9 +238,9 @@ fn gb_outcome(ui: &mut egui::Ui, outcome: &GbWriteReport) {
         );
     }
 
-    if !report.anomaly_counts.is_empty() {
+    if !outcome.anomaly_counts.is_empty() {
         ui.add_space(6.0);
-        let counts: Vec<String> = report
+        let counts: Vec<String> = outcome
             .anomaly_counts
             .iter()
             .map(|(kind, count)| format!("{kind} x{count}"))

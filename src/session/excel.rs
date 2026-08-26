@@ -2,12 +2,16 @@
 //!
 //! Both directions live here; neither parses a CSV. [`session_csv_to_xlsx`] takes the rows
 //! [`super::csv`] has already resolved and lays them out as cells, formats, formulas and comments.
-//! [`session_list`] reads such a workbook back, recomputing every derived figure and logging any
-//! stored cell that disagrees.
 //!
-//! The `anomalies` column is the channel between the two: a judgement call made when the CSV was
-//! parsed is written there and read back here, and it is what removes a session from the
-//! estimates. See [`AnomalyKind`].
+//! The two directions are not symmetric in what they serve. Writing is API — the Convert tab and
+//! `api::io::session_csv_to_xlsx` — while *reading a workbook back* supports only `ev_peak_gui`
+//! and `ev_peak_cli`, and lives in the `historic` submodule behind the feature of that name.
+//! Nothing the API does goes through it; the API reaches sessions from the CSV, through
+//! [`csv_sessions`](super::csv::csv_sessions).
+//!
+//! The `anomalies` column is the channel between the two directions: a judgement call made when
+//! the CSV was parsed is written there and read back by `historic::xlsx_to_sessions`, and it is
+//! what removes a session from the estimates. See [`AnomalyKind`].
 
 use super::{
     Anomaly, AnomalyKind, SourceLog,
@@ -30,7 +34,8 @@ const ENERGY_USE_FORMAT: &str = "0.000";
 const AVG_KW_FORMAT: &str = "0.000";
 const TOTAL_FEE_FORMAT: &str = "0.00";
 
-/// Outcome of converting one CSV file. The reading direction returns a [`Sessions`] instead.
+/// Outcome of converting one CSV file. The reading direction returns a
+/// [`Sessions`](super::Sessions) instead.
 #[derive(Debug)]
 pub struct SessionWriteReport {
     /// Where the workbook was written.
@@ -39,8 +44,8 @@ pub struct SessionWriteReport {
     pub anomalies: Vec<Anomaly>,
     /// The run log, which says either that nothing was found or what was.
     ///
-    /// Held rather than written, for the reason [`Sessions::logs`] gives. Write it with
-    /// [`SourceLog::write`].
+    /// Held rather than written, for the reason [`Sessions::logs`](super::Sessions::logs) gives.
+    /// Write it with [`SourceLog::write`].
     pub log: SourceLog,
 }
 
@@ -116,7 +121,7 @@ const COLUMNS: &[(&str, Source)] = &[
 /// directory, and transforms it into a `.xlsx` file saved to the same directory as the input file,
 /// with the extension replaced.
 ///
-/// The parse is `csv::session_rows`; nothing about the session report is interpreted here. The
+/// The parse is `csv::csv_session_rows`; nothing about the session report is interpreted here. The
 /// domain rules — the UTC conversion and its DST policy, the definitions of `adj_conn_end` and
 /// `adj_conn_duration`, and the treatment of zero-`Energy_Use` sessions — are specified in
 /// `docs/time/README.md` under "Time zone" and in `docs/session/README.md` under "Excel workbook"
@@ -138,8 +143,9 @@ const COLUMNS: &[(&str, Source)] = &[
 ///   it delivered energy in no time at all, and the sheet says so. `Total_Fee` is displayed to
 ///   2 decimal places.
 /// - The last column, `anomalies`, carries the [`AnomalyKind`]s found for the row as a
-///   comma-separated list of variant names. [`session_list`] reads it back, so it is the channel
-///   by which a judgement call made during the parse reaches the peak power contribution logic.
+///   comma-separated list of variant names. `historic::xlsx_to_sessions` reads it back, so it is
+///   the channel by which a judgement call made during the parse reaches the peak power
+///   contribution logic.
 /// - The remaining columns are copied over with an explicit per-column type, so values that merely
 ///   look numeric — postal codes, station ids — keep their text form.
 /// - The sheet is named by the private `sheet_name`.
@@ -147,16 +153,16 @@ const COLUMNS: &[(&str, Source)] = &[
 /// Every session in the report is written to the workbook, anomalous ones included: the sheet is a
 /// faithful rendering of the session report, and which sessions take part in an estimate is decided
 /// on the reading side. A caller that wants the sessions and not the sheet can skip the workbook
-/// entirely and call [`csv::session_list`], which runs the same parse.
+/// entirely and call [`csv_sessions`](super::csv::csv_sessions), which runs the same parse.
 ///
 /// # Errors
 ///
 /// Returns `Err` only for conditions that invalidate the whole file: it cannot be read, a required
 /// header is missing, a timestamp or duration does not parse, or the workbook cannot be written.
 /// Per-row judgement calls do not abort the conversion; they are collected in
-/// [`ConversionReport::anomalies`].
+/// [`SessionWriteReport::anomalies`].
 pub fn session_csv_to_xlsx(path: &Path) -> Result<SessionWriteReport, ConversionError> {
-    // The path, once, for every way this can fail. See `csv::session_list` for why it is done here
+    // The path, once, for every way this can fail. See `csv::csv_sessions` for why it is done here
     // rather than at each site.
     convert_session_csv(path).map_err(|cause| ConversionError::Write {
         path: path.to_path_buf(),
@@ -515,20 +521,21 @@ fn set_widths(sheet: &mut Worksheet) {
 
 #[cfg(feature = "historic")]
 pub mod historic {
-    use jiff::Timestamp;
-
-    use crate::{
-        session::{RSession, RunLog, Session, Sessions},
-        time::{duration_of_serial, instant_of_serial},
-    };
-
     use super::*;
+    use crate::{
+        session::{
+            IntervalEstimates, RSession, RunLog, Session, Sessions, estimates_from_sessions,
+        },
+        time::{Interval, duration_of_serial, instant_of_serial},
+    };
+    use jiff::Timestamp;
     use std::{collections::HashMap, rc::Rc};
 
     /// Sheet columns that make a workbook a session report. The reading-side counterpart of the
     /// required CSV headers in [`super::csv`].
     ///
-    /// This is deliberately wider than the set [`session_list`] strictly consumes. A workbook missing
+    /// This is deliberately wider than the set [`xlsx_to_sessions`] strictly consumes. A workbook
+    /// missing
     /// any of these is not a rendering of a session report, and guessing at its contents would produce
     /// peak numbers that cannot be trusted. `anomalies` in particular is load-bearing: without it every
     /// session would silently look clean, and inconsistent ones would fold back into the estimates.
@@ -555,7 +562,7 @@ pub mod historic {
     ///
     /// Sorting into the three buckets of [`Sessions`] happens here rather than at conversion time,
     /// because the workbook is meant to be a faithful rendering of the session report. The rules are
-    /// `Sessions::from_session_lists`'s, shared with [`csv::session_list`] so the two readers
+    /// `Sessions::from_session_lists`'s, shared with [`csv_sessions`](crate::session::csv::csv_sessions) so the two readers
     /// cannot disagree.
     ///
     /// `avg_kw` is recomputed here rather than read from the sheet's `avg_kw` column, which
@@ -563,7 +570,7 @@ pub mod historic {
     /// or `NaN`, which is the honest reading; the estimating logic substitutes a finite value.
     ///
     /// A `<stem>.xlsx.read.log` is written beside the workbook, listing any stored column that
-    /// disagreed with the recomputed value. That channel has no counterpart in [`csv::session_list`],
+    /// disagreed with the recomputed value. That channel has no counterpart in [`csv_sessions`](crate::session::csv::csv_sessions),
     /// which reads the source and so has nothing to compare against.
     ///
     /// # Errors
@@ -574,8 +581,8 @@ pub mod historic {
     /// full is one whose peak numbers cannot be trusted, so no row is skipped quietly.
     /// Rows with no `Charge_Session_ID` at all are treated as trailing blanks and ignored.
     pub fn xlsx_to_sessions(path: &Path) -> Result<Sessions, Box<dyn Error>> {
-        // The path, once, for every way this can fail. See `csv::session_list` for why it is done here
-        // rather than at each site.
+        // The path, once, for every way this can fail. See `csv::csv_sessions` for why it is done
+        // here rather than at each site.
         read_sessions(path).map_err(|e| format!("{}: {e}", path.display()).into())
     }
 
@@ -633,7 +640,7 @@ pub mod historic {
             log,
         };
 
-        // Through the merge for the same reason `csv::session_list` is: it is where a shared
+        // Through the merge for the same reason `csv::csv_sessions` is: it is where a shared
         // `Charge_Session_ID` is noticed, and one file can carry one as readily as two can.
         let mut report =
             Sessions::from_session_lists(vec![sessions], vec![path.to_path_buf()], vec![log]);
@@ -802,6 +809,25 @@ pub mod historic {
             let found = sheet.value((col, row));
             format!("row {row}, column `{name}`: expected a number, found {found:?}").into()
         })
+    }
+
+    /// Produces EV maximum power estimates for the interval of interest `ioi` and the session
+    /// workbook at `path`.
+    ///
+    /// Here rather than in `session::peak`, which holds the estimating itself: that module is
+    /// types and pure functions, and this opens a file. The estimate it delegates to is the
+    /// private `estimates_from_sessions`, which every route to an [`IntervalEstimates`] comes
+    /// through, so this adds a reader and nothing else.
+    pub fn xlsx_to_interval_estimates(
+        ioi: Interval,
+        path: &Path,
+    ) -> Result<IntervalEstimates, Box<dyn Error>> {
+        let sessions = xlsx_to_sessions(path)?;
+        Ok(estimates_from_sessions(
+            ioi,
+            vec![path.to_path_buf()],
+            &sessions,
+        ))
     }
 }
 
@@ -1050,7 +1076,7 @@ S2,2026-11-02 08:00,2026-11-02 08:00,0:00:00,0:00:00,4.2
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "historic"))]
 mod test_historic {
     use super::historic::*;
     use super::*;
@@ -1345,8 +1371,8 @@ CKT-7,,Toronto,,Station-7,Evolute Inc.,FLO,G5,S00002,,2026-06-03 10:00,2026-06-0
     }
 
     #[test]
-    fn session_list_reads_back_what_was_written() {
-        let xlsx = convert("session_list", FIXTURE);
+    fn xlsx_to_sessions_reads_back_what_was_written() {
+        let xlsx = convert("xlsx_to_sessions", FIXTURE);
         let report = xlsx_to_sessions(&xlsx).unwrap();
 
         // Beside the workbook, under its own suffix, so it cannot collide with the convert log or
@@ -1442,7 +1468,7 @@ CKT-7,,Toronto,,Station-7,Evolute Inc.,FLO,G5,S00002,,2026-06-03 10:00,2026-06-0
     }
 
     #[test]
-    fn session_list_rejects_a_workbook_it_cannot_read_in_full() {
+    fn xlsx_to_sessions_rejects_a_workbook_it_cannot_read_in_full() {
         // A required column renamed out of existence.
         let xlsx = convert("missing_header", FIXTURE);
         let mut book = umya_spreadsheet::reader::xlsx::read(&xlsx).unwrap();

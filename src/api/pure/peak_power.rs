@@ -646,7 +646,8 @@ fn energy_based(
 /// file carrying other periods is expected and means nothing here. What matters is that the row is
 /// this period's and that no interval of it is missing.
 ///
-/// [`period_values_xml`](crate::green_button::period_values_xml) returns a period the feed covers
+/// [`read_gb_for_billing_period`](crate::green_button::read_gb_for_billing_period) returns a period
+/// the feed covers
 /// only partly rather than refusing it, on the grounds that which discrepancies matter is the
 /// caller's judgement. This is that judgement, for both entry points: nothing here can be estimated
 /// from a partial period.

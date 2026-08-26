@@ -1,14 +1,14 @@
-//! Requires feature "historic".
-//!
 //! How sessions land on the quarter-hour segments that tile an interval of interest.
 //!
-//! Driven through the public API only — a CSV in, an [`ev_peak_contrib::IntervalEstimates`] out —
-//! so what is pinned here is behaviour a caller can actually depend on, not the shape of an
-//! internal helper.
+//! A unit test rather than an integration test. The tiling is
+//! [`estimates_from_sessions`](super::estimates_from_sessions) and the `segments_for_ioi` it calls;
+//! the API reaches both through `api::peak_power`, which also wants a meter export and a bill, and
+//! neither of those bears on where a session's span falls. So this reads the CSV and calls the
+//! tiling directly.
 //!
 //! The fixture is `Session_Report_Diagram.csv`, seven sessions over 16:00–17:00 chosen to exercise
-//! every geometry the tiling has to get right at once, and `docs/segment-tiling.md` walks through
-//! the same example in prose:
+//! every geometry the tiling has to get right at once, and `docs/session/segment-tiling.md` walks
+//! through the same example in prose:
 //!
 //! ```text
 //!            16:00      16:15      16:30      16:45      17:00
@@ -29,21 +29,16 @@
 //! No assertion here names an electrical constant. The numbers this file does state are clock
 //! times and session counts, which are properties of the fixture rather than of the site model.
 
-use ev_cost_recovery::{
+use crate::{
+    golden,
     session::{
-        AnomalyKind, BREAKER_RATING_KW, IntervalEstimates, session_csv_to_xlsx,
-        xlsx_to_interval_estimates,
+        AnomalyKind, BREAKER_RATING_KW, IntervalEstimates, csv::csv_sessions,
+        estimates_from_sessions,
     },
     time::Interval,
 };
 use jiff::{Timestamp, Zoned, tz::TimeZone};
-use std::{
-    env, fs, process,
-    rc::Rc,
-    sync::atomic::{AtomicUsize, Ordering},
-};
-
-use super::fixture;
+use std::rc::Rc;
 
 /// The interval of interest: 16:00–17:00 local on a date with no DST transition.
 const LO: &str = "2026-06-15T20:00:00Z";
@@ -74,29 +69,16 @@ fn hm(ts: Timestamp) -> String {
         .to_string()
 }
 
-/// Converts the fixture in a scratch directory and estimates over the interval, so no generated
-/// workbook lands in `tests/fixtures/`.
+/// The fixture read straight from `tests/fixtures/`, tiled over the interval.
 ///
-/// A directory per call, not per process: the tests below run in parallel and each tears its own
-/// down afterwards, so a shared one would be removed from under a test still reading it.
-/// `IntervalEstimates` holds `Rc`s, so it cannot be computed once and shared across threads either.
+/// Recomputed per test rather than shared: `IntervalEstimates` holds `Rc`s, so one value cannot
+/// cross the threads the test harness runs these on. Nothing is written, so there is no scratch
+/// directory to tear down.
 fn estimates() -> IntervalEstimates {
-    static NEXT: AtomicUsize = AtomicUsize::new(0);
-    let dir = env::temp_dir().join(format!(
-        "ev_peak_tiling_{}_{}",
-        process::id(),
-        NEXT.fetch_add(1, Ordering::Relaxed)
-    ));
-    fs::create_dir_all(&dir).unwrap();
-    let csv = dir.join("Session_Report_Diagram.csv");
-    fs::copy(fixture("Session_Report_Diagram.csv"), &csv).unwrap();
-
-    let xlsx = session_csv_to_xlsx(&csv).unwrap().output_path;
+    let path = golden::fixture("sessions/Session_Report_Diagram.csv");
+    let sessions = csv_sessions(&path).expect("the diagram fixture reads");
     let interval = Interval::from_start_end(LO.parse().unwrap(), HI.parse().unwrap());
-    let report = xlsx_to_interval_estimates(interval, &xlsx).unwrap();
-
-    fs::remove_dir_all(&dir).ok();
-    report
+    estimates_from_sessions(interval, sessions.sources.clone(), &sessions)
 }
 
 /// An hour is four quarters that tile it exactly: consecutive, gapless, and no wider than the

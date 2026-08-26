@@ -1,7 +1,7 @@
 EV Peak Power Contribution
 ==========================
 
-Source     Session_Report_Anomalies.xlsx
+Source     Session_Report_Anomalies.csv
 Interval   2026-06-15 16:00 - 17:00 EDT  (1 hour)
 
 
@@ -28,9 +28,9 @@ asked for, because that is the basis the demand charge is billed on. An hour
 is reported as the highest of its four segments, not as an average over the
 whole hour.
 
-2 sessions in the workbook were excluded from every figure above, having
-reported times that contradict each other. They are listed under Excluded
-sessions.
+2 sessions in the source report were excluded from every figure above,
+having reported times that contradict each other. They are listed under
+Excluded sessions.
 
 
 Segments
@@ -69,8 +69,8 @@ Excluded sessions
 |   8 | REVERSED | 2026-06-15 16:30 | 16:21 | yes         | InconsistentDuration |
 
 These sessions take no part in any estimate. Times are local (ET), and the
-list covers the whole workbook rather than the interval estimated, so "From"
-carries its date and "To" carries one only when the session crosses
+list covers the whole source report rather than the interval estimated, so
+"From" carries its date and "To" carries one only when the session crosses
 midnight. "In interval" is whether the session appears to fall in the
 interval - appears only, because a record whose own fields contradict each
 other cannot be trusted to say where it belongs. It reads the same doubtful
@@ -92,7 +92,7 @@ Anomalies
 Row numbers are rows of the source data file named above, so each one can be
 looked up directly. Only sessions reaching the interval of interest are
 listed here. The Excluded sessions table above is scoped differently - it
-covers the whole workbook, and carries an "In interval" column for that
+covers the whole source report, and carries an "In interval" column for that
 reason.
 
 - ZeroActiveChargeTime - zero Active_Charge_Time, so the session delivered

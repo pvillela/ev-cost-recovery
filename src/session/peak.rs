@@ -2,12 +2,6 @@ use super::{Anomaly, Bracket, RSegment, RSession, SEGMENT_DURATION, Segment, Ses
 use crate::time::Interval;
 use std::{error::Error, path::PathBuf, rc::Rc};
 
-#[cfg(feature = "historic")]
-use super::excel::historic::xlsx_to_sessions;
-
-#[cfg(feature = "historic")]
-use std::path::Path;
-
 /// Estimates for an interval of interest.
 ///
 /// `Debug` prints every segment and every session, which is a great deal of output. It is derived
@@ -97,27 +91,12 @@ impl EstimateSet {
     }
 }
 
-#[cfg(feature = "historic")]
-/// Produces EV maximum power estimates for the interval of interest `ioi` and the session
-/// report at `path`.
-pub fn xlsx_to_interval_estimates(
-    ioi: Interval,
-    path: &Path,
-) -> Result<IntervalEstimates, Box<dyn Error>> {
-    let session_report = xlsx_to_sessions(path)?;
-    Ok(estimates_from_sessions(
-        ioi,
-        vec![path.to_path_buf()],
-        &session_report,
-    ))
-}
-
 /// The estimate proper, once the sessions have been read.
 ///
-/// Separate from [`interval_estimates`] because there is more than one way to arrive at a
-/// [`Sessions`]: that function reads one workbook, while [`crate::peak_power`] merges the two
-/// monthly CSVs a billing period spans. Both must produce the same figures from the same sessions,
-/// which they do by both coming through here.
+/// Separate from any one reader because there is more than one way to arrive at a [`Sessions`]:
+/// [`crate::peak_power`] merges the two monthly CSVs a billing period spans, and
+/// `excel::historic::xlsx_to_interval_estimates` reads one workbook. All of them must produce the
+/// same figures from the same sessions, which they do by coming through here.
 ///
 /// Takes the report by reference so one set of sessions can feed several intervals of interest
 /// without being read again — `peak_power` estimates over two.

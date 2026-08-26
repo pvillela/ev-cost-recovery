@@ -50,7 +50,8 @@ pub const TIME_GRID_STEP: Duration = Duration::from_secs(60);
 /// The width of the [`Segment`]s an interval of interest is partitioned into.
 ///
 /// The duration of the interval of interest **must** be a positive multiple of this, and
-/// [`crate::session::interval_estimates`] panics otherwise. Not a convention: rounding the segment count up
+/// the private `estimates_from_sessions` panics otherwise. Not a convention: rounding the segment
+/// count up
 /// would tile past the interval's end and count sessions falling outside it, and rounding down
 /// would leave part of it unestimated. Neither error would show in any figure the report prints,
 /// which is why the check is an assertion rather than an accommodation.
@@ -366,10 +367,10 @@ impl SessionOverlap {
 /// Several files' sessions as one list, with what is wrong across them.
 struct MergedSessions {
     /// Every session, in the order the lists were given, less the records collapsed as identical.
-    pub sessions: Vec<RSession>,
+    sessions: Vec<RSession>,
     /// Anomalies that are not properties of any single record and so are not on
     /// [`Session::anomalies`]. Currently [`AnomalyKind::DuplicateId`] only.
-    pub anomalies: Vec<Anomaly>,
+    anomalies: Vec<Anomaly>,
 }
 
 impl MergedSessions {
@@ -838,7 +839,7 @@ impl AnomalyKind {
 
 /// A session that needs review. Never fatal: the conversion still writes the row, and the
 /// estimating logic still produces a figure. Used by both sides — see
-/// [`crate::session::ConversionReport`] and [`crate::session::IntervalEstimates`].
+/// [`crate::session::SessionWriteReport`] and [`crate::session::IntervalEstimates`].
 ///
 /// Holds the session itself rather than a copy of a field or two off it. Copying `id` and `row` out
 /// meant every consumer that wanted anything else — the average power beside the flag, the file the
@@ -909,18 +910,19 @@ impl fmt::Display for Anomaly {
 /// Sessions, grouped by how the peak power contribution logic must treat them, and what else is
 /// known about them.
 ///
-/// Named for the objects rather than for the context around them, the way
-/// [`Readings`](crate::green_button::Readings) is, so the two sources read the same way.
+/// Named for the objects rather than for the context around them, the way `green_button::Readings`
+/// is, so the two sources read the same way.
 ///
 /// This is where a finding goes when it is not a property of any one session: a relation between
 /// records, or a fact about the file they were read from. What is true of a record itself goes on
 /// [`Session::anomalies`] instead, and travels with it — including out to a workbook and back
 /// through the `anomalies` column.
 ///
-/// Returned by both readers — [`crate::session::csv::session_list`] from the CSV and
-/// [`crate::session::excel::session_list`] from a workbook written from it — because the grouping
-/// is a property of the sessions, not of the file they were read out of. The writing direction
-/// returns a [`crate::session::ConversionReport`] instead.
+/// Returned by both readers — [`csv_sessions`](crate::session::csv::csv_sessions) from the CSV,
+/// and `excel::historic::xlsx_to_sessions` from a workbook written from it — because the grouping
+/// is a property of the sessions, not of the file they were read out of. The workbook reader is
+/// behind the `historic` feature; the CSV one is what the API uses. The writing direction returns
+/// a [`crate::session::SessionWriteReport`] instead.
 ///
 /// It was `SessionReport` until this crate had three things called a report: the document a
 /// [`Display`](std::fmt::Display) writes, the CSV Evolute exports, and this. Only the CSV is still

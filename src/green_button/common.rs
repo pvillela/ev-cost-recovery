@@ -19,7 +19,7 @@ use std::{fmt, time::Duration};
 /// highlight, and the guarantee that an aligned interval cannot straddle a TOU boundary, since
 /// Ontario's price-period boundaries all fall on the hour. So it is **checked rather than
 /// assumed** — the feed states it per `ReadingType` and again per `IntervalReading`, and
-/// `green_button::parse` rejects any other value.
+/// `green_button::parse_espi_xml` rejects any other value.
 pub const METER_INTERVAL: Duration = Duration::from_secs(3600);
 
 /// One hour of metered data, keyed on the instant the hour starts.

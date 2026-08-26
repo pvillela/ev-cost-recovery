@@ -13,17 +13,28 @@
 //!
 //! # How this file is laid out
 //!
-//! Public before private, functions before the types only they name: the readers, the two
-//! conversions, then the two error enums, then the private helpers. Opening the file shows the API
-//! surface. Anything new goes in the section it belongs to rather than at the end.
+//! Public before private: the readers, the two conversions, then the private helpers. Opening the
+//! file shows the API surface. Anything new goes in the section it belongs to rather than at the
+//! end.
+//!
+//! The error types these return are not declared here. [`ReadError`] and [`ConversionError`] are
+//! the crate's, in [`crate::error`], because the modules that raise them are; this file wraps what
+//! they hand back rather than inventing its own vocabulary for it.
+//!
+//! # The seam, if a pure conversion is ever wanted
+//!
+//! [`write_gb_workbook`](crate::green_button::write_gb_workbook) currently builds the workbook
+//! *and* writes it. Splitting those two is where a pure version would begin — to assert on cell
+//! contents without a temp file, say. Not worth doing speculatively, since the only thing any
+//! caller does with a workbook is write it, but that is the place.
 
-// `session::excel` arrives as a module rather than as its two functions: both are named the same
-// as something declared here, and a prefix says which is meant without inventing an alias.
+// `session` arrives as a module rather than as its conversion function: that function is named the
+// same as one declared here, and a prefix says which is meant without inventing an alias.
 use crate::{
     api::pure,
     charges_report::charges_report,
     error::{ConversionError, ReadError},
-    green_button::{read_gb_feed, read_gb_for_billing_period, write_gb_workbook},
+    green_button::{GbReadError, read_gb_feed, read_gb_for_billing_period, write_gb_workbook},
     hydro_bill::{BILL_END_DAY, hydro_bill_from_pdf},
     session::{self, Sessions, csv::csv_sessions},
 };
@@ -74,7 +85,7 @@ pub use crate::{
 /// say what each holds.
 ///
 /// Nothing here writes. Each report read returns its `csv.read` log unwritten on the result's
-/// `notes` -- see [`csv::session_list`] -- and
+/// `notes` -- see [`csv_sessions`](crate::session::csv::csv_sessions) -- and
 /// [`SessionNotes::write_logs`](crate::session::SessionNotes::write_logs) is what a binary calls
 /// to put one beside its input.
 ///
@@ -93,7 +104,8 @@ pub fn peak_power(
     // caller who has handed in the wrong month finds out before a byte is parsed.
     pure::check_reports_cover_period(billing_period_ending, &[session_csv1, session_csv2])?;
 
-    let gb_period_values = read_gb_for_billing_period(gb_xml, billing_period_ending, BILL_END_DAY)?;
+    let gb_period_values = read_gb_for_billing_period(gb_xml, billing_period_ending, BILL_END_DAY)
+        .map_err(|cause| gb_read_error(gb_xml, cause))?;
     let sessions = read_sessions(&[session_csv1, session_csv2])?;
 
     pure::peak_power(billing_period_ending, gb_period_values, &sessions).map_err(|cause| {
@@ -126,7 +138,7 @@ pub fn peak_power(
 /// names. Which is given first makes no difference; the names say what each holds.
 ///
 /// Nothing here writes. Each report read returns its `csv.read` log unwritten on the result's
-/// `notes` -- see [`csv::session_list`] -- and
+/// `notes` -- see [`csv_sessions`](crate::session::csv::csv_sessions) -- and
 /// [`SessionNotes::write_logs`](crate::session::SessionNotes::write_logs) is what a binary calls
 /// to put one beside its input.
 ///
@@ -153,7 +165,8 @@ pub fn peak_power_cost(
     // before a year of meter readings is.
     pure::check_reports_cover_period(billing_period_ending, &[session_csv1, session_csv2])?;
 
-    let gb_period_values = read_gb_for_billing_period(gb_xml, billing_period_ending, BILL_END_DAY)?;
+    let gb_period_values = read_gb_for_billing_period(gb_xml, billing_period_ending, BILL_END_DAY)
+        .map_err(|cause| gb_read_error(gb_xml, cause))?;
     let sessions = read_sessions(&[session_csv1, session_csv2])?;
 
     pure::peak_power_cost(&bill, gb_period_values, &sessions).map_err(|cause| ApiError::PeakPower {
@@ -181,7 +194,7 @@ pub fn peak_power_cost(
 /// from the call yields a total that is simply too low, with nothing in the figures to say so.
 ///
 /// Nothing here writes. Each report read returns its `csv.read` log unwritten on the result's
-/// `notes` -- see [`csv::session_list`] -- and
+/// `notes` -- see [`csv_sessions`](crate::session::csv::csv_sessions) -- and
 /// [`SessionNotes::write_logs`](crate::session::SessionNotes::write_logs) is what a binary calls
 /// to put one beside its input.
 ///
@@ -223,7 +236,7 @@ pub fn energy(
 /// names. Which is given first makes no difference; the names say what each holds.
 ///
 /// Nothing here writes. Each report read returns its `csv.read` log unwritten on the result's
-/// `notes` -- see [`csv::session_list`] -- and
+/// `notes` -- see [`csv_sessions`](crate::session::csv::csv_sessions) -- and
 /// [`SessionNotes::write_logs`](crate::session::SessionNotes::write_logs) is what a binary calls
 /// to put one beside its input.
 ///
@@ -276,7 +289,7 @@ pub fn energy_cost(
 /// the call yields a figure that is simply too low, with nothing in it to say so.
 ///
 /// Nothing here writes. Each report read returns its `csv.read` log unwritten on the result's
-/// `notes` -- see [`csv::session_list`] -- and
+/// `notes` -- see [`csv_sessions`](crate::session::csv::csv_sessions) -- and
 /// [`SessionNotes::write_logs`](crate::session::SessionNotes::write_logs) is what a binary calls
 /// to put one beside its input.
 ///
@@ -326,7 +339,7 @@ pub fn cost_recovery(
 /// names. Which is given first makes no difference; the names say what each holds.
 ///
 /// Nothing here writes. Each report read returns its `csv.read` log unwritten on the result's
-/// `notes` -- see [`csv::session_list`] -- and
+/// `notes` -- see [`csv_sessions`](crate::session::csv::csv_sessions) -- and
 /// [`SessionNotes::write_logs`](crate::session::SessionNotes::write_logs) is what a binary calls
 /// to put one beside its input.
 ///
@@ -351,7 +364,8 @@ pub fn cost_recovery_surplus(
 
     pure::check_reports_cover_period(billing_period_ending, &[session_csv1, session_csv2])?;
 
-    let gb_period_values = read_gb_for_billing_period(gb_xml, billing_period_ending, BILL_END_DAY)?;
+    let gb_period_values = read_gb_for_billing_period(gb_xml, billing_period_ending, BILL_END_DAY)
+        .map_err(|cause| gb_read_error(gb_xml, cause))?;
     let sessions = read_sessions(&[session_csv1, session_csv2])?;
 
     pure::cost_recovery_surplus(
@@ -398,7 +412,7 @@ pub fn cost_recovery_surplus(
 /// exactly like an underpayment.
 ///
 /// Nothing here writes. The report's `csv.read` log comes back unwritten on the result's `notes` --
-/// see [`csv::session_list`] -- and
+/// see [`csv_sessions`](crate::session::csv::csv_sessions) -- and
 /// [`SessionNotes::write_logs`](crate::session::SessionNotes::write_logs) is what a binary calls to
 /// put it beside its input.
 ///
@@ -456,7 +470,8 @@ pub enum OnExistingWorkbook {
 /// Converts an Evolute session report into a workbook beside it, and says what needed a judgement
 /// call on the way.
 ///
-/// Delegates to [`excel::session_csv_to_xlsx`](crate::session::excel::session_csv_to_xlsx), which states what the workbook holds: the
+/// Delegates to [`session::session_csv_to_xlsx`](crate::session::session_csv_to_xlsx), which
+/// states what the workbook holds: the
 /// report's own columns in the order it states them, then the columns this software derives, with
 /// `adj_conn_duration` and `avg_kw` as live formulas and the anomalies of each row in the last
 /// column. Every session is written, anomalous ones included — which of them takes part in an
@@ -467,13 +482,12 @@ pub enum OnExistingWorkbook {
 /// - `session_csv` - the Evolute session report to convert.
 /// - `on_existing` - what to do about a workbook already standing where this one goes.
 ///
-/// The workbook's name is not an argument. It is the input's, with the extension replaced, which is
-/// what [`excel::workbook_path`](crate::session::excel::workbook_path) settles and what every reader of these files expects to
-/// find beside the report.
+/// The workbook's name is not an argument. It is the input's with the extension replaced, which is
+/// where every reader of these files expects to find it.
 ///
 /// Nothing else here writes. The conversion's run log comes back unwritten on the result's `log` --
-/// see [`ConversionReport`] -- and [`SourceLog::write`](crate::session::SourceLog::write) is what a
-/// binary calls to put it beside the workbook.
+/// see [`SessionWriteReport`] -- and [`SourceLog::write`](crate::session::SourceLog::write) is what
+/// a binary calls to put it beside the workbook.
 ///
 /// # Errors
 ///
@@ -483,18 +497,20 @@ pub fn session_csv_to_xlsx(
     session_csv: &Path,
     on_existing: OnExistingWorkbook,
 ) -> Result<SessionWriteReport, ApiError> {
-    let output_path = session_csv.with_extension("xlsx");
-    checked_workbook_path(session_csv, output_path.clone(), on_existing)?;
-    // The path is not passed on: `session::excel::session_csv_to_xlsx` derives the same one from
-    // the same function, and taking it as an argument there would let a caller send the workbook
-    // somewhere the check above never looked at.
-    let ret = session::session_csv_to_xlsx(session_csv)?;
-    Ok(ret)
+    // Checked here and derived again by the callee, which takes no output path of its own. Two
+    // calls to `with_extension("xlsx")` rather than one shared definition: a utility only these
+    // two used would leave the Green Button conversion below deriving its own name regardless, so
+    // it would be two definitions wearing the costume of one. What the callee must not have is an
+    // output *argument* -- that would let a caller send the workbook somewhere this check never
+    // looked at.
+    checked_workbook_path(session_csv, session_csv.with_extension("xlsx"), on_existing)?;
+    Ok(session::session_csv_to_xlsx(session_csv)?)
 }
 
 /// Converts a Toronto Hydro Green Button export into the peak-values workbook beside it.
 ///
-/// Two sheets, as [`green_button::write_workbook`] builds them: `Peak_values` carries one row per
+/// Two sheets, as [`write_gb_workbook`](crate::green_button::write_gb_workbook) builds them:
+/// `Peak_values` carries one row per
 /// billing period — the energy used, the highest kW and kVA over the period and within the 7-7
 /// demand window, when each occurred and in which Time-of-Use period — and `Interval_values` carries
 /// every hour of the export. A period holding fewer intervals than a whole one should, and any cell
@@ -502,7 +518,7 @@ pub fn session_csv_to_xlsx(
 ///
 /// # Arguments
 ///
-/// - `gb_xml` - the Green Button (ESPI) XML export to convert.
+/// - `xml_path` - the Green Button (ESPI) XML export to convert.
 /// - `on_existing` - what to do about a workbook already standing where this one goes.
 ///
 /// There is no `bill_end_day` argument, for the reason the reading functions here take none: the
@@ -523,7 +539,7 @@ pub fn gb_xml_to_xlsx(
 ) -> Result<GbWriteReport, ApiError> {
     let output_path =
         checked_workbook_path(xml_path, xml_path.with_extension("xlsx"), on_existing)?;
-    let feed = read_gb_feed(xml_path)?;
+    let feed = read_gb_feed(xml_path).map_err(|cause| gb_read_error(xml_path, cause))?;
     let written = write_gb_workbook(&output_path, &feed, BILL_END_DAY)?;
     Ok(written)
 }
@@ -607,6 +623,19 @@ fn checked_workbook_path(
     Ok(output)
 }
 
+/// The Green Button reader's error, as the API's.
+///
+/// [`GbReadError`] writes the export's name into its own message, so the `path` here is the field
+/// a caller reads rather than the text it prints. Two of its variants are argument checks with no
+/// file of their own; the export they were asked about is attached here, since this is where it is
+/// known.
+fn gb_read_error(xml_path: &Path, cause: GbReadError) -> ReadError {
+    ReadError::GreenButton {
+        path: xml_path.to_path_buf(),
+        cause: Box::new(cause),
+    }
+}
+
 /// The named reports as one [`Sessions`].
 ///
 /// Merged rather than flattened, and merged as reports rather than as lists of sessions. What each
@@ -676,7 +705,8 @@ mod test {
 
     /// Asking for a replacement waives the second refusal and only the second.
     ///
-    /// Nothing is written: `workbook_path` decides and returns, and the caller does the writing.
+    /// Nothing is written: `checked_workbook_path` decides and returns, and the caller does the
+    /// writing.
     #[test]
     fn asking_to_replace_waives_only_the_existing_file() {
         // The file is there and would be overwritten, which is what was asked for.

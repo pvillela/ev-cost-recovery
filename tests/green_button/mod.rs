@@ -1,7 +1,7 @@
 mod fixtures_golden;
 mod full_feed;
 mod invoice;
-mod peaks_io;
+mod read_xml;
 
 use crate::common::{fixture_in, fixtures_dir_in};
 use std::path::PathBuf;

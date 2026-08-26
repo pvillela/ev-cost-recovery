@@ -47,8 +47,8 @@ fn hm(ts: Timestamp) -> String {
     local(ts).strftime("%H:%M").to_string()
 }
 
-/// Dated, and to the minute. The excluded list covers the whole workbook, so its dates cannot be
-/// left implicit the way a segment's can.
+/// Dated, and to the minute. The excluded list covers the whole source report, so its dates cannot
+/// be left implicit the way a segment's can.
 fn ymd_hm(ts: Timestamp) -> String {
     local(ts).strftime("%Y-%m-%d %H:%M").to_string()
 }
@@ -362,8 +362,8 @@ impl IntervalEstimates {
             let n = self.excluded_sessions.len();
             out.push(wrap(
                 &format!(
-                    "{} in the workbook {} excluded from every figure above, having reported \
-                     times that contradict each other. They are listed under Excluded sessions.",
+                    "{} in the source report {} excluded from every figure above, having \
+                     reported times that contradict each other. They are listed under Excluded sessions.",
                     if n == 1 {
                         "One session".to_owned()
                     } else {
@@ -480,8 +480,9 @@ impl IntervalEstimates {
         out.push(String::new());
         out.push(wrap(
             "These sessions take no part in any estimate. Times are local (ET), and the list \
-             covers the whole workbook rather than the interval estimated, so \"From\" carries its \
-             date and \"To\" carries one only when the session crosses midnight. \"In interval\" \
+             covers the whole source report rather than the interval estimated, so \"From\" \
+             carries its date and \"To\" carries one only when the session crosses midnight. \
+             \"In interval\" \
              is whether the session appears to fall in the interval - appears only, because a \
              record whose own fields contradict each other cannot be trusted to say where it \
              belongs. It reads the same doubtful times, so no row was dropped on its say-so.",
@@ -542,12 +543,13 @@ impl IntervalEstimates {
             .to_owned();
         if self.excluded_sessions.is_empty() {
             note.push_str(
-                "; a session anomalous elsewhere in the workbook is not this interval's concern.",
+                "; a session anomalous elsewhere in the source report is not this interval's \
+                 concern.",
             );
         } else {
             note.push_str(
                 ". The Excluded sessions table above is scoped differently - it covers the whole \
-                 workbook, and carries an \"In interval\" column for that reason.",
+                 source report, and carries an \"In interval\" column for that reason.",
             );
         }
         out.push(wrap(&note, ""));

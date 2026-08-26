@@ -182,7 +182,7 @@ pub struct CostRecoverySurplus {
 /// Why a billing period's sessions cannot be turned into a cost recovery.
 ///
 /// No variant names a file. The rates are given as values and the period as a date, so nothing here
-/// has a file to be about — which is why [`ApiError`](crate::error::ApiError) carries this one
+/// has a file to be about — which is why [`ApiError`](crate::api::error::ApiError) carries this one
 /// without a `source`, unlike the errors of the two costing operations.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CostRecoveryError {

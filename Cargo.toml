@@ -68,3 +68,9 @@ required-features = ["historic"]
 [[bin]]
 name = "ev_peak_cli"
 required-features = ["historic"]
+
+# Reads a workbook back, so it is as historic as the two binaries above. Examples need the
+# declaration spelled out; unlike binaries they are not otherwise described here.
+[[example]]
+name = "sessions"
+required-features = ["historic"]

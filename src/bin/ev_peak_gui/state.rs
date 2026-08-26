@@ -448,9 +448,28 @@ mod test {
         state
     }
 
+    /// A report's `Source` line, and everything else, apart.
+    ///
+    /// That line names the file the figures were read from, so two routes over the same sessions
+    /// differ there and nowhere else. Splitting it out lets a comparison say which of those it
+    /// means.
+    fn split_source(report: &str) -> (String, String) {
+        let source = report
+            .lines()
+            .find(|l| l.starts_with("Source"))
+            .expect("a report names its source")
+            .to_owned();
+        let rest: String = report
+            .lines()
+            .filter(|l| !l.starts_with("Source"))
+            .map(|l| format!("{l}\n"))
+            .collect();
+        (source, rest)
+    }
+
     /// The whole path the app drives, end to end: convert a CSV, pick up the workbook it wrote,
     /// choose an interval from the controls, and estimate — checked against the same golden file
-    /// the command line is checked against.
+    /// the library route is checked against.
     ///
     /// This is what makes the widget layer safe to leave untested. Everything between a click and
     /// a figure happens here; a click is only which of these it calls.
@@ -493,10 +512,26 @@ mod test {
             let outcome = estimate.outcome.as_ref().expect("{stem}: an estimate");
             let golden = fs::read_to_string(fixtures.join(format!("{stem}.report.md"))).unwrap();
             // The workbook is in a scratch directory, so only its name matches the golden file's.
+            let rendered = outcome.text.replace(&dir.display().to_string(), "");
+
+            // One line is expected to differ, and only one. The golden is rendered from the CSV,
+            // while this route reads the workbook the conversion above just wrote, so each names
+            // the file it actually read. Everything else must match, which is the whole point:
+            // the two routes agree on every figure.
+            let (rendered_source, rendered_body) = split_source(&rendered);
+            let (golden_source, golden_body) = split_source(&golden);
             assert_eq!(
-                outcome.text.replace(&dir.display().to_string(), ""),
-                golden,
-                "{stem}: the saved report must be what the command line prints"
+                rendered_body, golden_body,
+                "{stem}: the saved report must be what the library route renders"
+            );
+            assert!(
+                rendered_source.ends_with(&format!("{stem}.xlsx")),
+                "{stem}: this route reads a workbook, so the report should name one: \
+                 {rendered_source:?}"
+            );
+            assert!(
+                golden_source.ends_with(&format!("{stem}.csv")),
+                "{stem}: the golden is rendered from the CSV: {golden_source:?}"
             );
             // And the heading over the figures says what the report says over its own.
             assert!(

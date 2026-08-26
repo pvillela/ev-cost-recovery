@@ -1,4 +1,4 @@
-//! `period_values_xml` against a real export.
+//! `read_gb_for_billing_period` against a real export.
 //!
 //! The unit tests beside the function cover the argument checks, which need no file. What needs a
 //! fixture is the part that matters: that the packaged call returns the same period the long-hand

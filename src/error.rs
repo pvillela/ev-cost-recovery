@@ -8,12 +8,20 @@ use umya_spreadsheet::XlsxError;
 
 /// A source file could not be read.
 ///
-/// One of the two error kinds this module raises on its own. Everything else it returns comes from
-/// a pure function it delegated to.
+/// One of the two kinds `api::io` raises about a file rather than passing on from a pure function.
+/// It is declared here, not there, because the modules that *raise* it are the readers themselves.
 ///
-/// `path` is held for a caller that wants to act on which file failed rather than print it. It is
-/// deliberately *not* written into the message: both readers name the file they concern, so adding
-/// it here produced `data/x.XML: data/x.XML: ...`.
+/// `path` is held for a caller that wants to act on which file failed rather than print it, and is
+/// deliberately not written into the message. All four causes name their own file, each from a
+/// `path` field of its own — see [`GbReadError`](crate::green_button::GbReadError),
+/// [`ChargesReportError`](crate::charges_report::ChargesReportError) and
+/// [`BillError`](crate::hydro_bill::BillError). Writing it here as well produced
+/// `data/x.XML: data/x.XML: ...`.
+///
+/// The one cause that is not yet a structured type is the session reader's: `csv_sessions` returns
+/// `Box<dyn Error>` with the path formatted into the string. That is the last place in the crate
+/// where a path reaches a message without being a field, and it is why this doc says "all four
+/// causes" rather than "all four error types".
 #[derive(Debug)]
 pub enum ReadError {
     /// The Green Button export could not be read, could not be parsed, or carries no reading in
@@ -83,7 +91,7 @@ pub enum ConversionError {
     /// Refusing is the default rather than a courtesy: the figures in these workbooks get
     /// reconciled against real invoices by hand, and a silent overwrite is how that work is lost.
     /// Move the existing file, delete it, or call again with
-    /// [`OnExistingWorkbook::Replace`].
+    /// [`OnExistingWorkbook::Replace`](crate::io::OnExistingWorkbook::Replace).
     OutputExists { path: PathBuf },
 
     /// The workbook could not be built or could not be written.

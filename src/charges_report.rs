@@ -67,17 +67,21 @@ impl ChargesReport {
 #[derive(Debug)]
 pub enum ChargesReportError {
     /// The file could not be opened, or is not a readable CSV.
-    Unreadable { cause: Box<dyn Error> },
+    Unreadable {
+        path: PathBuf,
+        cause: Box<dyn Error>,
+    },
 
     /// A column this reader needs is not there.
-    MissingColumn { name: &'static str },
+    MissingColumn { path: PathBuf, name: &'static str },
 
     /// The file parsed but holds no rows. A month Evolute billed nothing for still has a row per
     /// breaker; an empty file is a truncated download, not a quiet month.
-    NoRows,
+    NoRows { path: PathBuf },
 
     /// A cell could not be read as the kind of value its column holds.
     BadValue {
+        path: PathBuf,
         row: usize,
         column: &'static str,
         value: String,
@@ -88,17 +92,39 @@ pub enum ChargesReportError {
     ///
     /// One report is one period. Rows disagreeing about which means the file is two reports
     /// concatenated, and no single month can be read off it.
-    MixedPeriods { first: (Date, Date), row: usize },
+    MixedPeriods {
+        path: PathBuf,
+        first: (Date, Date),
+        row: usize,
+    },
+}
+
+impl ChargesReportError {
+    /// The report the failure is about. Every variant has one, since nothing here is checked
+    /// before the file is opened.
+    pub fn path(&self) -> &Path {
+        match self {
+            Self::Unreadable { path, .. }
+            | Self::MissingColumn { path, .. }
+            | Self::NoRows { path }
+            | Self::BadValue { path, .. }
+            | Self::MixedPeriods { path, .. } => path,
+        }
+    }
 }
 
 impl fmt::Display for ChargesReportError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Every arm names the file, from the variant's own `path` field. The `csv` crate's errors
+        // do not carry it and a per-row failure knows only its row, so without this a caller is
+        // told what went wrong and left to guess where.
+        write!(f, "{}: ", self.path().display())?;
         match self {
-            Self::Unreadable { cause } => write!(f, "{cause}"),
-            Self::MissingColumn { name } => {
+            Self::Unreadable { cause, .. } => write!(f, "{cause}"),
+            Self::MissingColumn { name, .. } => {
                 write!(f, "missing required column `{name}`")
             }
-            Self::NoRows => write!(
+            Self::NoRows { .. } => write!(
                 f,
                 "the file holds no rows; a Charges Report carries one row per breaker even in a \
                  month nothing was billed for"
@@ -108,6 +134,7 @@ impl fmt::Display for ChargesReportError {
                 column,
                 value,
                 cause,
+                ..
             } => write!(
                 f,
                 "row {row}, column `{column}`: cannot read {value:?}: {cause}"
@@ -115,6 +142,7 @@ impl fmt::Display for ChargesReportError {
             Self::MixedPeriods {
                 first: (from, to),
                 row,
+                ..
             } => write!(
                 f,
                 "row {row} covers a different period from the first row ({from} to {to}); one \
@@ -127,7 +155,7 @@ impl fmt::Display for ChargesReportError {
 impl Error for ChargesReportError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
-            Self::Unreadable { cause } => Some(cause.as_ref()),
+            Self::Unreadable { cause, .. } => Some(cause.as_ref()),
             _ => None,
         }
     }
@@ -143,16 +171,16 @@ impl Error for ChargesReportError {
 /// See [`ChargesReportError`]. Nothing is totalled until every row has been read, so a file with a
 /// bad cell in the middle of it produces an error rather than a partial sum.
 pub fn charges_report(path: &Path) -> Result<ChargesReport, ChargesReportError> {
-    let mut reader =
-        ::csv::Reader::from_path(path).map_err(|cause| ChargesReportError::Unreadable {
-            cause: cause.into(),
-        })?;
+    let unreadable = |cause: ::csv::Error| ChargesReportError::Unreadable {
+        path: path.to_path_buf(),
+        cause: cause.into(),
+    };
+
+    let mut reader = ::csv::Reader::from_path(path).map_err(unreadable)?;
 
     let headers: BTreeMap<String, usize> = reader
         .headers()
-        .map_err(|cause| ChargesReportError::Unreadable {
-            cause: cause.into(),
-        })?
+        .map_err(unreadable)?
         .iter()
         .enumerate()
         .map(|(i, h)| (h.trim().to_owned(), i))
@@ -160,7 +188,10 @@ pub fn charges_report(path: &Path) -> Result<ChargesReport, ChargesReportError> 
 
     for required in REQUIRED_HEADERS {
         if !headers.contains_key(*required) {
-            return Err(ChargesReportError::MissingColumn { name: required });
+            return Err(ChargesReportError::MissingColumn {
+                path: path.to_path_buf(),
+                name: required,
+            });
         }
     }
 
@@ -182,28 +213,32 @@ pub fn charges_report(path: &Path) -> Result<ChargesReport, ChargesReportError> 
     for (i, record) in reader.records().enumerate() {
         // Row 1 is the header, so the first record is row 2 -- the number a spreadsheet shows.
         let row = i + 2;
-        let record = record.map_err(|cause| ChargesReportError::Unreadable {
-            cause: cause.into(),
-        })?;
+        let record = record.map_err(unreadable)?;
 
-        let from = parse_date(&field(&record, "Start_Date"), row, "Start_Date")?;
-        let to = parse_date(&field(&record, "End_Date"), row, "End_Date")?;
+        let from = parse_date(&field(&record, "Start_Date"), path, row, "Start_Date")?;
+        let to = parse_date(&field(&record, "End_Date"), path, row, "End_Date")?;
         match span {
             None => span = Some((from, to)),
             Some(first) if first != (from, to) => {
-                return Err(ChargesReportError::MixedPeriods { first, row });
+                return Err(ChargesReportError::MixedPeriods {
+                    path: path.to_path_buf(),
+                    first,
+                    row,
+                });
             }
             Some(_) => {}
         }
 
-        total_kwh += number(&field(&record, "kWh"), row, "kWh")?;
-        total_amount += money(&field(&record, "Cost"), row, "Cost")?;
+        total_kwh += number(&field(&record, "kWh"), path, row, "kWh")?;
+        total_amount += money(&field(&record, "Cost"), path, row, "Cost")?;
         *statuses.entry(field(&record, "Bill_Status")).or_default() += 1;
         rows += 1;
     }
 
     let Some((from, to)) = span else {
-        return Err(ChargesReportError::NoRows);
+        return Err(ChargesReportError::NoRows {
+            path: path.to_path_buf(),
+        });
     };
 
     Ok(ChargesReport {
@@ -217,8 +252,14 @@ pub fn charges_report(path: &Path) -> Result<ChargesReport, ChargesReportError> 
     })
 }
 
-fn parse_date(s: &str, row: usize, column: &'static str) -> Result<Date, ChargesReportError> {
+fn parse_date(
+    s: &str,
+    path: &Path,
+    row: usize,
+    column: &'static str,
+) -> Result<Date, ChargesReportError> {
     Date::strptime(DATE_FORMAT, s).map_err(|e| ChargesReportError::BadValue {
+        path: path.to_path_buf(),
         row,
         column,
         value: s.to_owned(),
@@ -226,9 +267,15 @@ fn parse_date(s: &str, row: usize, column: &'static str) -> Result<Date, Charges
     })
 }
 
-fn number(s: &str, row: usize, column: &'static str) -> Result<f64, ChargesReportError> {
+fn number(
+    s: &str,
+    path: &Path,
+    row: usize,
+    column: &'static str,
+) -> Result<f64, ChargesReportError> {
     s.parse().map_err(
         |e: std::num::ParseFloatError| ChargesReportError::BadValue {
+            path: path.to_path_buf(),
             row,
             column,
             value: s.to_owned(),
@@ -241,9 +288,14 @@ fn number(s: &str, row: usize, column: &'static str) -> Result<f64, ChargesRepor
 ///
 /// The sign is outside the `$` in every negative figure seen, which is how spreadsheets export
 /// currency. Thousands separators are stripped too, since a busy month could reach four figures.
-fn money(s: &str, row: usize, column: &'static str) -> Result<f64, ChargesReportError> {
+fn money(
+    s: &str,
+    path: &Path,
+    row: usize,
+    column: &'static str,
+) -> Result<f64, ChargesReportError> {
     let cleaned: String = s.chars().filter(|c| *c != '$' && *c != ',').collect();
-    number(&cleaned, row, column)
+    number(&cleaned, path, row, column)
 }
 
 // cargo test --lib -- charges_report::test
@@ -261,14 +313,25 @@ mod test {
             ("$1,234.50", 1234.5),
             ("246.26", 246.26),
         ] {
-            assert_eq!(money(text, 2, "Cost").unwrap(), expected, "{text}");
+            assert_eq!(
+                money(text, &fake_path(), 2, "Cost").unwrap(),
+                expected,
+                "{text}"
+            );
         }
     }
 
+    /// Stands in for the report a cell came from. These three helpers never open it; they carry it
+    /// so the error they raise can name it.
+    fn fake_path() -> PathBuf {
+        PathBuf::from("Charges_Report_June.csv")
+    }
+
     #[test]
-    fn a_cell_that_is_not_a_number_names_its_row_and_column() {
-        let err = money("n/a", 7, "Cost").unwrap_err();
+    fn a_cell_that_is_not_a_number_names_its_file_its_row_and_its_column() {
+        let err = money("n/a", &fake_path(), 7, "Cost").unwrap_err();
         let message = err.to_string();
+        assert!(message.contains("Charges_Report_June.csv"), "{message}");
         assert!(message.contains("row 7"), "{message}");
         assert!(message.contains("Cost"), "{message}");
         assert!(message.contains("n/a"), "{message}");
@@ -277,8 +340,15 @@ mod test {
     /// The report's own date format, which is neither ISO nor anything jiff parses by default.
     #[test]
     fn the_report_s_dates_are_read_in_the_form_it_writes_them() {
-        assert_eq!(parse_date("01-Jun-26", 2, "Start_Date").unwrap(), june(1));
-        assert_eq!(parse_date("30-Jun-26", 2, "End_Date").unwrap(), june(30));
+        let p = fake_path();
+        assert_eq!(
+            parse_date("01-Jun-26", &p, 2, "Start_Date").unwrap(),
+            june(1)
+        );
+        assert_eq!(
+            parse_date("30-Jun-26", &p, 2, "End_Date").unwrap(),
+            june(30)
+        );
     }
 
     fn june(day: i8) -> Date {

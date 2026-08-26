@@ -1,7 +1,7 @@
 EV Peak Power Contribution
 ==========================
 
-Source     Session_Report_Diagram.xlsx
+Source     Session_Report_Diagram.csv
 Interval   2026-06-15 16:00 - 17:00 EDT  (1 hour)
 
 
@@ -66,7 +66,7 @@ Anomalies
 
 Row numbers are rows of the source data file named above, so each one can be
 looked up directly. Only sessions reaching the interval of interest are
-listed here; a session anomalous elsewhere in the workbook is not this
+listed here; a session anomalous elsewhere in the source report is not this
 interval's concern.
 
 - ExcessiveAvgKw - average kilowatts above the Evolute breaker rating, which
