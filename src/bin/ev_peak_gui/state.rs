@@ -130,7 +130,9 @@ impl ConvertState {
                     anomalies: anomalies.iter().map(|a| a.to_string()).collect(),
                 });
             }
-            Err(e) => self.error = Some(format!("{}: {e}", csv.display())),
+            // No path prefix: `ConversionError` names the file in every variant, and a read
+            // failure defers to a `SessionCsvError` that names it too.
+            Err(e) => self.error = Some(e.to_string()),
         }
     }
 
@@ -235,7 +237,8 @@ impl EstimateState {
             }
             Err(e) => {
                 self.workbook = None;
-                self.error = Some(format!("{}: {e}", path.display()));
+                // No path prefix: `xlsx_to_sessions` names the workbook in every error it returns.
+                self.error = Some(e.to_string());
             }
         }
     }

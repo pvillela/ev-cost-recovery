@@ -362,11 +362,23 @@ in `Display` (`src/charges_report.rs:68-133`). Contained. Direct callers are `ap
 `tests/charges_report/real_reports.rs:45` — the latter currently adds the path by hand in its
 `panic!` and can stop.
 
-**2c. `csv_sessions` — named follow-up, not this pass.** Its `Box<dyn Error>` is assembled from
+**2c. `csv_sessions` — deferred, then done the same day.** Its `Box<dyn Error>` was assembled from
 ad-hoc errors raised throughout the row parsing in `src/session/csv.rs`; giving it a structured
-enum is a refactor of that file rather than a patch, and it is pre-existing debt rather than
-something these three commits broke. Its only non-test direct caller is `api::io.rs:623`, so the
-blast radius is small when it is done.
+enum was a refactor of that file rather than a patch, and it was pre-existing debt rather than
+something these three commits broke, so it was held back from this pass and completed immediately
+afterwards.
+
+> `SessionCsvError` now carries `path` on all four of its variants — `Unreadable`,
+> `MissingColumn`, `BadValue`, `Unresolvable` — and formats it at `Display`. No path is string-baked
+> anywhere in the crate any more, and `ReadError`'s doc says so without a caveat.
+>
+> It surfaced one thing the deferral had hidden: `ConversionError::Write` prints the path, on the
+> grounds that workbook writers name no file of their own, and it was also carrying CSV *read*
+> failures — which now name the file themselves. The result was the very `data/x.XML: data/x.XML:`
+> doubling this rule exists to prevent. `ConversionError` gained an `Input` variant that defers to
+> its cause, so a read failure and a write failure are told apart where they are raised rather than
+> where they are printed. That also settles the wrinkle noted in Part 3: a failure to read the
+> input is no longer reported as a failure to write the output.
 
 **Gate:** the two `green_button::read_xml::test` failures pass **with no edit to either test** —
 their assertions are `err.contains("/nonexistent/feed.XML")`, which a `Display` that writes the

@@ -603,8 +603,11 @@ impl Conversion for SessionConversion {
     }
 
     fn run(input: &Path, on_existing: OnExistingWorkbook) -> Result<SessionWorkbook, String> {
-        let report = session_csv_to_xlsx(input, on_existing)
-            .map_err(|e| format!("{}: {e}", input.display()))?;
+        // No path prefix. Every way this can fail names the file already: the two refusals carry
+        // it in `ConversionError`, a write failure carries the workbook's, and a read failure is a
+        // `SessionCsvError` that names the CSV from a field of its own. Adding it here printed it
+        // twice.
+        let report = session_csv_to_xlsx(input, on_existing).map_err(|e| e.to_string())?;
         // The app is the end of the line, so the run log is written here. The library returns what
         // it found and writes nothing; see `Sessions::logs`.
         let log_failure = report.log.write().err().map(|e| {
@@ -632,7 +635,9 @@ impl Conversion for GbConversion {
     }
 
     fn run(input: &Path, on_existing: OnExistingWorkbook) -> Result<GbWriteReport, String> {
-        gb_xml_to_xlsx(input, on_existing).map_err(|e| format!("{}: {e}", input.display()))
+        // No path prefix, for the reason `SessionConversion::run` gives: a read failure here is a
+        // `GbReadError`, which names the export itself.
+        gb_xml_to_xlsx(input, on_existing).map_err(|e| e.to_string())
     }
 }
 

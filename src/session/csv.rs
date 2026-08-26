@@ -31,6 +31,7 @@ use jiff::{
 use std::{
     collections::HashMap,
     error::Error,
+    fmt,
     path::{Path, PathBuf},
     rc::Rc,
     time::Duration,
@@ -58,6 +59,93 @@ const REQUIRED_HEADERS: &[&str] = &[
     "Active_Charge_Time",
     "Energy_Use",
 ];
+
+/// Why a session report CSV could not be read.
+///
+/// Every variant carries the file as a `path` field and writes it at `Display`. Nothing here is
+/// pre-formatted into a string: the row, the column and the offending cell are fields, so a caller
+/// wanting to point at the cell reads them rather than parsing the sentence. The counterparts are
+/// [`GbReadError`](crate::green_button::GbReadError),
+/// [`ChargesReportError`](crate::charges_report::ChargesReportError) and
+/// [`BillError`](crate::hydro_bill::BillError).
+///
+/// Only whole-file failures are here. A per-row *judgement* call is not an error: it is carried on
+/// [`Session::anomalies`] and summarised in the log, because the row still yields a session.
+#[derive(Debug)]
+pub enum SessionCsvError {
+    /// The file could not be opened, or is not a readable CSV.
+    Unreadable { path: PathBuf, cause: ::csv::Error },
+
+    /// A column this reader needs is not there.
+    MissingColumn { path: PathBuf, name: &'static str },
+
+    /// A cell could not be read as the kind of value its column holds.
+    BadValue {
+        path: PathBuf,
+        /// The CSV row, counting the header, so it is the number a spreadsheet shows.
+        row: usize,
+        column: &'static str,
+        value: String,
+        cause: String,
+    },
+
+    /// A reported wall time could not be resolved to an instant.
+    ///
+    /// Distinct from [`Self::BadValue`], which is about a cell that does not parse. Here the cell
+    /// parsed and names a time the calendar cannot place.
+    Unresolvable {
+        path: PathBuf,
+        row: usize,
+        cause: Box<dyn Error>,
+    },
+}
+
+impl SessionCsvError {
+    /// The report the failure is about. Every variant has one: nothing here is checked before the
+    /// file is opened.
+    pub fn path(&self) -> &Path {
+        match self {
+            Self::Unreadable { path, .. }
+            | Self::MissingColumn { path, .. }
+            | Self::BadValue { path, .. }
+            | Self::Unresolvable { path, .. } => path,
+        }
+    }
+}
+
+impl fmt::Display for SessionCsvError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Every arm names the file, from the variant's own `path`. The `csv` crate's errors do not
+        // carry it and a per-row failure knows only its row, so without this a caller is told what
+        // went wrong and left to guess where.
+        write!(f, "{}: ", self.path().display())?;
+        match self {
+            Self::Unreadable { cause, .. } => write!(f, "{cause}"),
+            Self::MissingColumn { name, .. } => write!(f, "missing required column `{name}`"),
+            Self::BadValue {
+                row,
+                column,
+                value,
+                cause,
+                ..
+            } => write!(
+                f,
+                "row {row}, column `{column}`: cannot read {value:?}: {cause}"
+            ),
+            Self::Unresolvable { row, cause, .. } => write!(f, "row {row}: {cause}"),
+        }
+    }
+}
+
+impl Error for SessionCsvError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Unreadable { cause, .. } => Some(cause),
+            Self::Unresolvable { cause, .. } => Some(cause.as_ref()),
+            Self::MissingColumn { .. } | Self::BadValue { .. } => None,
+        }
+    }
+}
 
 /// Reads the session report CSV at `path` and returns the charging sessions it describes, ready
 /// for the peak power contribution logic.
@@ -89,16 +177,11 @@ const REQUIRED_HEADERS: &[&str] = &[
 /// header from the private `REQUIRED_HEADERS` is missing, or a timestamp or duration does not
 /// parse. Per-row judgement calls do not abort the read; they are carried on each
 /// [`Session::anomalies`] and summarised in the log.
-pub fn csv_sessions(path: &Path) -> Result<Sessions, Box<dyn Error>> {
-    // Every error out of this function names the file it concerns, and does so in one place rather
-    // than at each site that raises one. Some underlying errors carry the path and some do not --
-    // the `csv` crate's do not, a per-row parse failure knows only its row -- so a caller could
-    // rely on neither. It can now: the path is here, once, and a caller holding it should not add
-    // it again.
-    read_sessions(path).map_err(|e| format!("{}: {e}", path.display()).into())
+pub fn csv_sessions(path: &Path) -> Result<Sessions, SessionCsvError> {
+    read_sessions(path)
 }
 
-fn read_sessions(path: &Path) -> Result<Sessions, Box<dyn Error>> {
+fn read_sessions(path: &Path) -> Result<Sessions, SessionCsvError> {
     let rows = csv_session_rows(path)?;
     let log = SourceLog {
         source: path.to_path_buf(),
@@ -129,6 +212,10 @@ fn read_sessions(path: &Path) -> Result<Sessions, Box<dyn Error>> {
 /// [`SessionRows::duration`], which keep the header lookup and the parsing on this side of the
 /// boundary.
 pub(super) struct SessionRows {
+    /// The file these came from. Held so that [`SessionRows::duration`], which parses a cell on
+    /// demand, can raise an error that names it — the rest of the parsing is done and gone by the
+    /// time a caller has one of these.
+    path: PathBuf,
     headers: Headers,
     records: Vec<::csv::StringRecord>,
     /// One per output row, in report order. A record duplicated to resolve a DST fold yields two.
@@ -146,12 +233,16 @@ impl SessionRows {
     }
 
     /// The named CSV column for `row` parsed as an elapsed time, or `None` when the cell is blank.
-    pub fn duration(&self, row: &Row, name: &str) -> Result<Option<Duration>, Box<dyn Error>> {
+    pub fn duration(
+        &self,
+        row: &Row,
+        name: &'static str,
+    ) -> Result<Option<Duration>, SessionCsvError> {
         let raw = self.field(row, name);
         if raw.is_empty() {
             return Ok(None);
         }
-        parse_duration(raw, row.record + 2, name).map(Some)
+        parse_duration(raw, &self.path, row.record + 2, name).map(Some)
     }
 }
 
@@ -159,7 +250,7 @@ impl SessionRows {
 ///
 /// Shared by [`csv_sessions`] and [`session_csv_to_xlsx`](crate::session::session_csv_to_xlsx),
 /// which is what makes the two agree by construction rather than by inspection.
-pub(super) fn csv_session_rows(path: &Path) -> Result<SessionRows, Box<dyn Error>> {
+pub(super) fn csv_session_rows(path: &Path) -> Result<SessionRows, SessionCsvError> {
     let tz = time_zone();
     let (headers, records) = read_csv(path)?;
     // One allocation for the file, shared by every session read from it.
@@ -174,7 +265,7 @@ pub(super) fn csv_session_rows(path: &Path) -> Result<SessionRows, Box<dyn Error
         // different number, and it belongs to the workbook: `super::excel` derives it from a
         // session's position in `rows` when it writes one.
         let csv_row = i + 2;
-        let session = CsvSession::parse(&headers, record, csv_row)?;
+        let session = CsvSession::parse(&headers, record, path, csv_row)?;
         for row in session.resolve(&tz, &source, csv_row)? {
             anomalies.extend(row.session.anomalies.iter().map(|&kind| Anomaly {
                 session: row.session.clone(),
@@ -199,6 +290,7 @@ pub(super) fn csv_session_rows(path: &Path) -> Result<SessionRows, Box<dyn Error
     }
 
     Ok(SessionRows {
+        path: path.to_path_buf(),
         headers,
         records,
         rows,
@@ -251,10 +343,16 @@ fn note_off_grid_rows(rows: &[Row], log: &mut RunLog) {
 
 type Headers = HashMap<String, usize>;
 
-fn read_csv(path: &Path) -> Result<(Headers, Vec<::csv::StringRecord>), Box<dyn Error>> {
-    let mut reader = ::csv::Reader::from_path(path)?;
+fn read_csv(path: &Path) -> Result<(Headers, Vec<::csv::StringRecord>), SessionCsvError> {
+    let unreadable = |cause: ::csv::Error| SessionCsvError::Unreadable {
+        path: path.to_path_buf(),
+        cause,
+    };
+
+    let mut reader = ::csv::Reader::from_path(path).map_err(unreadable)?;
     let headers: Headers = reader
-        .headers()?
+        .headers()
+        .map_err(unreadable)?
         .iter()
         .enumerate()
         .map(|(i, h)| (h.trim().to_owned(), i))
@@ -262,11 +360,17 @@ fn read_csv(path: &Path) -> Result<(Headers, Vec<::csv::StringRecord>), Box<dyn 
 
     for required in REQUIRED_HEADERS {
         if !headers.contains_key(*required) {
-            return Err(format!("missing required column `{required}`").into());
+            return Err(SessionCsvError::MissingColumn {
+                path: path.to_path_buf(),
+                name: required,
+            });
         }
     }
 
-    let records = reader.records().collect::<Result<Vec<_>, _>>()?;
+    let records = reader
+        .records()
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(unreadable)?;
     Ok((headers, records))
 }
 
@@ -281,15 +385,24 @@ fn field<'a>(headers: &Headers, record: &'a ::csv::StringRecord, name: &str) -> 
 /// Local time as `YYYY-MM-DD HH:MM`; currently, the report carries no seconds, which is what makes
 /// `adj_conn_end` necessary in the first place. However, if seconds are added in the future,
 /// we want to be able to handle that.
-fn parse_local(s: &str, row: usize, column: &str) -> Result<civil::DateTime, Box<dyn Error>> {
+fn parse_local(
+    s: &str,
+    path: &Path,
+    row: usize,
+    column: &'static str,
+) -> Result<civil::DateTime, SessionCsvError> {
     // 1. Try parsing with seconds first
     if let Ok(dt) = civil::DateTime::strptime("%Y-%m-%d %H:%M:%S", s) {
         return Ok(dt);
     }
 
     // 2. Fall back to parsing without seconds (seconds default to 00)
-    civil::DateTime::strptime("%Y-%m-%d %H:%M", s).map_err(|e| {
-        format!("row {row}, column `{column}`: cannot parse timestamp {s:?}: {e}").into()
+    civil::DateTime::strptime("%Y-%m-%d %H:%M", s).map_err(|e| SessionCsvError::BadValue {
+        path: path.to_path_buf(),
+        row,
+        column,
+        value: s.to_owned(),
+        cause: e.to_string(),
     })
 }
 
@@ -299,9 +412,18 @@ fn parse_local(s: &str, row: usize, column: &str) -> Result<civil::DateTime, Box
 /// rather than carried: `Conn_Duration` and `Active_Charge_Time` are elapsed times, and a negative
 /// one is a malformed cell, not a value to propagate. Only the DST-fold comparison in
 /// [`CsvSession::reproduces_reported_end`] genuinely needs a sign, and it makes its own.
-fn parse_duration(s: &str, row: usize, column: &str) -> Result<Duration, Box<dyn Error>> {
-    let bad = || -> Box<dyn Error> {
-        format!("row {row}, column `{column}`: cannot parse duration {s:?}").into()
+fn parse_duration(
+    s: &str,
+    path: &Path,
+    row: usize,
+    column: &'static str,
+) -> Result<Duration, SessionCsvError> {
+    let bad = || SessionCsvError::BadValue {
+        path: path.to_path_buf(),
+        row,
+        column,
+        value: s.to_owned(),
+        cause: "expected an elapsed time as H:MM:SS".to_owned(),
     };
     let mut parts = s.split(':');
     let (Some(h), Some(m), Some(sec), None) =
@@ -366,33 +488,44 @@ impl CsvSession {
     fn parse(
         headers: &Headers,
         record: &::csv::StringRecord,
+        path: &Path,
         row: usize,
-    ) -> Result<Self, Box<dyn Error>> {
+    ) -> Result<Self, SessionCsvError> {
         let energy_raw = field(headers, record, "Energy_Use");
         Ok(Self {
             id: field(headers, record, "Charge_Session_ID").to_owned(),
             start_local: parse_local(
                 field(headers, record, "Conn_DateTime_Start"),
+                path,
                 row,
                 "Conn_DateTime_Start",
             )?,
             end_local: parse_local(
                 field(headers, record, "Conn_DateTime_End"),
+                path,
                 row,
                 "Conn_DateTime_End",
             )?,
             conn_duration: parse_duration(
                 field(headers, record, "Conn_Duration"),
+                path,
                 row,
                 "Conn_Duration",
             )?,
             active_charge_time: parse_duration(
                 field(headers, record, "Active_Charge_Time"),
+                path,
                 row,
                 "Active_Charge_Time",
             )?,
-            energy_use: energy_raw.parse().map_err(|_| -> Box<dyn Error> {
-                format!("row {row}, column `Energy_Use`: cannot parse number {energy_raw:?}").into()
+            energy_use: energy_raw.parse().map_err(|e: std::num::ParseFloatError| {
+                SessionCsvError::BadValue {
+                    path: path.to_path_buf(),
+                    row,
+                    column: "Energy_Use",
+                    value: energy_raw.to_owned(),
+                    cause: e.to_string(),
+                }
             })?,
         })
     }
@@ -424,7 +557,14 @@ impl CsvSession {
         tz: &TimeZone,
         source: &Rc<PathBuf>,
         row: usize,
-    ) -> Result<Vec<Row>, Box<dyn Error>> {
+    ) -> Result<Vec<Row>, SessionCsvError> {
+        // Every failure below comes out of jiff placing a wall time on the calendar, so they share
+        // one variant. `source` is the file, already allocated once for the whole read.
+        let unresolvable = |cause: jiff::Error| SessionCsvError::Unresolvable {
+            path: source.as_ref().clone(),
+            row,
+            cause: Box::new(cause),
+        };
         // Kinds known before the DST branch runs. They describe the record itself, so on
         // duplication both copies inherit them.
         let mut common = Vec::new();
@@ -449,17 +589,23 @@ impl CsvSession {
         let ambiguous = tz.to_ambiguous_timestamp(self.start_local);
         let starts: Vec<(Timestamp, Option<&str>)> = match ambiguous.offset() {
             AmbiguousOffset::Unambiguous { .. } => {
-                vec![(ambiguous.unambiguous()?, None)]
+                vec![(ambiguous.unambiguous().map_err(unresolvable)?, None)]
             }
             AmbiguousOffset::Gap { .. } => {
                 // A wall time that never occurred. `compatible` moves to just after the gap; the
                 // row is still written, but the shift is reported rather than silently applied.
                 common.push(AnomalyKind::DstGapShifted);
-                vec![(ambiguous.compatible()?, None)]
+                vec![(ambiguous.compatible().map_err(unresolvable)?, None)]
             }
             AmbiguousOffset::Fold { .. } => {
-                let earlier = tz.to_ambiguous_timestamp(self.start_local).earlier()?;
-                let later = tz.to_ambiguous_timestamp(self.start_local).later()?;
+                let earlier = tz
+                    .to_ambiguous_timestamp(self.start_local)
+                    .earlier()
+                    .map_err(unresolvable)?;
+                let later = tz
+                    .to_ambiguous_timestamp(self.start_local)
+                    .later()
+                    .map_err(unresolvable)?;
                 let earlier_fits = self.reproduces_reported_end(tz, earlier);
                 let later_fits = self.reproduces_reported_end(tz, later);
                 match (earlier_fits, later_fits) {
@@ -482,7 +628,7 @@ impl CsvSession {
         starts
             .into_iter()
             .map(|(start_utc, suffix)| {
-                let end_utc = self.resolve_end(tz, start_utc)?;
+                let end_utc = self.resolve_end(tz, start_utc).map_err(unresolvable)?;
                 let mut anomalies = common.clone();
                 if !duration_is_consistent(start_utc, end_utc, self.conn_duration) {
                     anomalies.push(AnomalyKind::InconsistentDuration);
@@ -538,11 +684,7 @@ impl CsvSession {
 
     /// Resolves the reported end to UTC. When the end itself falls in the fold, the candidate
     /// nearest to `start + Conn_Duration` is the one consistent with this session.
-    fn resolve_end(
-        &self,
-        tz: &TimeZone,
-        start_utc: Timestamp,
-    ) -> Result<Timestamp, Box<dyn Error>> {
+    fn resolve_end(&self, tz: &TimeZone, start_utc: Timestamp) -> Result<Timestamp, jiff::Error> {
         let ambiguous = tz.to_ambiguous_timestamp(self.end_local);
         Ok(match ambiguous.offset() {
             AmbiguousOffset::Unambiguous { .. } => ambiguous.unambiguous()?,
@@ -578,19 +720,21 @@ mod test {
             .unwrap()
     }
 
-    /// A stand-in source file for tests that call [`CsvSession::resolve`] directly. Nothing here
-    /// reads it; it is only what the sessions record as where they came from.
+    /// A stand-in source file for tests that call [`CsvSession::resolve`] or the cell parsers
+    /// directly. Nothing here reads it; it is only what the sessions record as where they came
+    /// from, and what an error raised by a parser would name.
     fn test_source() -> Rc<PathBuf> {
         Rc::new(PathBuf::from("Session_Report_Test.csv"))
     }
 
     fn session(start: &str, end: &str, conn: &str) -> CsvSession {
-        let active_charge_time = parse_duration(conn, 1, "Active_Charge_Time").unwrap();
+        let src = test_source();
+        let active_charge_time = parse_duration(conn, &src, 1, "Active_Charge_Time").unwrap();
         CsvSession {
             id: "S1".to_owned(),
             start_local: dt(start),
             end_local: dt(end),
-            conn_duration: parse_duration(conn, 1, "Conn_Duration").unwrap(),
+            conn_duration: parse_duration(conn, &src, 1, "Conn_Duration").unwrap(),
             active_charge_time,
             // 6 kW, under the breaker rating, so a record built here carries only the anomaly the
             // test that built it is about. A flat energy figure would draw far above the rating on
@@ -612,16 +756,25 @@ mod test {
 
     #[test]
     fn durations_parse_including_over_24_hours() {
+        let src = test_source();
         assert_eq!(
-            parse_duration("5:07:53", 1, "d").unwrap(),
+            parse_duration("5:07:53", &src, 1, "d").unwrap(),
             Duration::from_secs(5 * 3600 + 7 * 60 + 53)
         );
         assert_eq!(
-            parse_duration("30:00:00", 1, "d").unwrap(),
+            parse_duration("30:00:00", &src, 1, "d").unwrap(),
             Duration::from_secs(30 * 3600)
         );
-        assert!(parse_duration("5:70:00", 1, "d").is_err());
-        assert!(parse_duration("5:07", 1, "d").is_err());
+        assert!(parse_duration("5:70:00", &src, 1, "d").is_err());
+        assert!(parse_duration("5:07", &src, 1, "d").is_err());
+
+        // A rejected cell names the file, the row, the column and the value it could not read.
+        let err = parse_duration("5:07", &src, 42, "Conn_Duration")
+            .unwrap_err()
+            .to_string();
+        for expected in ["Session_Report_Test.csv", "row 42", "Conn_Duration", "5:07"] {
+            assert!(err.contains(expected), "{expected:?} missing from {err:?}");
+        }
     }
 
     /// `adj_conn_end` is the reported end padded past the end of its minute — the exclusive end of

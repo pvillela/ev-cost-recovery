@@ -51,9 +51,15 @@ that actually went wrong, not a general principle.
 - **Information that reaches a message lives in a field of the error variant, formatted at
   `Display`.** Never `format!("{}: {e}", path.display())` into a `Box<dyn Error>`.
   `BillError` (`src/hydro_bill/bill_pdf.rs`) is the model; `GbReadError`
-  (`src/green_button/read_xml.rs`) and `ChargesReportError` (`src/charges_report.rs`) follow it.
-  `session::csv::csv_sessions` is the one place that still string-bakes a path, and is a known
-  outstanding item.
+  (`src/green_button/read_xml.rs`), `SessionCsvError` (`src/session/csv.rs`) and
+  `ChargesReportError` (`src/charges_report.rs`) follow it. All four readers now do; there is no
+  remaining place in the crate where a path reaches a message by string formatting.
+
+- **A wrapper that adds the path must not wrap a cause that already carries one.** When
+  `SessionCsvError` gained its `path` field, `ConversionError::Write` — which prints the path,
+  because workbook writers name no file of their own — started printing it twice. The fix was to
+  split the variant: `Input` defers to a cause that names its own file, `Write` adds the path to
+  one that does not. Convert a reader to a typed error and the wrappers above it need re-reading.
 
 - **One utility that every caller uses, or none.** A shared helper only half the callers reach is
   two definitions wearing the costume of one. `with_extension("xlsx")` is written out in seven

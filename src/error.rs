@@ -12,16 +12,13 @@ use umya_spreadsheet::XlsxError;
 /// It is declared here, not there, because the modules that *raise* it are the readers themselves.
 ///
 /// `path` is held for a caller that wants to act on which file failed rather than print it, and is
-/// deliberately not written into the message. All four causes name their own file, each from a
-/// `path` field of its own — see [`GbReadError`](crate::green_button::GbReadError),
+/// deliberately not written into the message. All four causes are structured types that name their
+/// own file, each from a `path` field of its own —
+/// [`GbReadError`](crate::green_button::GbReadError),
+/// [`SessionCsvError`](crate::session::csv::SessionCsvError),
 /// [`ChargesReportError`](crate::charges_report::ChargesReportError) and
 /// [`BillError`](crate::hydro_bill::BillError). Writing it here as well produced
 /// `data/x.XML: data/x.XML: ...`.
-///
-/// The one cause that is not yet a structured type is the session reader's: `csv_sessions` returns
-/// `Box<dyn Error>` with the path formatted into the string. That is the last place in the crate
-/// where a path reaches a message without being a field, and it is why this doc says "all four
-/// causes" rather than "all four error types".
 #[derive(Debug)]
 pub enum ReadError {
     /// The Green Button export could not be read, could not be parsed, or carries no reading in
@@ -94,6 +91,14 @@ pub enum ConversionError {
     /// [`OnExistingWorkbook::Replace`](crate::io::OnExistingWorkbook::Replace).
     OutputExists { path: PathBuf },
 
+    /// The input could not be read, so there was nothing to convert.
+    ///
+    /// Distinct from [`Self::Write`], and carrying no `path` of its own: the readers raise typed
+    /// errors that name the file from a field, so adding it here would print it twice. It is here
+    /// rather than in [`ReadError`] because a conversion is a single operation to a caller — one
+    /// call, one error type — and which half of it failed is what these variants are for.
+    Input { cause: Box<dyn Error> },
+
     /// The workbook could not be built or could not be written.
     Write {
         path: PathBuf,
@@ -124,9 +129,12 @@ impl fmt::Display for ConversionError {
                  conversion never overwrites its output unless told to.",
                 path.display()
             ),
-            // The path is written in, unlike `ReadError`'s: the writers name no file of their own,
-            // so without it a caller is told a workbook could not be written and left to guess
-            // which.
+            // Deferred to, exactly like `ReadError`'s: the readers raise typed errors that name
+            // the file from a field of their own.
+            Self::Input { cause } => cause.fmt(f),
+            // The path is written in, unlike the arm above: the *writers* name no file of their
+            // own, so without it a caller is told a workbook could not be written and left to
+            // guess which.
             Self::Write { path, cause } => write!(f, "{}: {cause}", path.display()),
         }
     }
@@ -136,7 +144,7 @@ impl Error for ConversionError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::OutputWouldBeInput { .. } | Self::OutputExists { .. } => None,
-            Self::Write { cause, .. } => Some(cause.as_ref()),
+            Self::Input { cause } | Self::Write { cause, .. } => Some(cause.as_ref()),
         }
     }
 }

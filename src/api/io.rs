@@ -651,7 +651,7 @@ fn read_sessions(paths: &[&Path]) -> Result<Sessions, ReadError> {
         reports.push(
             csv_sessions(path).map_err(|cause| ReadError::SessionReport {
                 path: path.to_path_buf(),
-                cause,
+                cause: Box::new(cause),
             })?,
         );
     }
@@ -663,6 +663,41 @@ mod test {
     use super::*;
     use crate::{api::error::CoverageError, hydro_bill::billing_period_dates, time::Tou};
     use jiff::civil::date;
+
+    /// A file that cannot be read is named exactly once, whichever reader raised it.
+    ///
+    /// Every reader now carries the path as a field and writes it at `Display`, and every wrapper
+    /// above them defers rather than adding its own. Both halves are easy to get right in
+    /// isolation and wrong together: a wrapper that adds the path to a cause that already carries
+    /// one produces `data/x.XML: data/x.XML: ...`, and nothing in the type system notices. This
+    /// counts.
+    #[test]
+    fn a_source_file_is_named_once_in_the_error_that_could_not_read_it() {
+        let missing = Path::new("/nonexistent/no_such_file.XML");
+        let name = "no_such_file.XML";
+
+        let gb = gb_xml_to_xlsx(missing, OnExistingWorkbook::Refuse)
+            .unwrap_err()
+            .to_string();
+        assert_eq!(gb.matches(name).count(), 1, "green button: {gb}");
+
+        let missing_csv = Path::new("/nonexistent/no_such_file.csv");
+        let sessions = read_sessions(&[missing_csv]).unwrap_err().to_string();
+        assert_eq!(
+            sessions.matches("no_such_file.csv").count(),
+            1,
+            "session report: {sessions}"
+        );
+
+        let conversion = session_csv_to_xlsx(missing_csv, OnExistingWorkbook::Refuse)
+            .unwrap_err()
+            .to_string();
+        assert_eq!(
+            conversion.matches("no_such_file.csv").count(),
+            1,
+            "session conversion: {conversion}"
+        );
+    }
 
     /// The two refusals a conversion makes before opening anything, and the case that passes.
     ///

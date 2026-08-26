@@ -162,17 +162,23 @@ const COLUMNS: &[(&str, Source)] = &[
 /// Per-row judgement calls do not abort the conversion; they are collected in
 /// [`SessionWriteReport::anomalies`].
 pub fn session_csv_to_xlsx(path: &Path) -> Result<SessionWriteReport, ConversionError> {
-    // The path, once, for every way this can fail. See `csv::csv_sessions` for why it is done here
-    // rather than at each site.
-    convert_session_csv(path).map_err(|cause| ConversionError::Write {
-        path: path.to_path_buf(),
+    // The two halves are kept apart. Reading the CSV yields a `SessionCsvError`, which names the
+    // file from its own `path` field, so it goes into `Input` -- a variant that adds nothing and
+    // would otherwise print the path twice. Only the writing half goes into `Write`, which does
+    // add the path, because the workbook writers name no file of their own.
+    let rows = csv_session_rows(path).map_err(|cause| ConversionError::Input {
+        cause: Box::new(cause),
+    })?;
+    write_session_xlsx(path, rows).map_err(|cause| ConversionError::Write {
+        path: path.with_extension("xlsx"),
         cause,
     })
 }
 
-fn convert_session_csv(path: &Path) -> Result<SessionWriteReport, Box<dyn Error>> {
-    let rows = csv_session_rows(path)?;
-
+fn write_session_xlsx(
+    path: &Path,
+    rows: SessionRows,
+) -> Result<SessionWriteReport, Box<dyn Error>> {
     let output_path = path.with_extension("xlsx");
     let mut book = umya_spreadsheet::new_file();
     write_sheet(&mut book, &output_path, &rows)?;
