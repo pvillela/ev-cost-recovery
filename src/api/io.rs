@@ -22,14 +22,15 @@
 use crate::{
     api::pure,
     charges_report::charges_report,
-    green_button::{parse_espi_xml, read_gb_xml, write_gb_workbook},
+    error::ReadError,
+    green_button::{read_gb_feed, read_gb_for_billing_period, write_gb_workbook},
     hydro_bill::{BILL_END_DAY, hydro_bill_from_pdf},
     session::{self, Sessions, csv::csv_sessions},
 };
 use jiff::civil::Date;
 use std::{
     error::Error,
-    fmt, fs,
+    fmt,
     path::{Path, PathBuf},
 };
 
@@ -96,12 +97,10 @@ pub fn peak_power(
     // caller who has handed in the wrong month finds out before a byte is parsed.
     pure::check_reports_cover_period(billing_period_ending, &[session_csv1, session_csv2])?;
 
-    let gb_period_values =
-        read_gb_xml(gb_xml, billing_period_ending, BILL_END_DAY).map_err(|cause| {
-            ReadError::GreenButton {
-                path: gb_xml.to_path_buf(),
-                cause,
-            }
+    let gb_period_values = read_gb_for_billing_period(gb_xml, billing_period_ending, BILL_END_DAY)
+        .map_err(|cause| ReadError::GreenButton {
+            path: gb_xml.to_path_buf(),
+            cause,
         })?;
     let sessions = read_sessions(&[session_csv1, session_csv2])?;
 
@@ -162,12 +161,10 @@ pub fn peak_power_cost(
     // before a year of meter readings is.
     pure::check_reports_cover_period(billing_period_ending, &[session_csv1, session_csv2])?;
 
-    let gb_period_values =
-        read_gb_xml(gb_xml, billing_period_ending, BILL_END_DAY).map_err(|cause| {
-            ReadError::GreenButton {
-                path: gb_xml.to_path_buf(),
-                cause,
-            }
+    let gb_period_values = read_gb_for_billing_period(gb_xml, billing_period_ending, BILL_END_DAY)
+        .map_err(|cause| ReadError::GreenButton {
+            path: gb_xml.to_path_buf(),
+            cause,
         })?;
     let sessions = read_sessions(&[session_csv1, session_csv2])?;
 
@@ -366,12 +363,10 @@ pub fn cost_recovery_surplus(
 
     pure::check_reports_cover_period(billing_period_ending, &[session_csv1, session_csv2])?;
 
-    let gb_period_values =
-        read_gb_xml(gb_xml, billing_period_ending, BILL_END_DAY).map_err(|cause| {
-            ReadError::GreenButton {
-                path: gb_xml.to_path_buf(),
-                cause,
-            }
+    let gb_period_values = read_gb_for_billing_period(gb_xml, billing_period_ending, BILL_END_DAY)
+        .map_err(|cause| ReadError::GreenButton {
+            path: gb_xml.to_path_buf(),
+            cause,
         })?;
     let sessions = read_sessions(&[session_csv1, session_csv2])?;
 
@@ -543,19 +538,13 @@ pub fn session_csv_to_xlsx(
 /// and either way it is settled before the export is opened — which matters more here than for a
 /// session report, since parsing a multi-year export is not quick.
 pub fn gb_xml_to_xlsx(
-    gb_xml: &Path,
+    xml_path: &Path,
     on_existing: OnExistingWorkbook,
 ) -> Result<GbWriteReport, ApiError> {
-    let output_path = checked_workbook_path(gb_xml, gb_xml.with_extension("xlsx"), on_existing)?;
+    let output_path =
+        checked_workbook_path(xml_path, xml_path.with_extension("xlsx"), on_existing)?;
 
-    let xml = fs::read_to_string(gb_xml).map_err(|cause| ReadError::GreenButton {
-        path: gb_xml.to_path_buf(),
-        cause: Box::new(cause),
-    })?;
-    let feed = parse_espi_xml(&xml).map_err(|cause| ReadError::GreenButton {
-        path: gb_xml.to_path_buf(),
-        cause,
-    })?;
+    let feed = read_gb_feed(xml_path)?;
 
     let written = write_gb_workbook(&output_path, &feed, BILL_END_DAY).map_err(|cause| {
         ApiError::Conversion(ConversionError::Write {
@@ -573,68 +562,6 @@ pub fn gb_xml_to_xlsx(
 // The two kinds this module raises on its own rather than passing on from `pure`. Both reach a
 // caller inside the `ApiError` every function above returns, so neither is named in a signature --
 // which is why they sit below the functions rather than above them.
-
-/// A source file could not be read.
-///
-/// One of the two error kinds this module raises on its own. Everything else it returns comes from
-/// a pure function it delegated to.
-///
-/// `path` is held for a caller that wants to act on which file failed rather than print it. It is
-/// deliberately *not* written into the message: both readers name the file they concern, so adding
-/// it here produced `data/x.XML: data/x.XML: ...`.
-#[derive(Debug)]
-pub enum ReadError {
-    /// The Green Button export could not be read, could not be parsed, or carries no reading in
-    /// the billing period asked for.
-    GreenButton {
-        path: PathBuf,
-        cause: Box<dyn Error>,
-    },
-
-    /// A session report could not be read.
-    SessionReport {
-        path: PathBuf,
-        cause: Box<dyn Error>,
-    },
-
-    /// Evolute's Charges Report could not be read, or is not one.
-    ChargesReport {
-        path: PathBuf,
-        cause: Box<dyn Error>,
-    },
-
-    /// A Toronto Hydro bill PDF could not be read, or is not laid out the way one is read.
-    ///
-    /// [`BillError::is_layout`](crate::hydro_bill::BillError::is_layout) tells those two apart,
-    /// and `cause` downcasts to [`BillError`](crate::hydro_bill::BillError) for a caller that
-    /// wants to ask.
-    Bill {
-        path: PathBuf,
-        cause: Box<dyn Error>,
-    },
-}
-
-impl fmt::Display for ReadError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::GreenButton { cause, .. }
-            | Self::SessionReport { cause, .. }
-            | Self::ChargesReport { cause, .. }
-            | Self::Bill { cause, .. } => cause.fmt(f),
-        }
-    }
-}
-
-impl Error for ReadError {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        match self {
-            Self::GreenButton { cause, .. }
-            | Self::SessionReport { cause, .. }
-            | Self::ChargesReport { cause, .. }
-            | Self::Bill { cause, .. } => Some(cause.as_ref()),
-        }
-    }
-}
 
 /// A workbook could not be produced from the file it was to be converted from.
 ///

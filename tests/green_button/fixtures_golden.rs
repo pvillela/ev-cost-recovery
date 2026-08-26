@@ -32,7 +32,7 @@
 
 use super::{fixture, fixtures_dir};
 use ev_cost_recovery::{
-    green_button::{parse_espi_xml, write_gb_workbook},
+    green_button::{for_test::parse_espi_xml, write_gb_workbook},
     hydro_bill::BILL_END_DAY,
 };
 use std::{cmp, env, fmt::Write as _, fs, path::Path, process};

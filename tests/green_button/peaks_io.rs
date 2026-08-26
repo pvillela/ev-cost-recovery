@@ -6,7 +6,7 @@
 //! row of zeroes.
 
 use ev_cost_recovery::{
-    green_button::{parse_espi_xml, period_values, read_gb_xml},
+    green_button::{for_test::parse_espi_xml, period_values, read_gb_for_billing_period},
     hydro_bill::BILL_END_DAY,
 };
 use jiff::civil::date;
@@ -31,7 +31,7 @@ fn the_packaged_call_matches_the_long_hand_pipeline() {
         .find(|p| p.period.ending == ending)
         .expect("the fixture carries the billed period");
 
-    let actual = read_gb_xml(&path, ending, BILL_END_DAY).unwrap();
+    let actual = read_gb_for_billing_period(&path, ending, BILL_END_DAY).unwrap();
 
     assert_eq!(actual.period, expected.period);
     assert_eq!(actual.interval_count, expected.interval_count);
@@ -50,7 +50,7 @@ fn the_packaged_call_matches_the_long_hand_pipeline() {
 /// A period the export does not reach is an error, and the error says what the export does cover.
 #[test]
 fn a_period_outside_the_export_is_an_error_naming_what_is_there() {
-    let err = read_gb_xml(
+    let err = read_gb_for_billing_period(
         &fixture("billed_period.XML"),
         date(2020, 1, 23),
         BILL_END_DAY,

@@ -10,7 +10,7 @@
 //! The fast-tier fixtures each prove one rule in isolation; this is the only check that the rules
 //! hold together over the whole dataset.
 
-use ev_cost_recovery::green_button::{Anomaly, parse_espi_xml};
+use ev_cost_recovery::green_button::{Anomaly, for_test::parse_espi_xml};
 use std::{fs, path::PathBuf};
 
 fn feed_path() -> PathBuf {

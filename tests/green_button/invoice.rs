@@ -8,7 +8,7 @@
 //! fixture carries in full.
 
 use ev_cost_recovery::{
-    green_button::{parse_espi_xml, period_values},
+    green_button::{for_test::parse_espi_xml, period_values},
     hydro_bill::BILL_END_DAY,
     time::{Interval, Tou, tou_of},
 };

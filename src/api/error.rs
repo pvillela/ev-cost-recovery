@@ -21,7 +21,7 @@ use std::{
 // module that hands out the union has to hand out what its variants carry. Nothing deeper: the
 // fields inside those payloads can be read without being named.
 pub use crate::api::{
-    io::{ConversionError, ReadError},
+    io::ConversionError,
     pure::{
         additional::ReimbursementError,
         coverage::CoverageError,
@@ -30,6 +30,7 @@ pub use crate::api::{
         recovery::{CostRecoveryError, CostRecoverySurplusError},
     },
 };
+use crate::error::ReadError;
 
 /// Every way an API call can fail, in one type, by the stage that failed.
 #[derive(Debug)]

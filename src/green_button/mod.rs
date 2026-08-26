@@ -6,7 +6,8 @@ mod common;
 pub use common::*;
 
 mod espi;
-pub use espi::*;
+pub use espi::Feed;
+use espi::*;
 
 mod excel;
 pub use excel::*;
@@ -16,3 +17,7 @@ pub use peaks::*;
 
 mod read_xml;
 pub use read_xml::*;
+
+pub mod for_test {
+    pub use super::espi::*;
+}

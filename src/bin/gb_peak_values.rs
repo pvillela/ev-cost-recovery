@@ -1,14 +1,13 @@
 //! Turns a Toronto Hydro Green Button export into the peak-values workbook.
 
 use ev_cost_recovery::{
-    green_button::{Feed, parse_espi_xml, write_gb_workbook},
+    green_button::{Feed, read_gb_feed, write_gb_workbook},
     hydro_bill::{BILL_END_DAY, bill_start_day},
     time::{holidays, local_date},
 };
 use std::{
     env,
     error::Error,
-    fs,
     path::{Path, PathBuf},
     process::ExitCode,
 };
@@ -83,8 +82,7 @@ fn run(input: &Path) -> Result<(), Box<dyn Error>> {
         .into());
     }
 
-    let xml = fs::read_to_string(input).map_err(|e| format!("{}: {e}", input.display()))?;
-    let feed = parse_espi_xml(&xml)?;
+    let feed = read_gb_feed(input)?;
 
     report_holidays(&feed);
 

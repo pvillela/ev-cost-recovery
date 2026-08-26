@@ -5,7 +5,8 @@
 //! the feed does not reach that period rather than handed nothing. This module is that call.
 
 use crate::{
-    green_button::{PeriodValues, Readings, parse_espi_xml, period_values},
+    error::ReadError,
+    green_button::{Feed, PeriodValues, Readings, parse_espi_xml, period_values},
     hydro_bill::MAX_BILL_END_DAY,
     time::local_date,
 };
@@ -32,19 +33,13 @@ use std::{error::Error, fs, path::Path};
 /// `1..=MAX_BILL_END_DAY`, or if the feed carries no reading in the period asked for. The last is
 /// an error rather than an empty row: a caller checking an invoice against a period the export
 /// does not reach needs to be told so, not handed zeroes.
-pub fn read_gb_xml(
+pub fn read_gb_for_billing_period(
     xml_path: &Path,
     period_ending: Date,
     bill_end_day: i8,
 ) -> Result<PeriodValues, Box<dyn Error>> {
     check_calendar(period_ending, bill_end_day)?;
-
-    // Every error out of this function names the file it concerns, including the ones below where
-    // the underlying error would not: a bare "No such file or directory" says nothing a reader can
-    // act on. A caller that has the path already should therefore not add it again.
-    let xml = fs::read_to_string(xml_path).map_err(|e| format!("{}: {e}", xml_path.display()))?;
-    let feed = parse_espi_xml(&xml).map_err(|e| format!("{}: {e}", xml_path.display()))?;
-    // The one place that knows which file these came from, since `parse` is handed a string.
+    let feed = read_gb_feed(xml_path)?;
     let readings = feed.readings().from_source(xml_path);
 
     // `period_values` already scopes each period's anomaly counts to that period, so picking the
@@ -61,6 +56,17 @@ pub fn read_gb_xml(
             )
             .into()
         })
+}
+
+pub fn read_gb_feed(xml_path: &Path) -> Result<Feed, ReadError> {
+    let xml = fs::read_to_string(xml_path).map_err(|cause| ReadError::GreenButton {
+        path: xml_path.to_path_buf(),
+        cause: Box::new(cause),
+    })?;
+    parse_espi_xml(&xml).map_err(|cause| ReadError::GreenButton {
+        path: xml_path.to_path_buf(),
+        cause,
+    })
 }
 
 /// Rejects a `period_ending` and `bill_end_day` that cannot describe the same calendar.
@@ -112,7 +118,7 @@ mod test {
     /// The arguments are checked before the file is, so a mismatched calendar is reported as such
     /// rather than as a missing file.
     fn err_for(ending: Date, bill_end_day: i8) -> String {
-        read_gb_xml(
+        read_gb_for_billing_period(
             &PathBuf::from("/nonexistent/feed.XML"),
             ending,
             bill_end_day,
@@ -155,7 +161,7 @@ mod test {
         if !xml.exists() {
             return; // The export is not in every checkout.
         }
-        let values = read_gb_xml(xml, date(2026, 6, 23), BILL_END_DAY)
+        let values = read_gb_for_billing_period(xml, date(2026, 6, 23), BILL_END_DAY)
             .expect("the export covers the June 2026 period");
         assert_eq!(values.source.as_deref(), Some(xml));
     }
