@@ -1,7 +1,7 @@
 //! EV delivery cost for one billing period, from a Toronto Hydro bill, a Green Button export and
 //! the Evolute session reports covering the period's two ends.
 
-use ev_cost_recovery::io::peak_power_cost;
+use ev_cost_recovery::api::peak_power_cost;
 use std::{env, error::Error, path::Path, process::ExitCode};
 
 const USAGE: &str = "\

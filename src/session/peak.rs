@@ -6,7 +6,7 @@ use std::{error::Error, path::PathBuf, rc::Rc};
 ///
 /// `Debug` prints every segment and every session, which is a great deal of output. It is derived
 /// because callers holding one inside a result of their own need it —
-/// [`DeliveryCost`](crate::pure::peak_power::DeliveryCost) does — and because `Result::expect_err`
+/// [`DeliveryCost`](crate::api::pure::DeliveryCost) does — and because `Result::expect_err`
 /// requires it of any such result.
 #[derive(Debug)]
 pub struct IntervalEstimates {
@@ -15,7 +15,7 @@ pub struct IntervalEstimates {
     /// produced it.
     ///
     /// More than one when the estimate spans a billing period, which needs the two monthly session
-    /// reports covering its ends. See [`api::pure::peak_power`](mod@crate::pure::peak_power).
+    /// reports covering its ends. See [`api::pure::peak_power`](crate::api::pure::peak_power).
     pub sources: Vec<PathBuf>,
     /// Interval of interest.
     pub interval: Interval,

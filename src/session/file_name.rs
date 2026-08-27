@@ -10,7 +10,9 @@
 //! [`Session`](super::Session)s, and this one never gets that far.
 //!
 //! What billing period the dates read here have to cover is not a question about a file name, so it
-//! is not answered here. [`api::pure::coverage`](crate::pure::coverage) joins the two.
+//! is not answered here.
+//! [`api::pure::check_reports_cover_period`](crate::api::pure::check_reports_cover_period) joins
+//! the two.
 
 use jiff::civil::Date;
 use std::path::{Path, PathBuf};

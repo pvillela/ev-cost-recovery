@@ -6,7 +6,7 @@
 //! tested here.
 
 use ev_cost_recovery::{
-    io::{
+    api::{
         CostRecoveryRates, CostRecoverySurplus, GbWriteReport, OnExistingWorkbook,
         ReimbursementReconciliation, cost_recovery_surplus, gb_xml_to_xlsx,
         reconcile_evolute_reimbursement, session_csv_to_xlsx,

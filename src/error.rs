@@ -6,7 +6,7 @@
 //! [`write_gb_workbook`](crate::green_button::write_gb_workbook), neither of which depends on the
 //! API, so it cannot live in `api::error` without pointing that arrow the wrong way.
 //!
-//! [`ReadError`](crate::io::ReadError) was here too, briefly. It failed the same test in the other
+//! [`ReadError`](crate::api::ReadError) was here too, briefly. It failed the same test in the other
 //! direction — nothing outside `api::io` ever built one — and is declared with the API again.
 
 use std::{
@@ -35,14 +35,14 @@ pub enum ConversionError {
     /// Refusing is the default rather than a courtesy: the figures in these workbooks get
     /// reconciled against real invoices by hand, and a silent overwrite is how that work is lost.
     /// Move the existing file, delete it, or call again with
-    /// [`OnExistingWorkbook::Replace`](crate::io::OnExistingWorkbook::Replace).
+    /// [`OnExistingWorkbook::Replace`](crate::api::OnExistingWorkbook::Replace).
     OutputExists { path: PathBuf },
 
     /// The input could not be read, so there was nothing to convert.
     ///
     /// Distinct from [`Self::Write`], and carrying no `path` of its own: the readers raise typed
     /// errors that name the file from a field, so adding it here would print it twice. It is here
-    /// rather than in [`ReadError`](crate::io::ReadError) because a conversion is a single
+    /// rather than in [`ReadError`](crate::api::ReadError) because a conversion is a single
     /// operation to a caller — one
     /// call, one error type — and which half of it failed is what these variants are for.
     Input { cause: Box<dyn Error> },

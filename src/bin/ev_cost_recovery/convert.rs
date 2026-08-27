@@ -12,7 +12,7 @@ use crate::{
     theme, widgets,
 };
 use eframe::egui;
-use ev_cost_recovery::io::{GbWriteReport, OnExistingWorkbook};
+use ev_cost_recovery::api::{GbWriteReport, OnExistingWorkbook};
 use std::path::Path;
 
 pub fn ui(ui: &mut egui::Ui, state: &mut ConvertState, working: &mut WorkingDir) {

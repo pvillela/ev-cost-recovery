@@ -21,9 +21,10 @@ use crate::{
 use jiff::civil::Date;
 use std::{error::Error, fmt};
 
-// Re-exported because the two functions here take these and return those, and a caller should not
-// have to know which module they come from in order to spell the call. `Tou` for the same reason
-// one level down: it is what `EnergyError::NoRate` carries, and matching on that names it.
+// Re-exported because the two functions here take these, and a caller should not have to know
+// which module they come from in order to spell the call. `Tou`, which `EnergyError::NoRate`
+// carries, is not among them: `time` is a public module in its own right, so matching on that
+// variant does not need it re-exported here.
 pub use crate::{hydro_bill::HydroBill, session::Sessions};
 
 /// EV energy over a billing period, split by time-of-use band.

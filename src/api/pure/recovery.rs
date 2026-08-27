@@ -23,9 +23,9 @@ use crate::{
 use jiff::{Timestamp, civil::Date};
 use std::{error::Error, fmt, mem};
 
-// Through `super`, not through `crate::io`. The two cost breakdowns are computed here in `pure`;
-// reaching them by the path `io` re-exports them under would point this half of the API at the
-// other, which is the one direction the split exists to prevent.
+// Through `super`, not through `crate::api`. The two cost breakdowns are computed here in `pure`;
+// reaching them by the path the reading half re-exports them under would point this half of the
+// API at the other, which is the one direction the split exists to prevent.
 use super::{
     energy::{EnergyCost, EnergyError, energy_cost},
     peak_power::{DeliveryCost, PeakPowerError, peak_power_cost},

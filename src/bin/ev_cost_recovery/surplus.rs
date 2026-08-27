@@ -5,7 +5,7 @@ use crate::{
     theme, widgets,
 };
 use eframe::egui;
-use ev_cost_recovery::io::CostRecoverySurplus;
+use ev_cost_recovery::api::CostRecoverySurplus;
 use std::fs;
 
 pub fn ui(ui: &mut egui::Ui, state: &mut SurplusState, working: &mut WorkingDir) {

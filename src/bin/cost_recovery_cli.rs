@@ -1,7 +1,7 @@
 //! Cost recovery for one billing period, at the EV cost-recovery rates given, from the Evolute
 //! session reports covering the period's two ends.
 
-use ev_cost_recovery::io::{CostRecoveryRates, cost_recovery};
+use ev_cost_recovery::api::{CostRecoveryRates, cost_recovery};
 use jiff::civil::Date;
 use std::{env, error::Error, path::Path, process::ExitCode};
 

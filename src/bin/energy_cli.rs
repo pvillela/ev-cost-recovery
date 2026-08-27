@@ -1,7 +1,7 @@
 //! EV energy for one billing period, from the Evolute session reports covering the period's two
 //! ends.
 
-use ev_cost_recovery::io::energy;
+use ev_cost_recovery::api::energy;
 use jiff::civil::Date;
 use std::{env, error::Error, path::Path, process::ExitCode};
 

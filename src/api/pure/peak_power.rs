@@ -32,9 +32,10 @@ use crate::{
 use jiff::civil::Date;
 use std::{error::Error, fmt};
 
-// Re-exported because `peak_power` and `peak_power_cost` take them. `IntervalEstimates` is
-// deliberately not: it is inside `PowerEstimates` and `PricedInterval` rather than named by either
-// signature, and a reader who probes that far can go to `session` for it.
+// Re-exported because `peak_power` and `peak_power_cost` take them. `IntervalEstimates` and
+// `MeterNotes` are deliberately not: they sit inside `PowerEstimates` and `PricedInterval` rather
+// than being named by either signature, and a reader who probes that far can go to `session` or
+// `green_button` for them.
 pub use crate::{green_button::PeriodValues, hydro_bill::HydroBill, session::Sessions};
 
 /// Peak power estimates for a billing period.
@@ -244,7 +245,7 @@ impl Error for PeakPowerError {
 /// Returns peak power estimates for the intervals of interest that maximize kW and kVA in the
 /// specified billing period.
 ///
-/// The reading half of the same call is [`io::peak_power`](crate::io::peak_power), which is where
+/// The reading half of the same call is [`api::peak_power`](crate::api::peak_power), which is where
 /// these arguments come from. This is everything that call does once the meter export and the
 /// session reports have been read.
 ///
@@ -336,7 +337,7 @@ const BILLED_DAYS_PER_MONTH: f64 = 30.0;
 /// Pure throughout, as [`fn@peak_power`] is: this is everything the call does once the meter
 /// export, the session reports and the bill have been read. There is no `io` counterpart yet, so a
 /// caller reads the bill with [`hydro_bill_from_pdf`](crate::hydro_bill::hydro_bill_from_pdf) and
-/// the rest as [`io::peak_power`](crate::io::peak_power) does.
+/// the rest as [`api::peak_power`](crate::api::peak_power) does.
 ///
 /// # How the figure is arrived at
 ///

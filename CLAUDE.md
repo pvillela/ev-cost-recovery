@@ -76,9 +76,24 @@ that actually went wrong, not a general principle.
 
 - **An error type belongs where it is *raised*, not where it is rendered.** `crate::error` holds
   what a library module returns — `ConversionError`, raised by both workbook writers, neither of
-  which depends on the API. `ReadError` is built only by `api::io`, so it lives in `api::error`
-  beside the union it collapses into and is re-exported from `io`. Moving both together looked
-  tidy and was half wrong.
+  which depends on the API. `ReadError` is built only by the API's `io` half, so it lives in
+  `api::error` beside the union it collapses into. Moving both together looked tidy and was half
+  wrong.
+
+- **Where a module sits is settled by what its contents must be nameable as, not by what reads
+  tidily in `lib.rs`.** `api::error` was kept private and its siblings re-exported one level up, to
+  stop `api::error` colliding with `crate::error`. That left `ReadError` — `ApiError::Read`'s
+  payload — with no path at all: private module, and `io` no longer re-exporting it. A caller could
+  match `ApiError::Read(_)` and not one thing further. The fix was `pub mod api` with `io` and
+  `error` private inside it, so there is no second `error` to collide and no module segment a
+  caller has to guess. **`cargo doc` is where this shows up** — "public documentation for `io`
+  links to private item `ReadError`" is a *warning*, not an error, so `cargo check` stays green
+  while the type is unreachable.
+
+- **A `pub use` publishes a type as surely as a `pub struct` does.** Surveying what external files
+  *name* will not find it. See `docs/public-surface-usage.md`, whose list of 49 was nine short for
+  exactly this reason. To decide what may go private, take such a list as the floor and let
+  `cargo check` add the rest: it refuses a `pub use` of a `pub(crate)` item (`E0365`).
 
 - **An error type is only as public as the function that returns it needs it to be.** Of the four
   readers, only `BillError` has a real external consumer — `hydro_bill_dump` calls `is_layout()` to

@@ -9,7 +9,7 @@ use crate::{
     theme, widgets,
 };
 use eframe::egui;
-use ev_cost_recovery::io::ReimbursementReconciliation;
+use ev_cost_recovery::api::ReimbursementReconciliation;
 use std::fs;
 
 pub fn ui(ui: &mut egui::Ui, state: &mut ReimbursementState, working: &mut WorkingDir) {

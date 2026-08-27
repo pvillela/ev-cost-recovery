@@ -29,7 +29,7 @@ use crate::error::ConversionError;
 /// A source file could not be read.
 ///
 /// Here rather than in [`crate::error`], which holds what the library modules raise: nothing
-/// outside [`io`](crate::io) ever builds one of these. Each variant wraps what the corresponding
+/// outside the API's `io` half ever builds one of these. Each variant wraps what the corresponding
 /// reader returned, so this is the API's own vocabulary for "an input could not be read", not a
 /// type any reader knows about. [`ConversionError`](crate::error::ConversionError), which
 /// travelled here with it once, stayed behind — the two workbook writers do raise that.

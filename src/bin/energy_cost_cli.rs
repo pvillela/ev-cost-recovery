@@ -1,7 +1,7 @@
 //! EV energy cost for one billing period, from a Toronto Hydro bill and the Evolute session reports
 //! covering the period's two ends.
 
-use ev_cost_recovery::io::energy_cost;
+use ev_cost_recovery::api::energy_cost;
 use std::{env, error::Error, path::Path, process::ExitCode};
 
 const USAGE: &str = "\

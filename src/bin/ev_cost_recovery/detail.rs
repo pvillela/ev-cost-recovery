@@ -8,7 +8,7 @@ use crate::{
     theme, widgets,
 };
 use eframe::egui;
-use ev_cost_recovery::{pure::PricedInterval, time::time_zone};
+use ev_cost_recovery::{api::pure::PricedInterval, time::time_zone};
 use jiff::Zoned;
 use std::fs;
 

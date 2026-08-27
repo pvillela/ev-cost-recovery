@@ -18,11 +18,12 @@
 //! end.
 //!
 //! Two error types sit either side of this file, and which side follows from who *raises* them.
-//! [`ReadError`] is the API's own: nothing outside this file builds one, so it is declared beside
-//! [`ApiError`], the union it collapses into, and re-exported here because it is what a caller
-//! must name to match past `ApiError::Read`. [`ConversionError`] is
-//! the crate's, in [`crate::error`], because the two workbook writers return it and neither knows
-//! this module exists.
+//! [`ReadError`] is the API's own: nothing outside this file builds one, so it is declared in
+//! `api::error` beside [`ApiError`], the union it collapses into, and reaches a caller at
+//! [`api`](super) along with everything here. [`ConversionError`] is the crate's, in
+//! [`crate::error`], because the two workbook writers return it and neither knows this module
+//! exists — which is also why it is not re-exported below: its own module is public, so a caller
+//! matching past `ApiError::Conversion` can already name it.
 //!
 //! # The seam, if a pure conversion is ever wanted
 //!
@@ -55,9 +56,6 @@ pub use crate::{
             PowerEstimates, ReimbursementReconciliation,
         },
     },
-    // `ApiError::Conversion`'s payload, so a caller matching past the first level has to be able
-    // to name it. Its home is `crate::error`, where the two conversions that raise it find it;
-    // this is the same type under the API's own path.
     green_button::GbWriteReport,
     session::SessionWriteReport,
 };

@@ -43,6 +43,12 @@ That gap was found by using this document, on 2026-08-27, to write the `pub use`
 | `session::EstimateSet` | re-exported by `pure::peak_power` |
 | `time::Tou` | re-exported by `pure::energy`; `TouKwh` is keyed on it |
 
+The "why" column is as of 2026-08-27 morning. Later that day the `api` rework (`f70ac4a`, `bb59cf2`)
+narrowed the re-exports to what each signature actually names, so `RSession`, `EstimateSet`,
+`MeterNotes` and `Tou` are no longer published by `api` at all — each is now reached only through
+its own module. **The lesson the table teaches is unchanged, and is the point of keeping it: a
+`pub use` is a publication, and a survey of what external code *writes* cannot see one.**
+
 The compiler catches every one, as `E0365: only public within the crate, and cannot be re-exported
 outside`. So the practical procedure is: take the list below as the floor, write the `pub use`
 lists, and let `cargo check` add the rest. It will not let a `pub use` of a `pub(crate)` item
@@ -202,17 +208,28 @@ crate root; the explicit `pub mod error` shadowed it. So `ev_cost_recovery::erro
 module holding `ConversionError`, and `ApiError` and `ReadError` were reachable only because
 `api::io` re-exports them. No consumer noticed, because all 15 `io` paths above go through `io`.
 
-*Settled 2026-08-27.* The glob is gone; `lib.rs` re-exports `api`'s children by name and leaves
-`api::error` out, so the collision cannot arise and `ev_cost_recovery::io::…` still resolves.
-`ConversionError` was added to `io`'s re-exports, being `ApiError::Conversion`'s payload — the rule
-in `api/mod.rs` had always asked for that, and the type was nameable only because `pub mod error`
-happened to be there.
+*Settled 2026-08-27, twice.* The first attempt kept `api` private and re-exported `io` and `pure`
+from `lib.rs` by name, so that `ev_cost_recovery::io::…` still resolved and the collision could not
+arise. That left `ReadError` — `ApiError::Read`'s payload — reachable by no path at all, because
+`api::error` was private and `io` had stopped re-exporting it. Dodging a name collision had cost a
+type its only route to a caller.
 
-**`pure` is `pub mod` per operation by design, and one caller uses it that way.** `api/mod.rs`
-argues that "the unit of import is the operation, not the type", which is why
-`pure::{additional, coverage, energy, peak_power, recovery}` are each `pub mod`. One import out of
-26 files takes that route. Either the design stands and usage has not caught up, or it should be
-revisited; the evidence alone does not settle it. **Still open.**
+`bb59cf2` settled it by inverting the question. `api` is `pub mod` and `io` and `error` are private
+inside it, their contents re-exported at `api`. So the external spelling is
+`ev_cost_recovery::api::peak_power`, there is no second `error` to collide with anything, and every
+payload of `ApiError` is nameable without a module path that says which file declares it.
+`ConversionError` is the one exception, and deliberately: `crate::error` is public in its own right
+because the two workbook writers return it without going through the API.
+
+**`pure` was `pub mod` per operation by design, and one caller used it that way.** `api/mod.rs`
+argued that "the unit of import is the operation, not the type", which is why
+`pure::{additional, coverage, energy, peak_power, recovery}` were each `pub mod`, against one
+import out of 26 files taking that route.
+
+*Settled 2026-08-27.* The design did not stand. `f70ac4a` made all five private and lifted their
+re-exports into `pure/mod.rs`; `additional` was renamed `reimbursement` in `e2e9738`, which is what
+a subject-named module should have been called from the start. The single caller,
+`ev_cost_recovery/detail.rs`, now writes `api::pure::PricedInterval`.
 
 ## What was done with this
 
@@ -221,6 +238,11 @@ The module cleanup of 2026-08-26/27 (`efa0427`, `950c940`) used the list above t
 the crate reaches. `session::csv` and `session::file_name` became private modules; their two
 externally-used items are re-exported from `session` instead. Rendered public items went from 137
 to 106.
+
+A second pass on `api` alone followed (`e2e9738`, `f70ac4a`, `bb59cf2`): the five `pure` submodules
+and `io` and `error` all became private, each re-exported by name from the module above it. Every
+external caller now enters at `ev_cost_recovery::api`, and the paths in the survey rows above that
+name a submodule — `pure::peak_power::PricedInterval` is the only one — are spelled without it.
 
 One finding here is not yet acted on. Of the 16 paths external code names in `session`, thirteen
 have no consumer but `ev_peak_cli`, `ev_peak_gui` and `examples/sessions.rs`, and only two of those

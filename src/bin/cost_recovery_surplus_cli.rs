@@ -2,7 +2,7 @@
 //! the Toronto Hydro bill cost, from the bill, a Green Button export and the two session reports
 //! covering the period's two ends.
 
-use ev_cost_recovery::io::{CostRecoveryRates, cost_recovery_surplus};
+use ev_cost_recovery::api::{CostRecoveryRates, cost_recovery_surplus};
 use jiff::civil::Date;
 use std::{env, error::Error, path::Path, process::ExitCode};
 

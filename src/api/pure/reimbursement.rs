@@ -497,7 +497,7 @@ impl fmt::Display for ReimbursementReconciliation {
     }
 }
 
-// cargo test --lib -- api::pure::additional::test
+// cargo test --lib -- api::pure::reimbursement::test
 #[cfg(test)]
 mod test {
     use super::*;

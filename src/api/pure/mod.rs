@@ -1,13 +1,12 @@
 //! The half of the API that computes.
 //!
 //! Everything here is a function of its arguments alone: no file is opened, no clock is read,
-//! nothing is written. [`io`](super::io) is the other half, and it is deliberately thin — it turns
-//! paths into values and hands them here, so that the reasoning a figure rests on can be exercised
-//! without a filesystem in the way.
+//! nothing is written. The reading half sits directly in [`api`](super), and is deliberately
+//! thin — it turns paths into values and hands them here, so that the reasoning a figure rests on
+//! can be exercised without a filesystem in the way.
 //!
-//! Taking a `&Path` is not I/O.
-//! [`coverage`](coverage::check_reports_cover_period) reads a *name*, which is a string that
-//! happens to be spelled as a path; it never asks whether the file exists.
+//! Taking a `&Path` is not I/O. [`check_reports_cover_period`] reads a *name*, which is a string
+//! that happens to be spelled as a path; it never asks whether the file exists.
 //!
 //! The submodules are by subject, not by call. The API layer's other axis — reading versus
 //! computing — is already spent on the `io`/`pure` division, and spending it twice would leave

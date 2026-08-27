@@ -121,7 +121,7 @@ pub(crate) fn field(label: &str, value: &str) -> String {
 ///
 /// A report whose total is computed from the printed amounts rather than the underlying ones does
 /// not carry this, and should say so instead — see
-/// [`CostRecoverySurplus`](crate::pure::recovery::CostRecoverySurplus).
+/// [`CostRecoverySurplus`](crate::api::pure::CostRecoverySurplus).
 pub(crate) fn rounding_note() -> String {
     wrap(
         "Note: figures are rounded for display. A column can therefore differ by a cent, or by a \

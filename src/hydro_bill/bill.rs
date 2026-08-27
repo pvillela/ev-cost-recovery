@@ -118,7 +118,7 @@ impl HydroBill {
 /// "covered" and "fell short" on `total < 0.0` would state the first for a figure that is not a
 /// number at all.
 ///
-/// [`EnergyError::NoRate`](crate::pure::energy::EnergyError) is the same arithmetic seen through a
+/// [`EnergyError::NoRate`](crate::api::pure::EnergyError) is the same arithmetic seen through a
 /// domain reading -- a band the site drew nothing in is a band the chargers cannot have drawn from
 /// either -- and is kept separate for that reason.
 #[derive(Debug, Clone, PartialEq, Eq)]
