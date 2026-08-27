@@ -1,13 +1,21 @@
 //! What makes an interval of interest a *legal* one, in one place for every front-end.
 //!
-//! The library core stays permissive on purpose: [`interval_estimates`](crate::interval_estimates)
-//! is happy with any interval, and exploratory callers and tests rely on that. What must not happen
-//! is a *bill* being argued from an off-spec window, so every front-end that produces a quotable
-//! figure comes through [`checked_interval`]. See docs/session/README.md, "Interval of interest boundaries".
+//! The library core stays permissive on purpose:
+//! [`estimates_from_sessions`](super::estimates_from_sessions) is happy with any interval, and
+//! exploratory callers and tests rely on that. What must not happen is a *bill* being argued from
+//! an off-spec window, so every front-end that lets someone choose an interval comes through
+//! [`checked_interval`]. See docs/session/README.md, "Interval of interest boundaries".
 //!
 //! The command line and the GUI ask the same questions in different orders — the one parses text
 //! and reports what is wrong with it, the other offers only choices that are right — so what is
 //! shared here is the rules themselves, not their presentation.
+//!
+//! # Why this is behind `historic`
+//!
+//! Those two front-ends are the only callers. The API is handed an interval and does not choose
+//! one, and the desktop app derives its window from a billing period rather than offering it as a
+//! setting. So the whole question this module answers arises only where someone picks the window
+//! by hand, which is `ev_peak_cli` and `ev_peak_gui`. See `docs/historic-feature.md`.
 
 use crate::time::{Interval, TZ_OFFSETS, time_zone};
 // Named only by the doc links below, which is enough to make them resolve and is why the import is

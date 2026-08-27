@@ -20,7 +20,7 @@ pub mod holidays;
 
 // --- Named outside the crate -------------------------------------------------------------------
 
-pub use base::{Interval, TZ_OFFSETS, local_date, time_zone};
+pub use base::{Interval, local_date, time_zone};
 // Not named directly by anything outside the crate, but `api::pure::energy` re-exports it, which
 // makes it public by that route: `TouKwh` is keyed on it, so a caller reading one has to be able
 // to write the key.
@@ -29,14 +29,24 @@ pub use tou::Tou;
 // --- Named elsewhere inside the crate ----------------------------------------------------------
 
 pub(crate) use base::{
-    TIME_ZONE_NAME, duration, is_on_grid, local_datetime, local_hour, local_midnight,
-    standard_date, standard_midnight, truncate_to,
+    duration, is_on_grid, local_datetime, local_hour, local_midnight, standard_date,
+    standard_midnight, truncate_to,
 };
 pub(crate) use excel::{
     serial_of_civil, serial_of_date, serial_of_duration, serial_of_instant, serial_of_local,
     wall_clock_instant,
 };
+pub(crate) use tou::{is_off_peak, tou_of, tou_partition};
+
+// --- Behind `historic` ---------------------------------------------------------------------------
+
 // Reading a serial back is only done by the workbook reader, which is `historic`.
 #[cfg(feature = "historic")]
 pub(crate) use excel::{duration_of_serial, instant_of_serial};
-pub(crate) use tou::{is_off_peak, tou_of, tou_partition};
+// `TZ_OFFSETS` is named by `ev_peak_cli` and `ev_peak_gui`, to label an ambiguous wall time with
+// the zone it was read in, and inside the crate only by `session::ioi`, which is gated for the
+// same reason. `TIME_ZONE_NAME` is reached only by `ioi`'s doc links.
+#[cfg(feature = "historic")]
+pub(crate) use base::TIME_ZONE_NAME;
+#[cfg(feature = "historic")]
+pub use base::TZ_OFFSETS;

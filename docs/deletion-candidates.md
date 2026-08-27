@@ -41,12 +41,12 @@ for the gate that the gate has not yet caught.
 
 | Item | Reached by | Gate it? |
 |---|---|---|
-| `session::HourEntry` | `ev_peak_gui` | candidate |
-| `session::IoiLength` | `ev_peak_cli`, `ev_peak_gui` | candidate |
-| `session::LEGAL_START_MINUTES` | `ev_peak_gui` | candidate |
-| `session::checked_interval` | `ev_peak_cli`, `ev_peak_gui` | candidate |
-| `session::hours_of` | `ev_peak_gui` | candidate |
-| `time::TZ_OFFSETS` | `ev_peak_cli`, `ev_peak_gui` | candidate |
+| `session::HourEntry` | `ev_peak_gui` | **gated 2026-08-27** |
+| `session::IoiLength` | `ev_peak_cli`, `ev_peak_gui` | **gated 2026-08-27** |
+| `session::LEGAL_START_MINUTES` | `ev_peak_gui` | **gated 2026-08-27** |
+| `session::checked_interval` | `ev_peak_cli`, `ev_peak_gui` | **gated 2026-08-27** |
+| `session::hours_of` | `ev_peak_gui` | **gated 2026-08-27** |
+| `time::TZ_OFFSETS` | `ev_peak_cli`, `ev_peak_gui` | **gated 2026-08-27** |
 | `session::xlsx_to_interval_estimates` | `ev_peak_cli`, `ev_peak_gui` | **already gated** |
 | `session::xlsx_to_sessions` | `ev_peak_cli`, `ev_peak_gui` | **already gated** |
 | `hydro_bill::BillError` | `hydro_bill_dump` | no — also `api::io`'s `ReadError::Bill` cause |
@@ -63,14 +63,22 @@ interest vocabulary: which interval starts are legal, how long an interval may b
 report covers. Only the two historic binaries ask those questions, because only they let a user
 *choose* an interval — the API derives its intervals from the meter peak instead.
 
-Gating them is defensible and was not done. Two things argue against doing it now without a
-decision from you:
+**Settled 2026-08-27: all six are gated,** along with the whole of `src/session/ioi.rs` and the
+crate-private `time::TIME_ZONE_NAME`, which nothing but `ioi` reached. Both arguments recorded
+against doing it were answered rather than overruled:
 
-1. `src/session/ioi.rs` is pure. Gating it means a `#[cfg]` on a module of types and predicates,
-   which is a different kind of quarantine from gating an I/O module.
-2. `checked_interval` and `LEGAL_START_MINUTES` encode the interval rules that
-   `docs/session/README.md` specifies and that a future API entry point taking a caller-chosen
-   interval would want. Gating them says that will not happen.
+1. *"`ioi` is pure, and gating a module of types and predicates is a different kind of quarantine
+   from gating an I/O module."* True, and it turned out to be the wrong axis. What the feature
+   sorts by is **who calls it**, not what it touches — the name `historic` says so. `ioi` is
+   reached by the same two binaries as the workbook reader and by nothing else, which is the only
+   test the gate applies.
+2. *"A future API entry point taking a caller-chosen interval would want these rules."* If one is
+   ever added, ungating is one `#[cfg]` line, and the rules will be intact because the module was
+   gated whole rather than picked apart. Gating says the entry point does not exist today, not that
+   it never will.
+
+The cost is real and is recorded in [`historic-feature.md`](historic-feature.md): `ioi`'s ten
+tests, which cover the DST-ambiguity rules, now run only under `--features historic`.
 
 ## test-only items
 

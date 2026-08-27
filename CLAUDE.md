@@ -90,6 +90,20 @@ that actually went wrong, not a general principle.
   links to private item `ReadError`" is a *warning*, not an error, so `cargo check` stays green
   while the type is unreachable.
 
+- **What a cargo feature sorts by is who calls the code, not what the code touches.** `historic`
+  began as "reads a workbook back" and now also holds `session::ioi`, which opens nothing and is
+  pure — it is there because its only callers are `ev_peak_cli` and `ev_peak_gui`, the same two the
+  workbook reader serves. Do not argue from the kind of code: `docs/deletion-candidates.md`
+  recorded "gating a module of types and predicates is a different kind of quarantine" as a reason
+  to hold off, and that was the wrong axis.
+
+- **"Reached only by gated callers" is necessary but not sufficient for gating a public item.**
+  The second question is whether an *ungated* public signature or field is typed with it. Six of
+  `session`'s thirteen historic-only paths could not be gated for this reason: `IntervalEstimates`
+  types `PowerEstimates.kw_estimates`, and gating it would make that field unnameable while it
+  stays readable — the `ReadError` hole again. The compiler will not ask this question; a public
+  field of a type with no public path compiles clean.
+
 - **A `pub use` publishes a type as surely as a `pub struct` does.** Surveying what external files
   *name* will not find it. See `docs/public-surface-usage.md`, whose list of 49 was nine short for
   exactly this reason. To decide what may go private, take such a list as the floor and let

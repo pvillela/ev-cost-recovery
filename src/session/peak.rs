@@ -155,7 +155,7 @@ pub(crate) fn estimates_from_sessions(
 /// both are wrong in a way no figure in the report would reveal.
 ///
 /// The legal interval lengths are 15 minutes and an hour, so nothing coming through
-/// [`crate::checked_interval`] can reach this. The core stays permissive about *when* an interval
+/// `ioi::checked_interval` can reach this. The core stays permissive about *when* an interval
 /// starts, which is what exploratory callers and tests rely on; it was never permissive about how
 /// long one may be.
 fn segments_for_ioi(ioi: Interval, sessions: &[RSession]) -> Vec<RSegment> {

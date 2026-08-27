@@ -120,6 +120,19 @@ The API. Every path here is named by an ordinary binary; none is `historic`.
 serve the API and the desktop app; the other thirteen exist for `ev_peak_cli` and `ev_peak_gui`.
 Only two of the thirteen are behind the `historic` gate today.
 
+*Acted on 2026-08-27, and the thirteen turned out to be two different kinds.* Five of them —
+`checked_interval`, `IoiLength`, `LEGAL_START_MINUTES`, `HourEntry`, `hours_of` — are the whole of
+`session::ioi`, reachable by no other route, and they are now gated along with the module and
+`time::TZ_OFFSETS`. The other six cannot be: `Bracket`, `IntervalEstimates`, `Segment`, `Session`,
+`SessionWriteReport` and `Sessions` are all reached by reading a field of something the **ungated**
+API returns — `PowerEstimates.kw_estimates` is an `IntervalEstimates`, whose `seg_estimates` hold
+`Segment`s, whose estimates hold `Bracket`s. Gating a type a public field is typed with would make
+that field unnameable without making it unreadable, which is the `ReadError` hole in another form.
+
+**So "named only by historic consumers" is necessary but not sufficient for gating.** The second
+question is whether an ungated public signature or field is typed with it — and that one the
+compiler will not ask for you.
+
 ### `hydro_bill` — 6 paths
 
 | Path | Used by |
@@ -244,9 +257,10 @@ and `io` and `error` all became private, each re-exported by name from the modul
 external caller now enters at `ev_cost_recovery::api`, and the paths in the survey rows above that
 name a submodule — `pure::peak_power::PricedInterval` is the only one — are spelled without it.
 
-One finding here is not yet acted on. Of the 16 paths external code names in `session`, thirteen
-have no consumer but `ev_peak_cli`, `ev_peak_gui` and `examples/sessions.rs`, and only two of those
-are behind the `historic` gate. Gating the rest would take `session`'s public tier down to the
-three paths that serve the API and the desktop app. `src/session/mod.rs` carries a note pointing
-here; see also `docs/deletion-candidates.md`, which reached six of the same items by a different
-route.
+The `session` finding was acted on 2026-08-27. `session::ioi` and `time::TZ_OFFSETS` went behind
+`historic`, taking seven public paths off the default surface; the six that remain are field types
+of the ungated API and cannot follow. `session/mod.rs` and `time/mod.rs` now each carry a
+`#[cfg(feature = "historic")] pub use` tier under the plain one. See
+`docs/historic-feature.md` for what is behind the gate and what a default `cargo test` stops
+checking, and `docs/deletion-candidates.md`, which had reached the same six by a different route
+and recorded two arguments against gating them — both answered there.

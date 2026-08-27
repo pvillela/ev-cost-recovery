@@ -59,6 +59,8 @@ The two DST transitions are treated differently, because they are different prob
 
 These rules live in one place, `src/session/ioi.rs`, and every caller comes through it, so nothing that asks for an interval can disagree with anything else about what interval a bill may be argued from.
 
+That module is behind `--features historic`, because those callers are `ev_peak_cli` and `ev_peak_gui` and there are no others: the library API is handed an interval rather than choosing one, and the `ev_cost_recovery` app derives its window from a billing period. See [`../historic-feature.md`](../historic-feature.md).
+
 ## Excel workbook
 
 The conversion from CSV to Excel includes the addition of new fields:

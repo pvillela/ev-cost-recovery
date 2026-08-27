@@ -8,9 +8,9 @@
 // the binaries, examples and integration tests actually name -- plus whatever `api` re-exports,
 // since that publishes a type by a second route.
 //
-// Most of the public tier here serves `ev_peak_cli` and `ev_peak_gui` rather than the API. See the
-// same document: of the paths named from outside this module, thirteen have no consumer but those
-// two, and only the two `historic` ones are gated. Narrowing that is a separate decision.
+// A fourth tier sits below those: `#[cfg(feature = "historic")] pub use`, for what only
+// `ev_peak_cli` and `ev_peak_gui` reach. Everything left in the plain public tier is named by the
+// API, by the desktop app, by `tests/`, or by an ungated binary or example.
 
 mod common;
 use common::*;
@@ -27,6 +27,10 @@ mod file_name;
 
 mod excel;
 
+// What makes an interval of interest *legal*. Behind the feature with the two front-ends that ask:
+// nothing else in the crate calls it, and the API takes the interval it is given. Its ten tests go
+// behind the gate with it, which is the cost -- see `docs/historic-feature.md`.
+#[cfg(feature = "historic")]
 mod ioi;
 
 mod log;
@@ -45,19 +49,27 @@ pub mod site_load;
 pub use common::{Bracket, Segment, Session, Sessions};
 pub use excel::{SessionWriteReport, session_csv_to_xlsx};
 pub use file_name::report_coverage;
-pub use ioi::{HourEntry, IoiLength, LEGAL_START_MINUTES, checked_interval, hours_of};
 pub use log::{RunLog, SourceLog};
 pub use peak::IntervalEstimates;
 pub use report::site_load_report;
 
-// The workbook round-trip. Behind the feature because only `ev_peak_cli` and `ev_peak_gui` use it;
-// see `docs/historic-feature.md`.
+// --- Behind `historic` ---------------------------------------------------------------------------
+//
+// Named by `ev_peak_cli` and `ev_peak_gui` and by nothing else -- not by the API, not by the
+// desktop app, not by `tests/`. The workbook round-trip is one half of that; the rules that decide
+// whether an interval of interest is legal are the other, since only a front-end that lets someone
+// *choose* an interval has to ask. See `docs/historic-feature.md`.
+
 #[cfg(feature = "historic")]
 pub use excel::historic::{xlsx_to_interval_estimates, xlsx_to_sessions};
+#[cfg(feature = "historic")]
+pub use ioi::{HourEntry, IoiLength, LEGAL_START_MINUTES, checked_interval, hours_of};
 
-// Not named directly by anything outside the crate, but `api` re-exports them, which makes them
-// public by that route: `Sessions` is a parameter of every `pure` operation, `SessionNotes` and
-// `TouKwh` are fields of what they return, and `SessionReportCoverage` is `pure::coverage`'s.
+// Not named directly by anything outside the crate. `SessionReportCoverage` is public because
+// `api::pure` re-exports it; the rest are public because a caller reaches them by reading a field
+// of something the API returns -- `SessionNotes` and `TouKwh` off an `Energy`, `AnomalyKind` off a
+// `SessionNotes`, `RSession` off a `Sessions`. `api/mod.rs` explains why a field type is not
+// re-exported: reading one never requires naming it, but the type still has to be public.
 pub use common::{AnomalyKind, BREAKER_RATING_KW, RSession, SessionNotes};
 pub use energy::TouKwh;
 pub use file_name::SessionReportCoverage;

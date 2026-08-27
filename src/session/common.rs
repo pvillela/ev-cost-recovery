@@ -29,7 +29,7 @@ use std::{
 /// move the grid.
 ///
 /// The constraint lifts once every report in scope reports seconds. 1 second is a legal grid — it
-/// divides [`SEGMENT_DURATION`], and [`LEGAL_START_MINUTES`](super::LEGAL_START_MINUTES) still
+/// divides [`SEGMENT_DURATION`], and `ioi::LEGAL_START_MINUTES` still
 /// lands on it — so from then on the change is available, though it moves every figure in the
 /// golden files.
 ///
@@ -54,7 +54,8 @@ pub const TIME_GRID_STEP: Duration = Duration::from_secs(60);
 /// prints, which is why the check is an assertion rather than an accommodation.
 ///
 /// The two legal interval lengths — 15 minutes and 1 hour — are both multiples, so nothing coming
-/// through [`crate::session::checked_interval`] can trip it.
+/// through `ioi::checked_interval` can trip it. A plain code span, not a link: that function is
+/// behind the `historic` feature, so a link to it would resolve in one build and not the other.
 pub const SEGMENT_DURATION: Duration = Duration::from_mins(15);
 
 /// Continuous use breaker kW rating.
