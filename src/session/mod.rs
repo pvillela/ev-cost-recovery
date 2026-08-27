@@ -8,19 +8,21 @@
 // the binaries, examples and integration tests actually name -- plus whatever `api` re-exports,
 // since that publishes a type by a second route.
 //
-// A fourth tier sits below those: `#[cfg(feature = "historic")] pub use`, for what only
-// `ev_peak_cli` and `ev_peak_gui` reach. Everything left in the plain public tier is named by the
-// API, by the desktop app, by `tests/`, or by an ungated binary or example.
+// A fourth tier sits below those: `#[cfg(feature = "historic")] pub use`, for what is reached only
+// by targets that themselves carry `required-features = ["historic"]`. Everything left in the
+// plain public tier is named by the API, by the desktop app, by `tests/`, or by an ungated binary
+// or example.
 
 mod common;
 use common::*;
 
 mod energy;
 
-// Crate-private. Its one entry point, `csv_sessions`, is called from `api::io` and from `excel`,
-// and by nothing outside the crate: the API takes paths and hands back figures, never a `Sessions`.
-// Keeping the module private keeps `SessionCsvError` -- the type that call returns -- off the
-// public surface too, which is where it belongs while nothing outside matches on it.
+// Crate-private. Its one entry point, `csv_sessions`, is called from `api::io`, from `excel`, and
+// from the three `#[cfg(test)]` modules below -- which is why those live in `src/` rather than in
+// `tests/`. Nothing outside the crate calls it: the API takes paths and hands back figures, never
+// a `Sessions`. Keeping the module private keeps `SessionCsvError` -- the type that call returns --
+// off the public surface too, which is where it belongs while nothing outside matches on it.
 mod csv;
 
 mod file_name;
@@ -55,10 +57,14 @@ pub use report::site_load_report;
 
 // --- Behind `historic` ---------------------------------------------------------------------------
 //
-// Named by `ev_peak_cli` and `ev_peak_gui` and by nothing else -- not by the API, not by the
-// desktop app, not by `tests/`. The workbook round-trip is one half of that; the rules that decide
-// whether an interval of interest is legal are the other, since only a front-end that lets someone
-// *choose* an interval has to ask. See `docs/historic-feature.md`.
+// Here the items are gated, not just the re-exports: `mod ioi` above carries the same `#[cfg]`, and
+// `excel::historic` is a gated module. So these names do not exist in a default build.
+//
+// Named by `ev_peak_cli`, `ev_peak_gui` and `examples/sessions.rs`, all three of which carry
+// `required-features` -- and by nothing else: not by the API, not by the desktop app, not by
+// `tests/`. The workbook round-trip is one half of that; the rules that decide whether an interval
+// of interest is legal are the other, since only a front-end that lets someone *choose* an interval
+// has to ask. See `docs/historic-feature.md`.
 
 #[cfg(feature = "historic")]
 pub use excel::historic::{xlsx_to_interval_estimates, xlsx_to_sessions};

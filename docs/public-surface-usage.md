@@ -122,8 +122,10 @@ Only two of the thirteen are behind the `historic` gate today.
 
 *Acted on 2026-08-27, and the thirteen turned out to be two different kinds.* Five of them —
 `checked_interval`, `IoiLength`, `LEGAL_START_MINUTES`, `HourEntry`, `hours_of` — are the whole of
-`session::ioi`, reachable by no other route, and they are now gated along with the module and
-`time::TZ_OFFSETS`. The other six cannot be: `Bracket`, `IntervalEstimates`, `Segment`, `Session`,
+`session::ioi`, reachable by no other route, and they are now gated along with the module itself.
+`time::TZ_OFFSETS` went with them, but in a weaker sense: only its **re-export** from `time` is
+gated. The constant is unconditional in `src/time/base.rs`, and `BILLING_OFFSET` is one of its
+entries in every build. The other six cannot be gated at all: `Bracket`, `IntervalEstimates`, `Segment`, `Session`,
 `SessionWriteReport` and `Sessions` are all reached by reading a field of something the **ungated**
 API returns — `PowerEstimates.kw_estimates` is an `IntervalEstimates`, whose `seg_estimates` hold
 `Segment`s, whose estimates hold `Bracket`s. Gating a type a public field is typed with would make
@@ -257,8 +259,9 @@ and `io` and `error` all became private, each re-exported by name from the modul
 external caller now enters at `ev_cost_recovery::api`, and the paths in the survey rows above that
 name a submodule — `pure::peak_power::PricedInterval` is the only one — are spelled without it.
 
-The `session` finding was acted on 2026-08-27. `session::ioi` and `time::TZ_OFFSETS` went behind
-`historic`, taking seven public paths off the default surface; the six that remain are field types
+The `session` finding was acted on 2026-08-27. The `session::ioi` module went behind `historic`,
+and `time`'s re-export of `TZ_OFFSETS` with it, taking seven public paths off the default surface;
+the six that remain are field types
 of the ungated API and cannot follow. `session/mod.rs` and `time/mod.rs` now each carry a
 `#[cfg(feature = "historic")] pub use` tier under the plain one. See
 `docs/historic-feature.md` for what is behind the gate and what a default `cargo test` stops

@@ -64,7 +64,9 @@ report covers. Only the two historic binaries ask those questions, because only 
 *choose* an interval — the API derives its intervals from the meter peak instead.
 
 **Settled 2026-08-27: all six are gated,** along with the whole of `src/session/ioi.rs` and the
-crate-private `time::TIME_ZONE_NAME`, which nothing but `ioi` reached. Both arguments recorded
+re-export of the crate-private `time::TIME_ZONE_NAME`, which nothing but `ioi` reached by that
+path. Both constants stay unconditional in `src/time/base.rs`, where the rest of the crate uses
+them; only the paths out of `time` are gated. Both arguments recorded
 against doing it were answered rather than overruled:
 
 1. *"`ioi` is pure, and gating a module of types and predicates is a different kind of quarantine

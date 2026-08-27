@@ -4,9 +4,9 @@ Written 2026-08-26, when the feature was added.
 
 ## What it is
 
-`historic` gates the code whose only callers are `ev_peak_cli` and `ev_peak_gui`. The library API
-does not use it, the `ev_cost_recovery` desktop app does not use it, and a default `cargo build`
-does not compile it.
+`historic` gates the code reached only by targets that themselves require the feature —
+`ev_peak_cli`, `ev_peak_gui` and `examples/sessions.rs`. The library API does not use it, the
+`ev_cost_recovery` desktop app does not use it, and a default `cargo build` does not compile it.
 
 ```toml
 [features]
@@ -32,8 +32,16 @@ Two bodies of code, each with its own reason.
 |---|---|
 | `session::ioi` — the whole module, and its ten tests | `src/session/ioi.rs` |
 | `session::checked_interval`, `IoiLength`, `LEGAL_START_MINUTES`, `HourEntry`, `hours_of` | re-exported from that module |
-| `time::TZ_OFFSETS` | `src/time/base.rs`; labels an ambiguous wall time with the zone it was read in |
-| `time::TIME_ZONE_NAME` | crate-private, reached only by `ioi`'s doc links |
+| the `time::TZ_OFFSETS` **re-export** | the constant itself is unconditional — see below |
+| the `time::TIME_ZONE_NAME` **re-export** | crate-private; likewise unconditional |
+
+Those last two rows are a different kind of entry from the others, and the distinction matters.
+`TZ_OFFSETS` and `TIME_ZONE_NAME` are declared unconditionally in `src/time/base.rs` and are
+load-bearing in **every** build: `time_zone()` resolves `TIME_ZONE_NAME` on every call, and
+`BILLING_OFFSET` is an entry of `TZ_OFFSETS`. What is gated is only the path out of `time` — the
+`pub use` and `pub(crate) use` lines in `src/time/mod.rs` — because outside `base` the only caller
+of either is `session::ioi`, plus the two binaries for `TZ_OFFSETS`. Gating a re-export says
+nothing about whether the item is compiled or used.
 
 **The targets that need the feature to build.**
 

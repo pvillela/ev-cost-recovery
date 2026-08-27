@@ -38,14 +38,23 @@ pub(crate) use excel::{
 };
 pub(crate) use tou::{is_off_peak, tou_of, tou_partition};
 
-// --- Behind `historic` ---------------------------------------------------------------------------
+// --- Re-exported only in `historic` builds -------------------------------------------------------
+//
+// What the `#[cfg]` gates is the re-export, not the item. Read each line as "nothing reaches this
+// by the path `crate::time::X` unless the feature is on" -- which is a fact about this module's
+// consumers, and says nothing about whether the item itself is compiled or used.
 
-// Reading a serial back is only done by the workbook reader, which is `historic`.
+// The one case where item and re-export agree: `excel`'s two serial readers are themselves
+// `#[cfg(any(test, feature = "historic"))]`, because reading a serial back is done only by the
+// workbook reader. The writing direction, which the API uses, is not gated.
 #[cfg(feature = "historic")]
 pub(crate) use excel::{duration_of_serial, instant_of_serial};
-// `TZ_OFFSETS` is named by `ev_peak_cli` and `ev_peak_gui`, to label an ambiguous wall time with
-// the zone it was read in, and inside the crate only by `session::ioi`, which is gated for the
-// same reason. `TIME_ZONE_NAME` is reached only by `ioi`'s doc links.
+
+// Both of these are unconditional in `base`, and both are load-bearing in every build: `time_zone`
+// resolves `TIME_ZONE_NAME` on every call, and `BILLING_OFFSET` is an entry of `TZ_OFFSETS`. Only
+// the paths out of this module are gated, because outside `base` the sole caller of either is
+// `session::ioi` -- `TZ_OFFSETS` to label an ambiguous wall time with the zone it was read in,
+// `TIME_ZONE_NAME` in its doc links -- plus `ev_peak_cli` and `ev_peak_gui` for `TZ_OFFSETS`.
 #[cfg(feature = "historic")]
 pub(crate) use base::TIME_ZONE_NAME;
 #[cfg(feature = "historic")]
