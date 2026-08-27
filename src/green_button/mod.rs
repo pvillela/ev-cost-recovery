@@ -3,20 +3,21 @@
 mod billing;
 
 mod common;
-pub use common::*;
+use common::*;
 
 mod espi;
-pub use espi::Feed;
 use espi::*;
 
 mod excel;
-pub use excel::*;
+use excel::*;
 
 mod peaks;
-pub use peaks::*;
+use peaks::*;
 
 mod read_xml;
-pub use read_xml::*;
+use read_xml::*;
+
+pub use espi::Feed;
 
 // Two test modules of their own, rather than `#[cfg(test)]` blocks inside a source file: both need
 // `period_values`, which is `pub(crate)`, and neither belongs beside any one of the modules it

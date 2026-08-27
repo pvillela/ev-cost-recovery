@@ -23,12 +23,13 @@
 //! divides its data that way only because the bill does.
 
 mod bill_pdf;
-pub use bill_pdf::*;
+use bill_pdf::*;
 
 mod billing_period;
-pub use billing_period::*;
+use billing_period::*;
 
 mod bill;
-pub use bill::*;
+use bill::*;
 
-pub mod pdf_text;
+mod pdf_text;
+use pdf_text::*;
