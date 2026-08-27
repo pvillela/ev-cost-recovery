@@ -20,12 +20,9 @@ use std::{
 // ordinary thing to do with an error union -- forces a caller to name the payload types, so a
 // module that hands out the union has to hand out what its variants carry. Nothing deeper: the
 // fields inside those payloads can be read without being named.
-pub use crate::api::pure::{
-    coverage::CoverageError,
-    energy::EnergyError,
-    peak_power::PeakPowerError,
-    recovery::{CostRecoveryError, CostRecoverySurplusError},
-    reimbursement::ReimbursementError,
+pub use super::pure::{
+    CostRecoveryError, CostRecoverySurplusError, CoverageError, EnergyError, PeakPowerError,
+    ReimbursementError,
 };
 use crate::error::ConversionError;
 

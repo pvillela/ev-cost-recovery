@@ -16,9 +16,8 @@
 //! only thing that states it — see [`report_coverage`].
 
 use crate::{
-    charges_report::ChargesReport,
     markdown::{Left, Right, amounts, field, h1, h2, rounding_note, table, wrap},
-    session::{AnomalyKind, SessionNotes, Sessions, TouKwh, report_coverage, tou_kwh},
+    session::{AnomalyKind, SessionNotes, TouKwh, report_coverage, tou_kwh},
     time::{Interval, local_midnight},
 };
 use jiff::civil::Date;
@@ -26,7 +25,9 @@ use std::{error::Error, fmt, path::PathBuf};
 
 // Re-exported for the same reason `recovery` re-exports what it takes: a caller should not have to
 // know which module a type comes from in order to spell the call.
-pub use crate::api::pure::recovery::CostRecoveryRates;
+pub use crate::{
+    api::pure::recovery::CostRecoveryRates, charges_report::ChargesReport, session::Sessions,
+};
 
 /// Why a month's reimbursement cannot be reconciled.
 ///

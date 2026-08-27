@@ -11,12 +11,13 @@
 //! the rate has to cover is a question for whoever sets it.
 
 use crate::{
+    green_button::MeterNotes,
     hydro_bill::{
         BILL_END_DAY, BillingPeriod, NotABillingPeriodEnding, billing_period_dates,
         billing_period_span,
     },
     markdown::{Left, Right, amounts, field, h1, h2, rounding_note, table, wrap},
-    session::{AnomalyKind, SessionNotes, Sessions, tou_kwh},
+    session::{AnomalyKind, RSession, SessionNotes, TouKwh, tou_kwh},
     time::{Interval, local_midnight},
 };
 use jiff::{Timestamp, civil::Date};
@@ -32,11 +33,7 @@ use super::{
 
 // Re-exported because the functions here take these and return those, and a caller should not have
 // to know which module they come from in order to spell the call.
-pub use crate::{
-    green_button::{MeterNotes, PeriodValues},
-    hydro_bill::HydroBill,
-    session::{RSession, TouKwh},
-};
+pub use crate::{green_button::PeriodValues, hydro_bill::HydroBill, session::Sessions};
 
 /// EV cost-recovery TOU rates. The rates are effective for at least one month.
 #[derive(Debug, Clone, Copy, PartialEq)]

@@ -15,21 +15,16 @@ use crate::{
         billing_period_dates, billing_period_span,
     },
     markdown::{Left, Right, amounts, field, h1, h2, rounding_note, table},
-    session::{AnomalyKind, SessionNotes, Sessions, tou_kwh},
-    time::Interval,
+    session::{AnomalyKind, SessionNotes, TouKwh, tou_kwh},
+    time::{Interval, Tou},
 };
-
 use jiff::civil::Date;
 use std::{error::Error, fmt};
 
 // Re-exported because the two functions here take these and return those, and a caller should not
 // have to know which module they come from in order to spell the call. `Tou` for the same reason
 // one level down: it is what `EnergyError::NoRate` carries, and matching on that names it.
-pub use crate::{
-    hydro_bill::HydroBill,
-    session::{RSession, TouKwh},
-    time::Tou,
-};
+pub use crate::{hydro_bill::HydroBill, session::Sessions};
 
 /// EV energy over a billing period, split by time-of-use band.
 ///
@@ -453,7 +448,10 @@ mod test {
     use super::*;
     use crate::{
         api::pure::test_support::as_report,
-        session::test_support::{inverted_session, session, spike_session},
+        session::{
+            RSession,
+            test_support::{inverted_session, session, spike_session},
+        },
     };
     use jiff::civil::{Date, date};
     use std::slice;

@@ -21,27 +21,21 @@
 //! two copies of that agreement to keep.
 
 use crate::{
-    green_button::{METER_INTERVAL, Peak},
+    green_button::{METER_INTERVAL, MeterNotes, Peak},
     hydro_bill::{
         NotABillingPeriodEnding, ZeroDenominator, billing_period_dates, billing_period_span,
     },
     markdown::{Left, Right, amounts, field, h1, h2, rounding_note, table},
-    session::{
-        Bracket, EstimateSet, IntervalEstimates, SessionNotes, Sessions, estimates_from_sessions,
-    },
+    session::{Bracket, EstimateSet, IntervalEstimates, SessionNotes, estimates_from_sessions},
     time::Interval,
 };
+use jiff::civil::Date;
+use std::{error::Error, fmt};
 
 // Re-exported because `peak_power` and `peak_power_cost` take them. `IntervalEstimates` is
 // deliberately not: it is inside `PowerEstimates` and `PricedInterval` rather than named by either
 // signature, and a reader who probes that far can go to `session` for it.
-pub use crate::{
-    green_button::{MeterNotes, PeriodValues},
-    hydro_bill::HydroBill,
-    session::RSession,
-};
-use jiff::civil::Date;
-use std::{error::Error, fmt};
+pub use crate::{green_button::PeriodValues, hydro_bill::HydroBill, session::Sessions};
 
 /// Peak power estimates for a billing period.
 pub struct PowerEstimates {
@@ -709,7 +703,7 @@ mod test {
             period_values_with_nop, ts, two_report_sessions, two_reports,
         },
         hydro_bill::{BILL_END_DAY, BillingPeriod},
-        session::{AnomalyKind, IntervalEstimates, test_support::session},
+        session::{AnomalyKind, IntervalEstimates, RSession, test_support::session},
     };
     use jiff::civil::date;
     use std::{path::PathBuf, rc::Rc};

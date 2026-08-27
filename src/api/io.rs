@@ -33,9 +33,11 @@
 
 // `session` arrives as a module rather than as its conversion function: that function is named the
 // same as one declared here, and a prefix says which is meant without inventing an alias.
-use super::pure;
+use super::pure::{self, CostRecoverySurplusError, EnergyError, PeakPowerError};
 use crate::{
+    api::error::ReadError,
     charges_report::charges_report,
+    error::ConversionError,
     green_button::{GbReadError, read_gb_feed, read_gb_for_billing_period, write_gb_workbook},
     hydro_bill::{BILL_END_DAY, hydro_bill_from_pdf},
     session::{self, Sessions, csv_sessions},
@@ -47,21 +49,15 @@ use std::path::{Path, PathBuf};
 // should not have to know which module a call delegates to in order to spell that.
 pub use crate::{
     api::{
-        error::{
-            ApiError, CostRecoveryError, CostRecoverySurplusError, EnergyError, PeakPowerError,
-            ReadError,
-        },
+        error::ApiError,
         pure::{
-            energy::{Energy, EnergyCost, TouKwh},
-            peak_power::{DeliveryCost, PowerEstimates},
-            recovery::{CostRecovery, CostRecoveryRates, CostRecoveryStretch, CostRecoverySurplus},
-            reimbursement::{ReimbursementError, ReimbursementReconciliation},
+            CostRecovery, CostRecoveryRates, CostRecoverySurplus, DeliveryCost, Energy, EnergyCost,
+            PowerEstimates, ReimbursementReconciliation,
         },
     },
     // `ApiError::Conversion`'s payload, so a caller matching past the first level has to be able
     // to name it. Its home is `crate::error`, where the two conversions that raise it find it;
     // this is the same type under the API's own path.
-    error::ConversionError,
     green_button::GbWriteReport,
     session::SessionWriteReport,
 };
@@ -668,7 +664,10 @@ fn read_sessions(paths: &[&Path]) -> Result<Sessions, ReadError> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{api::error::CoverageError, hydro_bill::billing_period_dates, time::Tou};
+    use crate::{
+        api::error::CoverageError, hydro_bill::billing_period_dates, pure::CostRecoveryError,
+        time::Tou,
+    };
     use jiff::civil::date;
 
     /// A file that cannot be read is named exactly once, whichever reader raised it.
