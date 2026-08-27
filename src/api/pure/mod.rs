@@ -18,17 +18,17 @@
 //! [`hydro_bill::billing_period`](crate::hydro_bill) with [`BILL_END_DAY`](crate::hydro_bill::BILL_END_DAY)
 //! and the crate-private `hydro_bill::BillingPeriod`, and this module reads it from there.
 
-pub mod additional;
 pub mod coverage;
 pub mod energy;
 pub mod peak_power;
 pub mod recovery;
+pub mod reimbursement;
 
 #[cfg(test)]
 pub(crate) mod test_support;
 
-pub use additional::{check_charges_report_covers_month, reconcile_evolute_reimbursement};
 pub use coverage::check_reports_cover_period;
 pub use energy::{energy, energy_cost};
 pub use peak_power::{peak_power, peak_power_cost};
 pub use recovery::{cost_recovery, cost_recovery_surplus};
+pub use reimbursement::{check_charges_report_covers_month, reconcile_evolute_reimbursement};

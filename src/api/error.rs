@@ -21,11 +21,11 @@ use std::{
 // module that hands out the union has to hand out what its variants carry. Nothing deeper: the
 // fields inside those payloads can be read without being named.
 pub use crate::api::pure::{
-    additional::ReimbursementError,
     coverage::CoverageError,
     energy::EnergyError,
     peak_power::PeakPowerError,
     recovery::{CostRecoveryError, CostRecoverySurplusError},
+    reimbursement::ReimbursementError,
 };
 use crate::error::ConversionError;
 

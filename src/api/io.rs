@@ -52,10 +52,10 @@ pub use crate::{
             ReadError,
         },
         pure::{
-            additional::{ReimbursementError, ReimbursementReconciliation},
             energy::{Energy, EnergyCost, TouKwh},
             peak_power::{DeliveryCost, PowerEstimates},
             recovery::{CostRecovery, CostRecoveryRates, CostRecoveryStretch, CostRecoverySurplus},
+            reimbursement::{ReimbursementError, ReimbursementReconciliation},
         },
     },
     // `ApiError::Conversion`'s payload, so a caller matching past the first level has to be able
