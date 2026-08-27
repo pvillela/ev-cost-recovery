@@ -45,6 +45,10 @@
 //! avoided, spelled `pub use` instead of `pub struct`. [`error`] is the one module named for
 //! something other than an operation, because the union belongs to all of them.
 
-pub mod error;
-pub mod io;
+mod error;
+pub use error::*;
+
+mod io;
+pub use io::*;
+
 pub mod pure;

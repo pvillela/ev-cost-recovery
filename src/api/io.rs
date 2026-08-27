@@ -49,7 +49,7 @@ use std::path::{Path, PathBuf};
 // should not have to know which module a call delegates to in order to spell that.
 pub use crate::{
     api::{
-        error::ApiError,
+        ApiError,
         pure::{
             CostRecovery, CostRecoveryRates, CostRecoverySurplus, DeliveryCost, Energy, EnergyCost,
             PowerEstimates, ReimbursementReconciliation,
@@ -665,7 +665,7 @@ fn read_sessions(paths: &[&Path]) -> Result<Sessions, ReadError> {
 mod test {
     use super::*;
     use crate::{
-        api::error::CoverageError, hydro_bill::billing_period_dates, pure::CostRecoveryError,
+        api::error::CoverageError, api::pure::CostRecoveryError, hydro_bill::billing_period_dates,
         time::Tou,
     };
     use jiff::civil::date;
