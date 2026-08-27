@@ -80,7 +80,10 @@ against doing it were answered rather than overruled:
    it never will.
 
 The cost is real and is recorded in [`historic-feature.md`](historic-feature.md): `ioi`'s ten
-tests, which cover the DST-ambiguity rules, now run only under `--features historic`.
+tests now run only under `--features historic`. Five of those are about DST, but they cover
+`map_local` — what a user-named wall time *could* mean — not the resolution that bill figures rest
+on. That one is `CsvSession::resolve` in `session::csv`, which stays ungated with its seven tests.
+See [`historic-feature.md`](historic-feature.md), "What a default `cargo test` stops checking".
 
 ## test-only items
 

@@ -78,15 +78,36 @@ having nothing else in common with it.
 
 ## What a default `cargo test` stops checking
 
-Adding to a feature is a test-coverage decision, and this one has a cost worth naming: `ioi`'s ten
-tests now run only under `--features historic`. They cover the DST-ambiguity rules — which offsets
-a wall time can mean on a fall-back morning, and how the interval is labelled — which is real
-logic, not front-end presentation.
+Adding to a feature is a test-coverage decision. `ioi`'s ten tests now run only under
+`--features historic`, five of them about DST.
 
-They go behind the gate anyway, for the reason the rest of this document gives: nothing else can
-reach the code they test, so a default `cargo test` would be exercising a module the default build
-does not compile. The mitigation is the same one `session::excel::test_historic` relies on — CI
-runs both `cargo test` lines, not one.
+**This is a smaller loss than it first looks, and the distinction is worth being exact about.**
+The crate resolves DST ambiguity in two places, deliberately separate, and only one of them moved:
+
+| | `session::csv`, `CsvSession::resolve` | `session::ioi`, `map_local` |
+|---|---|---|
+| Question | an Evolute record reports a local start in the fall-back hour — which instant is it? | a *user* names a wall time — what could it mean? |
+| Evidence | the reported end and an untruncated `Conn_Duration` | none; a wall time is all there is |
+| Outcome | resolves it, or duplicates the record as EDT and EST and flags it | reports the ambiguity for the front-end to put to the user |
+| Bears on a figure | **yes — every kWh and kW attribution** | no |
+| Gated | no | yes |
+| Tests | 7, ungated | 5, now gated |
+
+`ioi`'s doc comment states the split: *"The session reader faces the same ambiguity with more
+evidence — an untruncated `Conn_Duration` — and settles it."* So a default `cargo test` still
+covers DST everywhere a bill figure depends on it: the fold resolved from the reported end, the
+hour-early candidate rejected, the unresolvable record duplicated, the gap shifted forward and
+reported, and a fold-spanning session's true elapsed duration. Those are `session::csv`'s seven,
+and they are where the correctness of the numbers lives.
+
+What went behind the gate is the *input-validation* half — refusing a start in the DST gap,
+requiring a designator on a fold start, checking a designator against its date, and which hours a
+picker offers. Real logic, and its own implementation rather than a wrapper over the other one, so
+it is not covered by proxy. But nothing outside the two front-ends can reach it, and no figure
+rests on it.
+
+The mitigation is the same one `session::excel::test_historic` relies on — CI runs both
+`cargo test` lines, not one.
 
 ## Building and testing
 
