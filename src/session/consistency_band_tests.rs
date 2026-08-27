@@ -32,11 +32,8 @@
 //! reported times are whole minutes, and that forces the duration to zero. It therefore also
 //! carries `ZeroActiveChargeTime` — the two travel together by arithmetic, not coincidence.
 
-use crate::{
-    golden,
-    session::{AnomalyKind, Sessions, csv::csv_sessions, estimates_from_sessions},
-    time::Interval,
-};
+use super::{AnomalyKind, Sessions, csv::csv_sessions, estimates_from_sessions};
+use crate::{golden, time::Interval};
 use jiff::Timestamp;
 use std::path::PathBuf;
 

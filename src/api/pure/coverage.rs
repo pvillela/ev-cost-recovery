@@ -2,7 +2,7 @@
 //!
 //! The two facts this joins live apart, and stay apart. What a report's file name says is a fact
 //! about Evolute's exports, so it is
-//! [`session::file_name`](crate::session::file_name); what a billing period spans is a fact about
+//! the private `session::file_name`; what a billing period spans is a fact about
 //! the bill, so it is [`hydro_bill`](crate::hydro_bill). Neither module knows the other exists.
 //! Asking whether one covers the other is a question in the API's terms, which is why it is asked
 //! here.
@@ -11,7 +11,7 @@
 
 use crate::{
     hydro_bill::{NotABillingPeriodEnding, billing_period_dates},
-    session::file_name::{report_coverage, reports_cover},
+    session::{report_coverage, reports_cover},
 };
 use jiff::civil::Date;
 use std::{
@@ -22,7 +22,7 @@ use std::{
 
 // Re-exported because it is what this module's function returns and what `CoverageError` carries,
 // so a caller cannot spell either without it. Its own module is where it is documented.
-pub use crate::session::file_name::SessionReportCoverage;
+pub use crate::session::SessionReportCoverage;
 
 /// Why the session reports named cannot be checked against a billing period, or do not cover it.
 ///
@@ -33,7 +33,7 @@ pub enum CoverageError {
 
     /// A session report's file name does not state the dates it covers, so it cannot be checked
     /// against the billing period. See
-    /// [`report_coverage`](crate::session::file_name::report_coverage).
+    /// [`report_coverage`](crate::session::report_coverage).
     UndatedSessionReport {
         path: PathBuf,
     },

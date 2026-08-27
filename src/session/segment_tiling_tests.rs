@@ -29,14 +29,10 @@
 //! No assertion here names an electrical constant. The numbers this file does state are clock
 //! times and session counts, which are properties of the fixture rather than of the site model.
 
-use crate::{
-    golden,
-    session::{
-        AnomalyKind, BREAKER_RATING_KW, IntervalEstimates, csv::csv_sessions,
-        estimates_from_sessions,
-    },
-    time::Interval,
+use super::{
+    AnomalyKind, BREAKER_RATING_KW, IntervalEstimates, csv::csv_sessions, estimates_from_sessions,
 };
+use crate::{golden, time::Interval};
 use jiff::{Timestamp, Zoned, tz::TimeZone};
 use std::rc::Rc;
 

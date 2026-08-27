@@ -33,13 +33,12 @@
 
 // `session` arrives as a module rather than as its conversion function: that function is named the
 // same as one declared here, and a prefix says which is meant without inventing an alias.
+use super::pure;
 use crate::{
-    api::pure,
     charges_report::charges_report,
-    error::ConversionError,
     green_button::{GbReadError, read_gb_feed, read_gb_for_billing_period, write_gb_workbook},
     hydro_bill::{BILL_END_DAY, hydro_bill_from_pdf},
-    session::{self, Sessions, csv::csv_sessions},
+    session::{self, Sessions, csv_sessions},
 };
 use jiff::civil::Date;
 use std::path::{Path, PathBuf};
@@ -59,6 +58,10 @@ pub use crate::{
             recovery::{CostRecovery, CostRecoveryRates, CostRecoveryStretch, CostRecoverySurplus},
         },
     },
+    // `ApiError::Conversion`'s payload, so a caller matching past the first level has to be able
+    // to name it. Its home is `crate::error`, where the two conversions that raise it find it;
+    // this is the same type under the API's own path.
+    error::ConversionError,
     green_button::GbWriteReport,
     session::SessionWriteReport,
 };

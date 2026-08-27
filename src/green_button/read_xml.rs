@@ -4,11 +4,8 @@
 //! caller checking one invoice starts from a path and a closing date, and needs to be told when
 //! the feed does not reach that period rather than handed nothing. This module is that call.
 
-use crate::{
-    green_button::{Feed, PeriodValues, Readings, parse_espi_xml, period_values},
-    hydro_bill::MAX_BILL_END_DAY,
-    time::local_date,
-};
+use super::{Feed, PeriodValues, Readings, parse_espi_xml, period_values};
+use crate::{hydro_bill::MAX_BILL_END_DAY, time::local_date};
 use jiff::civil::Date;
 use std::{
     error::Error,

@@ -29,8 +29,7 @@
 //! `docs/maintenance-manual.md`, "What would force a re-check of the TOU rules", for what would
 //! drive them apart.
 
-use super::{holidays, local_date, local_hour, local_midnight};
-use crate::time::Interval;
+use super::{Interval, holidays, local_date, local_hour, local_midnight};
 use jiff::civil::Date;
 use std::fmt;
 

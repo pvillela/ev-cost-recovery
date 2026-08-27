@@ -118,7 +118,8 @@ pub struct HourEntry {
 /// The hours a front-end may offer on `date`, in order.
 ///
 /// Each hour is judged from all four of [`LEGAL_START_MINUTES`] rather than from `HH:00` alone.
-/// In [`TIME_ZONE_NAME`] the transitions fall on the hour and the four always agree, so this is
+/// In the crate-private `TIME_ZONE_NAME` the transitions fall on the hour and the four always
+/// agree, so this is
 /// only insurance — and cheap insurance, because a zone whose minutes disagreed would still be
 /// caught by [`checked_interval`] rather than yielding a figure for the wrong instant.
 pub fn hours_of(date: civil::Date) -> Vec<HourEntry> {

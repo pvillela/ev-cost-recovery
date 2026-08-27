@@ -18,7 +18,7 @@
 use crate::{
     charges_report::ChargesReport,
     markdown::{Left, Right, amounts, field, h1, h2, rounding_note, table, wrap},
-    session::{AnomalyKind, SessionNotes, Sessions, TouKwh, file_name::report_coverage, tou_kwh},
+    session::{AnomalyKind, SessionNotes, Sessions, TouKwh, report_coverage, tou_kwh},
     time::{Interval, local_midnight},
 };
 use jiff::civil::Date;

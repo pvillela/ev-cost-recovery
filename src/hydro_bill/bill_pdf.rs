@@ -25,7 +25,7 @@ use std::{
 
 use jiff::civil::Date;
 
-use crate::hydro_bill::{
+use super::{
     bill::HydroBill,
     pdf_text::{self, Fragment, Line},
 };

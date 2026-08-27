@@ -1,9 +1,7 @@
 use std::ops::Deref;
 
-use crate::{
-    session::Session,
-    time::{Interval, Tou, tou_partition},
-};
+use super::Session;
+use crate::time::{Interval, Tou, tou_partition};
 
 /// Energy split across the three Ontario time-of-use bands, in kilowatt-hours.
 ///
@@ -12,7 +10,8 @@ use crate::{
 /// and not a subset of it.
 ///
 /// A band's figure is what was drawn *while that band was in force*, not what a session drawing
-/// across a boundary is nominally assigned to — see [`tou_kwh`], which cuts sessions at the
+/// across a boundary is nominally assigned to — see the crate-private `tou_kwh`, which cuts
+/// sessions at the
 /// boundary rather than filing each one under a single band.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TouKwh {

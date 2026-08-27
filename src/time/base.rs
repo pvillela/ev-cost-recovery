@@ -15,7 +15,8 @@ use std::{sync::LazyLock, time::Duration};
 /// "in local time" in a message needs somewhere to learn which zone that is.
 pub const TIME_ZONE_NAME: &str = "America/Toronto";
 
-/// The offsets [`TIME_ZONE_NAME`] uses, under the names a reader of a Toronto Hydro bill will
+/// The offsets the crate-private `TIME_ZONE_NAME` uses, under the names a reader of a Toronto
+/// Hydro bill will
 /// recognise. Naming one resolves a wall time that occurs twice.
 ///
 /// Here rather than in `session` because it is a property of the zone, and the zone is shared.
@@ -340,7 +341,8 @@ mod test {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd)]
-/// Time interval. Must be on the time grid defined by [`crate::session::TIME_GRID_STEP`].
+/// Time interval. Must be on the time grid defined by the crate-private
+/// `session::TIME_GRID_STEP`.
 pub struct Interval {
     pub start: Timestamp,
     pub duration: Duration,

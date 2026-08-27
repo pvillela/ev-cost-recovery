@@ -5,14 +5,15 @@
 //! over the three intervals the three demand-priced delivery lines are each charged on.
 //!
 //! How long one of those intervals is comes from the meter feed rather than from here: it is a
-//! [`METER_INTERVAL`], and a feed stating demand every quarter-hour would shorten it without
+//! `green_button::METER_INTERVAL`, and a feed stating demand every quarter-hour would shorten it
+//! without
 //! changing anything below, since every figure is derived through the session module's estimate
 //! over whatever interval it is handed.
 //!
 //! That is a separate question from what a demand charge is levied on, which is the highest
 //! 15-minute average within the interval -- one
 //! [`Segment`](crate::session::Segment), the length of which does not move with the feed. A
-//! [`METER_INTERVAL`] holds four of them today; a quarter-hourly feed would make it exactly one.
+//! `green_button::METER_INTERVAL` holds four of them today; a quarter-hourly feed would make it exactly one.
 //!
 //! One module rather than two, because the cost is the estimate priced. Both read the same meter
 //! figures over the same intervals, both build one [`Sessions`] from the same records by the
@@ -260,7 +261,7 @@ impl Error for PeakPowerError {
 /// Each is one whole metering interval, because that is the resolution the feed states demand at.
 /// The estimate within it is still a 15-minute figure: an
 /// [`IntervalEstimates`](crate::session::IntervalEstimates) reports the highest of the interval's
-/// segments, which is the basis the demand charge is billed on. A [`METER_INTERVAL`] holds four of
+/// segments, which is the basis the demand charge is billed on. A `green_button::METER_INTERVAL` holds four of
 /// them today. See docs/session/README.md, "Interval of interest boundaries".
 ///
 /// The maxima used are the period's unrestricted ones — what an invoice bills as `Demand kW` and

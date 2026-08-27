@@ -26,9 +26,9 @@
 //! default, and machine names are `lower_snake_case` throughout so that reading a sheet back by
 //! column name cannot be defeated by a capitalisation difference.
 
+use super::{Anomaly, Feed, Peak, PeriodValues, Reading, period_values};
 use crate::{
     error::ConversionError,
-    green_button::{Anomaly, Feed, Peak, PeriodValues, Reading, period_values},
     time::{serial_of_date, serial_of_instant, serial_of_local},
 };
 use std::{
@@ -274,7 +274,7 @@ pub struct GbWriteReport {
 ///
 /// `bill_end_day` is the day of the month the bill closes on, which decides how the readings are
 /// divided into the rows of the `Peak_values` sheet. The private `period_values` is what performs
-/// that division, and [`BillingPeriod`](crate::hydro_bill::BillingPeriod) is where the rule lives.
+/// that division, and the crate-private `hydro_bill::BillingPeriod` is where the rule lives.
 ///
 /// # Errors
 ///

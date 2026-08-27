@@ -1,7 +1,5 @@
-use crate::{
-    session::log::SourceLog,
-    time::{Interval, duration, time_zone, truncate_to},
-};
+use super::log::SourceLog;
+use crate::time::{Interval, duration, time_zone, truncate_to};
 
 use super::site_load::{Load, ev_load, ev_real_power_kw, transformer_load};
 use jiff::{Timestamp, Zoned};
@@ -49,12 +47,11 @@ pub const TIME_GRID_STEP: Duration = Duration::from_secs(60);
 
 /// The width of the [`Segment`]s an interval of interest is partitioned into.
 ///
-/// The duration of the interval of interest **must** be a positive multiple of this, and
-/// the private `estimates_from_sessions` panics otherwise. Not a convention: rounding the segment
-/// count up
-/// would tile past the interval's end and count sessions falling outside it, and rounding down
-/// would leave part of it unestimated. Neither error would show in any figure the report prints,
-/// which is why the check is an assertion rather than an accommodation.
+/// The duration of the interval of interest **must** be a positive multiple of this, and the
+/// crate-private `estimates_from_sessions` panics otherwise. Not a convention: rounding the segment
+/// count up would tile past the interval's end and count sessions falling outside it, and rounding
+/// down would leave part of it unestimated. Neither error would show in any figure the report
+/// prints, which is why the check is an assertion rather than an accommodation.
 ///
 /// The two legal interval lengths — 15 minutes and 1 hour — are both multiples, so nothing coming
 /// through [`crate::session::checked_interval`] can trip it.
@@ -129,7 +126,7 @@ pub(crate) fn duration_is_consistent(
 /// Public because it appears in public signatures — [`Segment::sessions`],
 /// [`Sessions::sessions`], and the API's estimating calls — and naming the type a caller has
 /// to write is the point of an alias. The sharing is what lets one session belong to several
-/// segments, and to an [`Anomaly`], without being copied.
+/// segments, and to the crate-private `Anomaly`, without being copied.
 pub type RSession = Rc<Session>;
 
 #[derive(Debug)]
@@ -443,7 +440,7 @@ fn duplicate_id_anomalies(sessions: &[RSession]) -> Vec<Anomaly> {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Copy)]
-/// Value subject to uncertainty due to [`TIME_GRID_STEP`].
+/// Value subject to uncertainty due to the crate-private `TIME_GRID_STEP`.
 pub struct Bracket<T: Clone> {
     /// Minimum value.
     pub min: T,
@@ -659,7 +656,7 @@ pub enum AnomalyKind {
     /// `Active_Charge_Time` is zero so its `avg_kw` cell shows `#DIV/0!`.
     ZeroActiveChargeTime,
     /// `Conn_start + Conn_Duration` misses the reported `Conn_DateTime_End` by a full
-    /// [`TIME_GRID_STEP`] or more, in one direction or the other, so the reported
+    /// one `TIME_GRID_STEP` or more, in one direction or the other, so the reported
     /// start, end and duration are mutually inconsistent.
     ///
     /// The test is `duration_is_consistent`, which carries the derivation. Three checks, and any
@@ -672,7 +669,7 @@ pub enum AnomalyKind {
     /// ```
     ///
     /// The window checks 2 and 3 draw is not chosen — it is forced, being exactly what truncation
-    /// to [`TIME_GRID_STEP`] accounts for and nothing more. It is asymmetric: one second wider on
+    /// to `TIME_GRID_STEP` accounts for and nothing more. It is asymmetric: one second wider on
     /// the late side, because the reported end is not only truncated but also of unknown last-
     /// second convention. Every bound is strict.
     ///
@@ -697,7 +694,7 @@ pub enum AnomalyKind {
     /// The test is a tolerance rather than an equality, and that is what makes failing it mean
     /// something. The reported timestamps are truncated to the whole minute while `Conn_Duration`
     /// carries seconds, so even for a sound record the implied end misses the reported one — by up
-    /// to but never reaching one [`TIME_GRID_STEP`], in either direction. Missing it
+    /// to but never reaching one `TIME_GRID_STEP`, in either direction. Missing it
     /// is therefore normal; missing it by *a minute
     /// or more under both readings* is not, especially as the two readings sit a full hour apart,
     /// so one of them is ordinarily well inside the tolerance. When neither is, the record's own
@@ -745,7 +742,7 @@ pub enum AnomalyKind {
     /// reader's eye.
     DuplicateId,
 
-    /// The reported start or end does not land on a whole [`TIME_GRID_STEP`].
+    /// The reported start or end does not land on a whole `TIME_GRID_STEP`.
     ///
     /// Informational only. Every allowance this software makes for the reporting's truncation
     /// assumes the reported times are truncated to that step. If Evolute starts reporting seconds,
@@ -772,7 +769,7 @@ pub enum AnomalyKind {
     /// rather than to a record go.
     ///
     /// Says only that a column disagreed. Which one, what it held and what was recomputed are not
-    /// carried: an [`AnomalyKind`] is a bare token, and [`Anomaly`] is a session and a kind.
+    /// carried: an [`AnomalyKind`] is a bare token, and `Anomaly` is a session and a kind.
     WorkbookDiscrepancy,
 }
 

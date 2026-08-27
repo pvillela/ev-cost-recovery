@@ -30,11 +30,8 @@
 //! UPDATE_REPORT_GOLDEN=1 cargo test --lib -- session::report_rendering_tests
 //! ```
 
-use crate::{
-    golden,
-    session::{csv::csv_sessions, estimates_from_sessions},
-    time::Interval,
-};
+use super::{csv::csv_sessions, estimates_from_sessions};
+use crate::{golden, time::Interval};
 use jiff::Timestamp;
 
 /// `(fixture stem, interval start UTC, interval end UTC)`.

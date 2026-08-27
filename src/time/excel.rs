@@ -56,6 +56,10 @@ pub fn serial_of_duration(d: Duration) -> f64 {
 ///
 /// Rounds to the nearest second rather than truncating: the writer stores whole seconds, and
 /// truncating what floating point hands back would turn `20:22:00` into `20:21:59`.
+///
+/// Gated because reading a serial back is only done by the workbook reader, which is `historic`.
+/// The writing direction, which the API uses, is not.
+#[cfg(any(test, feature = "historic"))]
 pub fn instant_of_serial(serial: f64) -> Result<Timestamp, jiff::Error> {
     Timestamp::from_second((serial * SECS_PER_DAY).round() as i64 + EXCEL_EPOCH_UNIX_SECS)
 }
@@ -64,6 +68,9 @@ pub fn instant_of_serial(serial: f64) -> Result<Timestamp, jiff::Error> {
 ///
 /// A negative serial clamps to zero. Excel has no unsigned cell, so a corrupt or hand-edited
 /// duration cell can be negative, and no duration in this crate can be.
+///
+/// `historic`, for the reason [`instant_of_serial`] gives.
+#[cfg(any(test, feature = "historic"))]
 pub fn duration_of_serial(days: f64) -> Duration {
     Duration::from_secs((days * SECS_PER_DAY).round().max(0.0) as u64)
 }

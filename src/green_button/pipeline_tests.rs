@@ -14,11 +14,8 @@
 //! what the workbook writer reports for the same period. `invoice_tests` is what pins the figures
 //! themselves to something outside the software.
 
-use crate::{
-    golden,
-    green_button::{period_values, read_gb_feed, read_gb_for_billing_period},
-    hydro_bill::BILL_END_DAY,
-};
+use super::{period_values, read_gb_feed, read_gb_for_billing_period};
+use crate::{golden, hydro_bill::BILL_END_DAY};
 use jiff::civil::date;
 
 #[test]

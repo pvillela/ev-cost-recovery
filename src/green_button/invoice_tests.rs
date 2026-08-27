@@ -14,9 +14,9 @@
 //! from `tests/fixtures/green_button/` through [`golden::fixture`](crate::golden::fixture) — the
 //! same files an integration test would have opened.
 
+use super::{period_values, read_gb_feed};
 use crate::{
     golden,
-    green_button::{period_values, read_gb_feed},
     hydro_bill::BILL_END_DAY,
     time::{Interval, Tou, tou_of},
 };

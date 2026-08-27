@@ -164,7 +164,7 @@ fn previous_month(year: i16, month: i8) -> (i16, i8) {
 ///
 /// A struct rather than a one-variant enum, so a function that can fail only this way says exactly
 /// that and a caller has nothing to match on. The error enums of operations that call
-/// [`billing_period_dates`] embed it rather than restating it.
+/// the crate-private `billing_period_dates` embed it rather than restating it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NotABillingPeriodEnding {
     pub ending: Date,

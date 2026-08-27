@@ -26,10 +26,8 @@ use std::{
 use jiff::Timestamp;
 use roxmltree::{Document, Node};
 
-use crate::{
-    green_button::{Anomaly, METER_INTERVAL, Reading},
-    time::is_on_grid,
-};
+use super::{Anomaly, METER_INTERVAL, Reading};
+use crate::time::is_on_grid;
 
 /// [`METER_INTERVAL`] in seconds, which is the form the feed states it in.
 const METER_INTERVAL_SECS: i64 = METER_INTERVAL.as_secs() as i64;

@@ -11,7 +11,7 @@ use ev_cost_recovery::{
         ReimbursementReconciliation, cost_recovery_surplus, gb_xml_to_xlsx,
         reconcile_evolute_reimbursement, session_csv_to_xlsx,
     },
-    session::file_name::report_coverage,
+    session::report_coverage,
 };
 use jiff::civil;
 use std::path::{Path, PathBuf};
