@@ -47,7 +47,7 @@ pub struct EnergyCost {
     /// The billing period these figures are for, named by the date it closes on. The bill's own,
     /// since every figure below is a proportion of one of its lines.
     pub billing_period_ending: Date,
-    /// EV energy used by TOU.
+    /// EV energy used, by TOU.
     pub kwh: TouKwh,
     /// Loss factor adjustment from bill.
     pub loss_factor_adjustment: f64,
@@ -61,6 +61,9 @@ pub struct EnergyCost {
     /// Toronto Hydro blended nominal off-peak rate.
     pub th_off_peak_rate: f64,
 
+    /// Toronto Hydro blended Wholesale Market Service Charge rate.
+    pub th_wholesale_mkt_svc_rate: f64,
+
     /// On-peak energy cost attributable to EV sessions:
     /// `adjusted_kwh.on_peak * th_on_peak_rate`.
     pub on_peak_cost: f64,
@@ -70,6 +73,10 @@ pub struct EnergyCost {
     /// Off-peak energy cost attributable to EV sessions:
     /// `adjusted_kwh.off_peak * th_off_peak_rate`.
     pub off_peak_cost: f64,
+
+    /// Portion of Wholesale Market Service Charge attributable to EV sessions:
+    /// `adjusted_kwh.total_kwh * th_wholesale_mkt_svc_rate`.
+    pub wholesale_mkt_svc_charge: f64,
 
     /// HST on energy charges attributable to EV sessions, before OER.
     pub hst: f64,
