@@ -50,9 +50,9 @@ amounts of the subtraction — recovery, energy cost, delivery cost, surplus —
 report in collapsible sections. Every figure in the subtraction can be checked, because all three
 sub-reports are printed below the summary.
 
-Only the delivery and energy sides are counted as EV cost. The customer charge, the standard supply
-administration charge and the wholesale market service charge are in neither, so a surplus of zero is
-not breaking even on the whole invoice.
+Only the delivery and energy sides are counted as EV cost. The customer charge and the standard
+supply administration charge are in neither — they are flat, so the bill carries them whether the
+chargers run or not — and a surplus of zero is therefore not breaking even on the whole invoice.
 
 Saved or copied, that report is byte-for-byte what the command line prints. That holds because there
 is one rendering rather than two that could drift; see
@@ -200,9 +200,8 @@ during the period, and the energy is split at local midnight on its effective da
 and energy costs, and the difference. A positive surplus means the rates covered the chargers'
 share of the bill; a negative one means they fell short. It prints all three reports beneath the
 summary, so every figure in the subtraction can be checked. Only the delivery and energy sides are
-counted as EV cost — the customer charge, the standard supply administration charge and the
-wholesale market service charge are in neither — so a surplus of zero is not breaking even on the
-whole invoice.
+counted as EV cost — the customer charge and the standard supply administration charge are in
+neither, being flat — so a surplus of zero is not breaking even on the whole invoice.
 
 These six need two adjacent months' session reports, since a billing period runs from the
 24th to the 23rd. Only June's is real, so `scripts/make-may-mock.py` builds the May half from it —

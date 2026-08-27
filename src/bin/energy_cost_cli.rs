@@ -7,8 +7,9 @@ use std::{env, error::Error, path::Path, process::ExitCode};
 const USAGE: &str = "\
 energy_cost_cli -- the energy cost attributable to EV charging in one billing period.
 
-Prices the EV share of each time-of-use band at the bill's own rate for that band. Every rate and
-proportion comes off the bill; no tariff is assumed.
+Prices the EV share of each time-of-use band at the bill's own rate for that band, and adds the EV
+share of the wholesale market service charge, which is levied per kilowatt-hour at one rate across
+all three. Every rate and proportion comes off the bill; no tariff is assumed.
 
 No meter export is asked for. Consumption is billed by the kilowatt-hour, so the hour the site
 peaked in does not bear on this figure. For the delivery lines, which do, see peak_power_cost_cli.

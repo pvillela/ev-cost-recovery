@@ -221,11 +221,17 @@ pub fn energy(billing_period_ending: Date, sessions: &Sessions) -> Result<Energy
 /// against `total_electricity_charges` rather than from a statutory rate, so a bill that rounds or
 /// prorates either of them carries that through to the EV share.
 ///
-/// Only the three time-of-use lines are attributed. The three demand-priced delivery lines are
+/// The wholesale market service charge is attributed too, and on the same principle: it is levied
+/// per adjusted kilowatt-hour, so the EV share of it is the EV share of the energy. Its rate is
+/// read off the bill the same way the band rates are — the charge over `adjusted_kwh_used`, which
+/// is the base the three band lines sum to. It is a flat rate rather than three, so it appears on
+/// its own line rather than in the time-of-use table.
+///
+/// The three demand-priced delivery lines are not attributed here. They are
 /// [`peak_power_cost`](super::peak_power::peak_power_cost)'s, since they turn on which interval the
 /// site peaked in rather than on how much was drawn. The customer charge and the standard supply
-/// administration charge are fixed. The wholesale market service charge is levied per kilowatt-hour
-/// and so is attributable in principle, but is not among the figures returned.
+/// administration charge are not attributed at all: they are fixed, so a charger adds nothing to
+/// either.
 ///
 /// # Arguments
 ///
@@ -242,8 +248,10 @@ pub fn energy(billing_period_ending: Date, sessions: &Sessions) -> Result<Energy
 /// # Errors
 ///
 /// [`EnergyError::NotABillingPeriodEnding`] if the bill's meter reading period does not close on
-/// [`BILL_END_DAY`], and [`EnergyError::NoRate`] if the bill reports no consumption in one of the
-/// three bands.
+/// [`BILL_END_DAY`]; [`EnergyError::NoRate`] if the bill reports no consumption in one of the three
+/// bands; and [`EnergyError::ZeroDenominator`] if `adjusted_kwh_used` or
+/// `total_electricity_charges` is zero, which the wholesale market service rate and the two tax
+/// proportions respectively divide by.
 pub fn energy_cost(bill: &HydroBill, sessions: &Sessions) -> Result<EnergyCost, EnergyError> {
     // An off-cycle bill -- one whose meter reading period does not close a billing period -- is
     // refused rather than estimated from, because `energy` sums over a period this does not model.
@@ -266,7 +274,18 @@ pub fn energy_cost(bill: &HydroBill, sessions: &Sessions) -> Result<EnergyCost, 
     let on_peak_cost = adjusted_kwh.on_peak * th_on_peak_rate;
     let mid_peak_cost = adjusted_kwh.mid_peak * th_mid_peak_rate;
     let off_peak_cost = adjusted_kwh.off_peak * th_off_peak_rate;
-    let charges = on_peak_cost + mid_peak_cost + off_peak_cost;
+
+    // Over `adjusted_kwh_used`, the same base the three band rates are per: the bill's three
+    // time-of-use consumption lines sum to it, not to `kwh_used`. On the reference bill that
+    // quotient is $0.006000/kWh exactly, the published rate; over `kwh_used` it would be
+    // $0.006177, which is no rate anyone charges. So the charge is levied on adjusted kWh and the
+    // EV share of it is the EV adjusted kWh, not the metered figure.
+    let th_wholesale_mkt_svc_rate =
+        bill.wholesale_market_svc_charge / bill.divisor("Adj. kWh Used", bill.adjusted_kwh_used)?;
+    let wholesale_mkt_svc_charge = adjusted_kwh.total_kwh() * th_wholesale_mkt_svc_rate;
+
+    let tou_charges = on_peak_cost + mid_peak_cost + off_peak_cost;
+    let charges = tou_charges + wholesale_mkt_svc_charge;
 
     // Both as fractions of the bill's own charges rather than as rates of their own. The rebate in
     // particular is a policy percentage that has been changed more than once, and reading it off
@@ -284,9 +303,11 @@ pub fn energy_cost(bill: &HydroBill, sessions: &Sessions) -> Result<EnergyCost, 
         th_on_peak_rate,
         th_mid_peak_rate,
         th_off_peak_rate,
+        th_wholesale_mkt_svc_rate,
         on_peak_cost,
         mid_peak_cost,
         off_peak_cost,
+        wholesale_mkt_svc_charge,
         hst,
         ontario_electricity_rebate,
         // The bill states its own total the same way -- see `HydroBill::bill_total_amount`. The
@@ -347,7 +368,7 @@ impl fmt::Display for EnergyCost {
                 format!("{cost:.2}"),
             ]
         };
-        let charges = self.on_peak_cost + self.mid_peak_cost + self.off_peak_cost;
+        let tou_charges = self.on_peak_cost + self.mid_peak_cost + self.off_peak_cost;
         let rows = vec![
             band(
                 "On-peak",
@@ -371,13 +392,15 @@ impl fmt::Display for EnergyCost {
                 self.off_peak_cost,
             ),
             // No rate on the total line: the three differ, so one there would be read as a fourth
-            // rate rather than as the absence of one.
+            // rate rather than as the absence of one. The total is the three bands only -- the
+            // wholesale market service charge is on the same energy but is not a time-of-use band,
+            // and putting it in a column of three would make the kWh column double-count.
             vec![
-                "Total before HST & OER".to_owned(),
+                "Total".to_owned(),
                 format!("{:.3}", self.kwh.total_kwh()),
                 format!("{:.3}", self.adjusted_kwh.total_kwh()),
                 String::new(),
-                format!("{charges:.2}"),
+                format!("{tou_charges:.2}"),
             ],
         ];
 
@@ -404,7 +427,14 @@ impl fmt::Display for EnergyCost {
             f,
             "{}",
             amounts(&[
-                ("Energy charges", charges),
+                ("Energy charges", tou_charges),
+                // Its own line rather than folded into the one above: it is a regulatory charge
+                // levied per kWh, not a fourth time-of-use band, and a reader checking the energy
+                // charges against the table below has to be able to see where the difference went.
+                (
+                    "Wholesale Market Service Charge",
+                    self.wholesale_mkt_svc_charge
+                ),
                 ("HST", self.hst),
                 // Negative because it is a credit. The bill prints it as one, and a column that is
                 // alternately added and subtracted cannot be checked by eye.
@@ -429,6 +459,27 @@ impl fmt::Display for EnergyCost {
                 &[Left, Right, Right, Right, Right],
             )
         )?;
+
+        // A table of its own rather than a fourth row above, and shaped like the delivery report's
+        // component table for the same reason: one charge, one rate, one basis. It is levied on
+        // the same adjusted kilowatt-hours the three bands divide between them, so a row in that
+        // table would make the kWh column read as four bands summing to more than the energy.
+        writeln!(f, "{}\n", h2("Wholesale Market Service Charge"))?;
+        writeln!(
+            f,
+            "{}\n",
+            table(
+                &["Basis", "Adj. kWh", "TH blended rate", "Charge"],
+                &[vec![
+                    "All bands".to_owned(),
+                    format!("{:.3}", self.adjusted_kwh.total_kwh()),
+                    format!("{:.5}", self.th_wholesale_mkt_svc_rate),
+                    format!("{:.2}", self.wholesale_mkt_svc_charge),
+                ]],
+                &[Left, Right, Right, Right],
+            )
+        )?;
+
         write!(f, "{}", self.notes.to_markdown())
     }
 }
@@ -688,10 +739,18 @@ mod test {
 
     /// HST and the rebate are the bill's own proportions of the EV charges, and the total is the
     /// charges plus the one less the other -- the shape `HydroBill::bill_total_amount` uses.
+    ///
+    /// The base is the three bands *plus* the wholesale market service charge. Both are per
+    /// kilowatt-hour and both are inside `total_electricity_charges`, which is what the two
+    /// proportions are read against, so taxing one and not the other would read the rebate off a
+    /// base the bill does not use.
     #[test]
     fn tax_and_rebate_follow_the_bills_own_proportions() {
         let cost = cost();
-        let charges = cost.on_peak_cost + cost.mid_peak_cost + cost.off_peak_cost;
+        let charges = cost.on_peak_cost
+            + cost.mid_peak_cost
+            + cost.off_peak_cost
+            + cost.wholesale_mkt_svc_charge;
         // 1300 / 10000 and 1000 / 10000 on the fixture bill.
         assert!(close(cost.hst, charges * 0.13));
         assert!(close(cost.ontario_electricity_rebate, charges * 0.10));
@@ -701,6 +760,54 @@ mod test {
         ));
         // The rebate is smaller than the tax on these proportions, so the total exceeds the charges.
         assert!(cost.energy_cost > charges);
+    }
+
+    /// The wholesale market service charge is the EV adjusted energy at the bill's own rate for it,
+    /// and that rate is the charge over `adjusted_kwh_used` -- the base the three band lines sum
+    /// to, not `kwh_used`.
+    ///
+    /// Dividing by `kwh_used` instead would still produce a plausible dollar figure, which is why
+    /// the rate is pinned here rather than only the charge. On the reference bill the two differ
+    /// by the loss factor: $0.006000/kWh against $0.006177, and only the first is a rate anyone
+    /// publishes.
+    #[test]
+    fn the_wholesale_market_service_charge_is_priced_on_adjusted_energy() {
+        let (cost, bill) = (cost(), bill());
+
+        // 420 / 50000. Not 420 / 47619.048, which would be 0.00882.
+        assert!(close(cost.th_wholesale_mkt_svc_rate, 0.0084));
+        assert!(close(
+            cost.th_wholesale_mkt_svc_rate,
+            bill.wholesale_market_svc_charge / bill.adjusted_kwh_used
+        ));
+
+        // 15 kWh across the three bands, raised by the 1.05 loss factor.
+        assert!(close(cost.adjusted_kwh.total_kwh(), 15.75));
+        assert!(close(cost.wholesale_mkt_svc_charge, 15.75 * 0.0084));
+
+        // It reaches the total, which is the whole point of attributing it.
+        assert!(cost.wholesale_mkt_svc_charge > 0.0);
+        assert!(close(
+            cost.energy_cost,
+            (cost.on_peak_cost
+                + cost.mid_peak_cost
+                + cost.off_peak_cost
+                + cost.wholesale_mkt_svc_charge)
+                * 1.03
+        ));
+    }
+
+    /// A bill reporting no adjusted consumption states no wholesale market service rate, and the
+    /// quotient would be infinite or NaN. Refused, naming the figure, exactly as a zero total is.
+    #[test]
+    fn a_bill_stating_no_adjusted_consumption_is_refused() {
+        let mut b = bill();
+        b.adjusted_kwh_used = 0.0;
+        let err = energy_cost(&b, &sessions()).expect_err("a zero divisor");
+        let EnergyError::ZeroDenominator(z) = &err else {
+            panic!("expected a ZeroDenominator, got {err}");
+        };
+        assert_eq!(z.figure, "Adj. kWh Used", "{err}");
     }
 
     /// A band the bill reports no consumption in states no rate, and the quotient would be infinite

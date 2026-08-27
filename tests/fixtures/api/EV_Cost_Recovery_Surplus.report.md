@@ -6,9 +6,9 @@ Period       2026-05-24 - 2026-06-23  (31 days)
 | Item             |  Amount |
 |:-----------------|--------:|
 | Cost recovery    |    2.24 |
-| EV energy cost   |   -2.95 |
+| EV energy cost   |   -3.07 |
 | EV delivery cost | -139.79 |
-| Surplus          | -140.50 |
+| Surplus          | -140.62 |
 
 The cost-recovery rates fell short of the chargers' share of the bill for
 this period, by the amount above.
@@ -59,12 +59,13 @@ EV Energy Cost
 Period       2026-05-24 - 2026-06-23  (31 days)
 Loss factor  1.0295
 
-| Item                       | Amount |
-|:---------------------------|-------:|
-| Energy charges             |   2.86 |
-| HST                        |   0.37 |
-| Ontario Electricity Rebate |  -0.29 |
-| Energy cost                |   2.95 |
+| Item                            | Amount |
+|:--------------------------------|-------:|
+| Energy charges                  |   2.86 |
+| Wholesale Market Service Charge |   0.11 |
+| HST                             |   0.39 |
+| Ontario Electricity Rebate      |  -0.30 |
+| Energy cost                     |   3.07 |
 
 Note: figures are rounded for display. A column can therefore differ by a
 cent, or by a thousandth of a kilowatt-hour, from the total stated for it,
@@ -73,12 +74,19 @@ which is computed from the unrounded values.
 Energy charges by time of use
 -----------------------------
 
-| TOU                    |    kWh | Adj. kWh | TH blended rate | Cost |
-|:-----------------------|-------:|---------:|----------------:|-----:|
-| On-peak                | 15.803 |   16.269 |         0.15385 | 2.50 |
-| Mid-peak               |  2.197 |    2.262 |         0.12500 | 0.28 |
-| Off-peak               |  1.000 |    1.030 |         0.07556 | 0.08 |
-| Total before HST & OER | 19.000 |   19.561 |                 | 2.86 |
+| TOU      |    kWh | Adj. kWh | TH blended rate | Cost |
+|:---------|-------:|---------:|----------------:|-----:|
+| On-peak  | 15.803 |   16.269 |         0.15385 | 2.50 |
+| Mid-peak |  2.197 |    2.262 |         0.12500 | 0.28 |
+| Off-peak |  1.000 |    1.030 |         0.07556 | 0.08 |
+| Total    | 19.000 |   19.561 |                 | 2.86 |
+
+Wholesale Market Service Charge
+-------------------------------
+
+| Basis     | Adj. kWh | TH blended rate | Charge |
+|:----------|---------:|----------------:|-------:|
+| All bands |   19.561 |         0.00583 |   0.11 |
 
 
 EV Delivery Cost

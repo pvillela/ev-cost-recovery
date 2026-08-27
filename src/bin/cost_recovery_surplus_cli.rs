@@ -28,7 +28,9 @@ the rates held through, and two when they changed during it -- the first being t
 on the period's first day, whose effective date may be well before the period, and the second the
 rates it changed to. A change takes effect at local midnight starting its date.
 
-Only the delivery and energy sides of the bill are counted as EV cost.
+Only the delivery and energy sides of the bill are counted as EV cost. The energy side covers the
+three time-of-use lines and the wholesale market service charge; the customer charge and the
+standard supply administration charge are flat and are left out of both sides.
 
 The report is written to stdout as markdown that also reads as plain text.
 

@@ -438,8 +438,10 @@ pub fn cost_recovery(
 /// to. Subtracting one from the other is therefore money against money, which is the only basis on
 /// which the two sides compare.
 ///
-/// The costs cover the two parts of the bill a charger can be held to: the energy lines and the
-/// three demand-priced delivery lines. Nothing else on the invoice enters either side.
+/// The costs cover the parts of the bill a charger can be held to: the three time-of-use energy
+/// lines, the wholesale market service charge, and the three demand-priced delivery lines. What is
+/// left out is what a charger cannot move — the customer charge and the standard supply
+/// administration charge are flat, so the bill carries them whether the chargers run or not.
 ///
 /// # Arguments
 ///
