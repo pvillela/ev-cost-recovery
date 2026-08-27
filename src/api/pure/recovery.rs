@@ -140,8 +140,9 @@ pub struct CostRecoverySurplus {
     /// What the chargers' share of the three demand-priced delivery lines cost, after HST and the
     /// rebate.
     pub delivery: DeliveryCost,
-    /// What the chargers' share of the three time-of-use consumption lines cost, after HST and the
-    /// rebate.
+    /// What the chargers' share of the consumption lines cost, after HST and the rebate: the three
+    /// time-of-use lines and the wholesale market service charge, which is levied on the same
+    /// kilowatt-hours at one rate across all three.
     pub energy: EnergyCost,
     /// `recovery.cost_recovery - delivery.delivery_cost - energy.energy_cost`, each term rounded to
     /// the cent before the subtraction, and the result rounded again.

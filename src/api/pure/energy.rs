@@ -3,7 +3,8 @@
 //!
 //! [`fn@energy`] answers the first: how many kilowatt-hours the chargers drew in each of the three
 //! price bands. [`energy_cost`] prices those against the bill, at the rate the bill itself charged
-//! for each band.
+//! for each band, and adds the EV share of the wholesale market service charge — levied on the same
+//! kilowatt-hours at one rate across all three, so it belongs to consumption rather than to demand.
 //!
 //! The demand side of the bill is [`peak_power`](mod@super::peak_power): what the chargers
 //! contributed to the hour the site peaked in. This is the other side, consumption, which is billed
