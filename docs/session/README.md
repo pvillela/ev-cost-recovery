@@ -20,13 +20,6 @@ They are constrained as follows:
 
 ## Workflow
 
-> **This workflow is the `historic` half of the crate.** Its second step — reading a workbook back
-> to estimate from it — lives behind the `historic` cargo feature, along with the two binaries that
-> drive it. A default `cargo build` does not produce them. See
-> [`docs/historic-feature.md`](../historic-feature.md) for what that gates and why, and build with
-> `--features historic` to follow the steps below. The desktop app answers the billing-period
-> question by a different route and needs no feature.
-
 This is the typical workflow used with this software to estimate the impact of EV charging activity on a particular Toronto Hydro bill:
 
 - Preliminary steps (out of scope for this software):
@@ -58,8 +51,6 @@ The two DST transitions are treated differently, because they are different prob
 - On the night DST **begins**, an hour of wall time never happens. There is nothing to choose between, so such a start is refused outright and no designator helps.
 
 These rules live in one place, `src/session/ioi.rs`, and every caller comes through it, so nothing that asks for an interval can disagree with anything else about what interval a bill may be argued from.
-
-That module is behind `--features historic`, because those callers are `ev_peak_cli` and `ev_peak_gui` and there are no others: the library API is handed an interval rather than choosing one, and the `ev_cost_recovery` app derives its window from a billing period. See [`../historic-feature.md`](../historic-feature.md).
 
 ## Excel workbook
 
@@ -212,7 +203,7 @@ Evolute's own description of how the installation behaves when several vehicles 
   - The flag cannot distinguish a reused id from two reports disagreeing about one session; from the merge the two look identical. Neither is treated as fatal, because refusing the first would make June 2026 unestimatable, and the judgement belongs to a reader who can go back to the source rows.
 - Sessions with zero `Energy_Use` and non-zero `Active_Charge_Time` do not contribute to `energy_based_kw` and `energy_based_kva` but they do contribute to `count_based_kw` and `count_based_kva`.
 - A session with zero `Active_Charge_Time` delivered energy in no time at all, so its average power is unbounded or undefined.
-  - The Excel `avg_kw` cell shows `#DIV/0!` so the fault is visible in the sheet. Both readers — `csv_sessions` from the CSV, and `xlsx_to_sessions` from a workbook, the latter behind `historic` — return the session as a *spike*, held apart from the normal sessions fed to the peak logic.
+  - The Excel `avg_kw` cell shows `#DIV/0!` so the fault is visible in the sheet. Both readers — `csv_sessions` from the CSV and `xlsx_to_sessions` from a workbook — return the session as a *spike*, held apart from the normal sessions fed to the peak logic.
   - Spikes are worth reviewing individually for their effect on the building's demand charge.
   - The power estimating logic treats spikes as follows:
     - If `Energy_Use == 0`, set `avg_kw` to 0. These sessions do not contribute to `energy_based_kw` and `energy_based_kva` but they do contribute to `count_based_kw` and `count_based_kva`.

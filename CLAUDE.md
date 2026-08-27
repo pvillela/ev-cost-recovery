@@ -46,6 +46,15 @@ that actually went wrong, not a general principle.
 - **Adding a cargo feature is a test-coverage decision.** For every target pushed behind one, ask
   what a default `cargo test` stops checking — and whether it belonged behind the gate at all.
 
+- **A subject document describes its subject. Packaging facts go in the packaging document.**
+  `docs/session/README.md` is about session reports, interval-of-interest rules and workbook
+  columns. Twice I put `historic` explanations in it — a six-line block quote about what a default
+  `cargo build` produces, and later a paragraph on why `ioi` is gated, naming the API and the
+  desktop app. Both belonged in `docs/historic-feature.md`, which already said them. The one
+  mention that survives is `Needs --features historic` on the command-table row, where a reader is
+  about to type the command. When a change spans a feature, the pull is to mention it everywhere
+  the feature touches; the test is whether a reader of *this* document needs it here.
+
 ## Rules this repository has settled on
 
 - **Information that reaches a message lives in a field of the error variant, formatted at
