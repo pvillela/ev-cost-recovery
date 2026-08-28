@@ -495,7 +495,7 @@ mod test {
     #[test]
     fn an_empty_segment_is_the_standing_block() {
         let segment = Segment::new(hour().start, SEGMENT_DURATION);
-        let standing = site_load(0);
+        let standing = site_load(0.0);
 
         for load in [
             segment.count_based_load().min,
@@ -599,7 +599,7 @@ mod test {
                 })
                 .collect();
             let segments = segments_for_ioi(hour(), &sessions);
-            let expected = site_load(n);
+            let expected = site_load(n as f64);
 
             for segment in &segments {
                 let count = segment.agg_count();

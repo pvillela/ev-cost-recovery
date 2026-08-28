@@ -1,5 +1,8 @@
 use super::log::SourceLog;
-use crate::time::{Interval, duration, time_zone, truncate_to};
+use crate::{
+    session::site_load::{PANEL_BREAKER_COUNT, PANEL_VOLTAGE_V, site_load},
+    time::{Interval, duration, time_zone, truncate_to},
+};
 
 use super::site_load::{Load, ev_load, ev_real_power_kw, transformer_load};
 use jiff::{Timestamp, Zoned};
@@ -628,19 +631,28 @@ impl Segment {
     }
 
     pub fn count_based_load(&self) -> Bracket<Load> {
-        let secondary = self.agg_count().map(|v| ev_load().scaled(*v));
-        secondary + secondary.map(|v| transformer_load(*v))
+        let scaling = self.agg_count();
+        scaling.map(|s| Self::scaled_load(*s))
     }
 
     pub fn energy_based_load(&self) -> Bracket<Load> {
         let single_ev_real_kw = ev_load().real_kw;
         let scaling = self.agg_kw().map(|v| v / single_ev_real_kw);
-        let secondary = scaling.map(|v| ev_load().scaled(*v));
+        scaling.map(|s| Self::scaled_load(*s))
+    }
 
-        // Below 2 lines correspond to `secondary + transforer_load(secondary)` in the implementation
-        // of `site_load::site_load`.`
-        let xfmr_load = secondary.map(|v| transformer_load(*v));
-        secondary + xfmr_load
+    fn scaled_load(scaling: f64) -> Load {
+        if scaling <= PANEL_BREAKER_COUNT as f64 {
+            site_load(scaling)
+        } else {
+            let nameplate_scaling = scaling.min(PANEL_BREAKER_COUNT as f64);
+            let excess_scaling = scaling - nameplate_scaling;
+            let nameplate_load = site_load(nameplate_scaling);
+            let unit_excess_load =
+                site_load(PANEL_BREAKER_COUNT as f64).scaled(1.0 / PANEL_BREAKER_COUNT as f64);
+            let excess_load = unit_excess_load.scaled(excess_scaling);
+            nameplate_load + excess_load
+        }
     }
 
     pub(crate) fn add_session(&mut self, session: RSession) {

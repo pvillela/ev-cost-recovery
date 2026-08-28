@@ -22,8 +22,8 @@
 use super::{
     Anomaly, AnomalyKind, Bracket, IntervalEstimates, RSession, Segment, Session, SessionNotes,
     site_load::{
-        BREAKER_COUNT, BREAKER_RATING_A, CONTINUOUS_DUTY_DERATE, PANEL_VOLTAGE_V, XFMR_RATING_KVA,
-        ev_load, ev_pilot_current_a, loading_ratio, site_load,
+        BREAKER_RATING_A, CONTINUOUS_DUTY_DERATE, PANEL_BREAKER_COUNT, PANEL_VOLTAGE_V,
+        XFMR_RATING_KVA, ev_load, ev_pilot_current_a, loading_ratio, site_load,
     },
 };
 use crate::{
@@ -626,7 +626,7 @@ pub fn site_load_report() -> String {
     out.push_str("Level 2 EV charging site - load at transformer primary\n\n");
     out.push_str(&format!(
         "  Panel            {:.0} V, {} x {:.0} A breakers\n",
-        PANEL_VOLTAGE_V, BREAKER_COUNT, BREAKER_RATING_A
+        PANEL_VOLTAGE_V, PANEL_BREAKER_COUNT, BREAKER_RATING_A
     ));
     out.push_str(&format!(
         "  Pilot current    {:.1} A per vehicle ({:.0}% continuous derate)\n",
@@ -651,8 +651,8 @@ pub fn site_load_report() -> String {
     ));
     out.push_str(&format!("{}\n", "-".repeat(69)));
 
-    for ev_count in 0..=BREAKER_COUNT {
-        let load = site_load(ev_count);
+    for ev_count in 0..=PANEL_BREAKER_COUNT {
+        let load = site_load(ev_count as f64);
         let percent = loading_ratio(load) * PERCENT;
         let flag = if percent > PERCENT {
             "  <- over nameplate"
@@ -673,7 +673,7 @@ pub fn site_load_report() -> String {
         ));
     }
 
-    let full = site_load(BREAKER_COUNT);
+    let full = site_load(PANEL_BREAKER_COUNT as f64);
     out.push_str(&format!(
         "\nAt full occupancy: {:.2} kW, {:.2} kVA, {:.1}% of nameplate.\n",
         full.real_kw,

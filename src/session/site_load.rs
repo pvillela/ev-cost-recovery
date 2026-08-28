@@ -19,7 +19,7 @@ pub const BREAKER_RATING_A: f64 = 40.0;
 pub const CONTINUOUS_DUTY_DERATE: f64 = 0.80;
 
 /// Number of EVSE breakers in the panel. Bounds the vehicle count.
-pub const BREAKER_COUNT: u32 = 10;
+pub const PANEL_BREAKER_COUNT: u32 = 10;
 
 /// True (distortion-inclusive) power factor of the vehicle's onboard
 /// charger at full rated current.
@@ -179,9 +179,10 @@ pub(crate) fn transformer_load(secondary: Load) -> Load {
     }
 }
 
-/// Total load seen at the transformer primary for a given vehicle count.
-pub fn site_load(ev_count: u32) -> Load {
-    let secondary = ev_load().scaled(f64::from(ev_count));
+/// Total load seen at the transformer primary for a given vehicle count;
+/// argument is `f64` to allow fractional counts.
+pub fn site_load(ev_count: f64) -> Load {
+    let secondary = ev_load().scaled(ev_count);
     secondary + transformer_load(secondary)
 }
 
@@ -243,7 +244,7 @@ mod tests {
 
     #[test]
     fn idle_transformer_draws_only_excitation() {
-        let idle = site_load(0);
+        let idle = site_load(0.0);
         assert_close(idle.real_kw, XFMR_NO_LOAD_LOSS_KW);
         assert_close(idle.reactive_kvar, XFMR_MAGNETIZING_PU * XFMR_RATING_KVA);
         assert_close(idle.distortion_kvar, 0.0);
@@ -257,8 +258,8 @@ mod tests {
     /// on the vehicles alone — the transformer only ever adds reactive power on top.
     #[test]
     fn site_power_factor_rises_then_plateaus() {
-        let single = site_load(1).true_power_factor();
-        let plateau = site_load(BREAKER_COUNT).true_power_factor();
+        let single = site_load(1.0).true_power_factor();
+        let plateau = site_load(PANEL_BREAKER_COUNT as f64).true_power_factor();
         assert!(single < plateau, "PF should improve with loading");
         assert!(
             plateau <= max_true_power_factor(),
@@ -276,15 +277,15 @@ mod tests {
     /// constants are wrong, not the test.
     #[test]
     fn full_occupancy_stays_within_nameplate() {
-        assert!(loading_ratio(site_load(BREAKER_COUNT)) < 1.0);
+        assert!(loading_ratio(site_load(PANEL_BREAKER_COUNT as f64)) < 1.0);
     }
 
     #[test]
     fn apparent_power_never_exceeds_scalar_sum_of_parts() {
         // Quadrature addition is bounded by arithmetic addition.
-        for ev_count in 0..=BREAKER_COUNT {
+        for ev_count in 0..=PANEL_BREAKER_COUNT {
             let secondary = ev_load().scaled(f64::from(ev_count));
-            let total = site_load(ev_count).apparent_kva();
+            let total = site_load(ev_count as f64).apparent_kva();
             let scalar = secondary.apparent_kva() + transformer_load(secondary).apparent_kva();
             assert!(total <= scalar + TOLERANCE);
         }
