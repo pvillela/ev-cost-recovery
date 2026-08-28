@@ -1455,10 +1455,11 @@ mod test {
         }
     }
 
-    /// Within one panel the extension is not an extension: it is the site model itself.
+    /// For counts up to `PANEL_BREAKER_COUNT`, `Segment::scaled_load` must return the same load as
+    /// `site_load`. The scaling rule only takes over above one panel's capacity.
     ///
-    /// Fractional counts as well as whole ones, because a segment counts vehicles by the share of
-    /// the segment they cover and almost never lands on an integer.
+    /// Fractional counts are checked as well as whole ones, because `Segment::agg_count` sums the
+    /// share of the segment each session covers, so its count is almost never an integer.
     #[test]
     fn up_to_one_panel_the_scaled_load_is_the_site_load_model() {
         for tenths in 0..=(PANEL_BREAKER_COUNT * 10) {
@@ -1471,10 +1472,11 @@ mod test {
         }
     }
 
-    /// The branch boundary is not a step.
+    /// The two branches of `Segment::scaled_load` must agree at `PANEL_BREAKER_COUNT`, so the load
+    /// does not jump as the count crosses it.
     ///
-    /// A discontinuity here would put a segment's estimate on which side of a threshold its count
-    /// happened to fall, which is exactly what a graceful extension must not do.
+    /// If they disagreed, two segments with almost the same vehicle count would get noticeably
+    /// different estimates purely because one fell either side of the boundary.
     #[test]
     fn the_two_branches_meet_at_the_panel_boundary() {
         let capacity = panel_capacity();
@@ -1488,10 +1490,11 @@ mod test {
         );
     }
 
-    /// Past one panel, load is proportional to the count at the rate a full panel sets.
+    /// Above `PANEL_BREAKER_COUNT`, load rises in proportion to the count: twice a full panel's
+    /// worth of vehicles draws twice a full panel's load, and so on.
     ///
-    /// Stated as the ratio rather than as a figure, so it says what the model claims without
-    /// naming a constant by value: two panels' worth of vehicles draw twice a full panel's load.
+    /// The assertion is a ratio against `site_load(PANEL_BREAKER_COUNT)` rather than a kW figure,
+    /// so it pins the proportionality rule and not the load a full panel happens to draw.
     #[test]
     fn beyond_one_panel_load_is_proportional_to_the_count() {
         let capacity = panel_capacity();
@@ -1506,16 +1509,16 @@ mod test {
         }
     }
 
-    /// Adding a vehicle never lowers the site load, on either side of the boundary or across it.
+    /// Adding a vehicle never lowers the site load, below the panel boundary, above it, or across
+    /// it.
     ///
-    /// The property the whole extension exists to preserve. Beyond one panel the old model bent
-    /// upward on the transformer's square-law terms; this asserts the shape stays monotone without
-    /// asserting how steep it is.
+    /// The sweep runs well past `PANEL_BREAKER_COUNT`, so it crosses the branch boundary rather
+    /// than stopping at it. Only the ordering of successive loads is checked, never how far apart
+    /// they are.
     #[test]
     fn load_never_falls_as_vehicles_are_added() {
         let mut previous = Segment::scaled_load(0.0).apparent_kva();
 
-        // Well past one panel, so the sweep crosses the boundary rather than stopping at it.
         for tenths in 1..=(PANEL_BREAKER_COUNT * 30) {
             let count = f64::from(tenths) / 10.0;
             let current = Segment::scaled_load(count).apparent_kva();
@@ -1527,11 +1530,13 @@ mod test {
         }
     }
 
-    /// Beyond one panel the load stays under what the unextended model would have charged.
+    /// Above one panel, `Segment::scaled_load` reports less than `site_load` would for the same
+    /// count.
     ///
-    /// This is the change stated as a comparison: `site_load` alone drives one transformer past
-    /// its nameplate, and its loss and reactance terms rise with the square of loading, so it
-    /// exceeds a proportional second panel at every count above capacity.
+    /// `site_load` on its own models one transformer driven past its nameplate. Its copper-loss
+    /// and reactance terms rise with the square of loading, so past capacity it grows faster than
+    /// in proportion to the count, while a second panel on a second transformer grows in
+    /// proportion.
     #[test]
     fn the_extension_charges_less_than_overloading_one_transformer() {
         let capacity = panel_capacity();
