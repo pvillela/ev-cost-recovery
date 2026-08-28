@@ -23,10 +23,10 @@ pub const PANEL_BREAKER_COUNT: u32 = 10;
 
 /// True (distortion-inclusive) power factor of the vehicle's onboard
 /// charger at full rated current.
-pub const EV_TRUE_POWER_FACTOR: f64 = 0.99;
+const EV_TRUE_POWER_FACTOR: f64 = 0.99;
 
 /// Total harmonic distortion of the onboard charger's input current.
-pub const EV_CURRENT_THD: f64 = 0.045;
+const EV_CURRENT_THD: f64 = 0.045;
 
 // ---------------------------------------------------------------------------
 // Transformer constants (75 kVA dry type, 600-208 V)
@@ -35,24 +35,24 @@ pub const EV_CURRENT_THD: f64 = 0.045;
 pub const XFMR_RATING_KVA: f64 = 75.0;
 
 /// Core loss. Constant whenever the transformer is energised.
-pub const XFMR_NO_LOAD_LOSS_KW: f64 = 0.35;
+const XFMR_NO_LOAD_LOSS_KW: f64 = 0.35;
 
 /// Copper loss at rated load. Scales with the square of loading.
-pub const XFMR_FULL_LOAD_LOSS_KW: f64 = 1.6;
+const XFMR_FULL_LOAD_LOSS_KW: f64 = 1.6;
 
 /// Magnetizing current, per unit of rating. Treated as purely reactive and
 /// constant whenever the transformer is energised.
-pub const XFMR_MAGNETIZING_PU: f64 = 0.02;
+const XFMR_MAGNETIZING_PU: f64 = 0.02;
 
 /// Leakage reactance, per unit of rating. Reactive draw scales with the
 /// square of loading.
-pub const XFMR_REACTANCE_PU: f64 = 0.04;
+const XFMR_REACTANCE_PU: f64 = 0.04;
 
 // ---------------------------------------------------------------------------
 // Unit conversion
 // ---------------------------------------------------------------------------
 
-pub const VA_PER_KVA: f64 = 1000.0;
+const VA_PER_KVA: f64 = 1000.0;
 
 // ---------------------------------------------------------------------------
 // Load representation
@@ -89,7 +89,7 @@ impl Load {
     }
 
     /// Scale every component by a common factor.
-    pub(crate) fn scaled(self, factor: f64) -> Self {
+    pub fn scaled(self, factor: f64) -> Self {
         Self {
             real_kw: self.real_kw * factor,
             reactive_kvar: self.reactive_kvar * factor,
@@ -110,7 +110,7 @@ pub const fn ev_pilot_current_a() -> f64 {
 /// Apparent power of one charging vehicle. The load is current-limited, so
 /// this follows from voltage and current alone and is unaffected by power
 /// factor.
-pub const fn ev_apparent_power_kva() -> f64 {
+const fn ev_apparent_power_kva() -> f64 {
     PANEL_VOLTAGE_V * ev_pilot_current_a() / VA_PER_KVA
 }
 
@@ -124,7 +124,7 @@ pub const fn ev_real_power_kw() -> f64 {
 /// Ceiling on true power factor imposed by current distortion alone. This is
 /// the distortion factor: true PF is the product of displacement PF and this
 /// term, so unity displacement PF is the best any load can do at a given THD.
-pub fn max_true_power_factor() -> f64 {
+fn max_true_power_factor() -> f64 {
     1.0 / (1.0 + EV_CURRENT_THD.powi(2)).sqrt()
 }
 
@@ -167,7 +167,7 @@ pub fn ev_load() -> Load {
 ///
 /// No-load loss and magnetizing current are fixed. Copper loss and leakage
 /// reactive power scale with the square of loading.
-pub(crate) fn transformer_load(secondary: Load) -> Load {
+fn transformer_load(secondary: Load) -> Load {
     let loading = secondary.apparent_kva() / XFMR_RATING_KVA;
     let loading_squared = loading.powi(2);
 

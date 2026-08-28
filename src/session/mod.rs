@@ -36,15 +36,11 @@ mod excel;
 mod ioi;
 
 mod log;
-
 mod peak;
-
 mod report;
 
-// A module rather than a set of re-exports: it is the site model, a page of named constants and
-// the functions over them, and `site_load::XFMR_RATING_KVA` says where a figure comes from in a
-// way a bare re-export would not. Nothing outside the crate names the path today.
-pub mod site_load;
+// Only used by sub-modules. Nothing re-exported. It is the electrical engineering site model.
+mod site_load;
 
 // --- Named outside the crate -------------------------------------------------------------------
 
@@ -54,6 +50,18 @@ pub use file_name::report_coverage;
 pub use log::{RunLog, SourceLog};
 pub use peak::IntervalEstimates;
 pub use report::site_load_report;
+
+// --- Reachable outside the crate -------------------------------------------------------------------
+
+// Not named directly by anything outside the crate. `SessionReportCoverage` is public because
+// `api::pure` re-exports it; the rest are public because a caller reaches them by reading a field
+// of something the API returns -- `SessionNotes` and `TouKwh` off an `Energy`, `AnomalyKind` off a
+// `SessionNotes`, `RSession` off a `Sessions`. `api/mod.rs` explains why a field type is not
+// re-exported: reading one never requires naming it, but the type still has to be public.
+pub use common::{AnomalyKind, BREAKER_RATING_KW, RSession, SessionNotes};
+pub use energy::TouKwh;
+pub use file_name::SessionReportCoverage;
+pub use peak::EstimateSet;
 
 // --- Behind `historic` ---------------------------------------------------------------------------
 //
@@ -70,16 +78,6 @@ pub use report::site_load_report;
 pub use excel::historic::{xlsx_to_interval_estimates, xlsx_to_sessions};
 #[cfg(feature = "historic")]
 pub use ioi::{HourEntry, IoiLength, LEGAL_START_MINUTES, checked_interval, hours_of};
-
-// Not named directly by anything outside the crate. `SessionReportCoverage` is public because
-// `api::pure` re-exports it; the rest are public because a caller reaches them by reading a field
-// of something the API returns -- `SessionNotes` and `TouKwh` off an `Energy`, `AnomalyKind` off a
-// `SessionNotes`, `RSession` off a `Sessions`. `api/mod.rs` explains why a field type is not
-// re-exported: reading one never requires naming it, but the type still has to be public.
-pub use common::{AnomalyKind, BREAKER_RATING_KW, RSession, SessionNotes};
-pub use energy::TouKwh;
-pub use file_name::SessionReportCoverage;
-pub use peak::EstimateSet;
 
 // --- Named elsewhere inside the crate ----------------------------------------------------------
 
