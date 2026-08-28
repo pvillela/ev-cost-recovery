@@ -35,18 +35,18 @@ const EV_CURRENT_THD: f64 = 0.045;
 pub const XFMR_RATING_KVA: f64 = 75.0;
 
 /// Core loss. Constant whenever the transformer is energised.
-const XFMR_NO_LOAD_LOSS_KW: f64 = 0.197;
+const XFMR_NO_LOAD_LOSS_KW: f64 = 0.35;
 
 /// Copper loss at rated load. Scales with the square of loading.
-const XFMR_FULL_LOAD_LOSS_KW: f64 = 1.293;
+const XFMR_FULL_LOAD_LOSS_KW: f64 = 1.6;
 
 /// Magnetizing current, per unit of rating. Treated as purely reactive and
 /// constant whenever the transformer is energised.
-const XFMR_MAGNETIZING_PU: f64 = 0.02; // estimate: 1% to 2% range
+const XFMR_MAGNETIZING_PU: f64 = 0.02;
 
 /// Leakage reactance, per unit of rating. Reactive draw scales with the
 /// square of loading.
-const XFMR_REACTANCE_PU: f64 = 0.0383;
+const XFMR_REACTANCE_PU: f64 = 0.04;
 
 // ---------------------------------------------------------------------------
 // Unit conversion
