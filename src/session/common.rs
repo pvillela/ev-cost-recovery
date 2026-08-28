@@ -1,6 +1,6 @@
 use super::{
     SourceLog,
-    site_load::{Load, PANEL_BREAKER_COUNT, ev_load, ev_real_power_kw, site_load},
+    site_model::{Load, PANEL_BREAKER_COUNT, ev_load, ev_real_power_kw, site_load},
 };
 use crate::time::{Interval, duration, time_zone, truncate_to};
 use jiff::{Timestamp, Zoned};

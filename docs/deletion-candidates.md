@@ -89,7 +89,7 @@ See [`historic-feature.md`](historic-feature.md), "What a default `cargo test` s
 
 | Item | Note |
 |---|---|
-| `session::site_load_report`, `session::site_load` | rendered by `examples/site_load_report.rs` and pinned by a golden. Public on purpose: the table is a deliverable |
+| `session::site_load_report`, `session::site_model` | rendered by `examples/site_load_report.rs` and pinned by a golden. Public on purpose: the table is a deliverable |
 | `time::holidays::Holiday`, `time::tou_of` | used by tests and by `gb_peak_values`'s holiday report |
 | `hydro_bill::pdf_text::Line` | the PDF layout type; `hydro_bill_dump` prints them |
 

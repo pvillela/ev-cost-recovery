@@ -8,7 +8,7 @@ Grouped by how likely a change is, not by module.
 
 ## Almost certain to change: the electrical installation
 
-`src/session/site_load.rs`. These are the "free constants" of
+`src/session/site_model.rs`. These are the "free constants" of
 [`maintenance-manual.md`](maintenance-manual.md), "Which constants are free, and which are derived"
 — declared outright, and the ones to edit to describe a different installation.
 

@@ -279,7 +279,7 @@ mod test {
     use super::{
         super::{
             SEGMENT_DURATION,
-            site_load::{ev_load, site_load},
+            site_model::{ev_load, site_load},
         },
         *,
     };

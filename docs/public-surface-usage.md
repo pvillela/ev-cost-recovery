@@ -189,7 +189,7 @@ Only four, and they are what decides which modules must stay `pub mod`:
 | `session::file_name` | `file_name::report_coverage`, one call site | Yes — re-export `report_coverage` from `session` |
 | `pure::peak_power` | `peak_power::PricedInterval`, one call site | Yes — `io` could re-export the type |
 
-Never named as a path from outside: `session::site_load`, `api::error`, and four of the five
+Never named as a path from outside: `session::site_model`, `api::error`, and four of the five
 `api::pure` submodules (`additional`, `coverage`, `energy`, `recovery`).
 
 ## The 88 public names nothing outside writes

@@ -143,7 +143,7 @@ The padding is a full `R` rather than one tick less for the same reason. A sessi
 The two formulas above — a per-EV kW rating and a division by a power factor — are a fair
 description of the *shape* of the estimates, and a defensible approximation of their values. They
 are not what the software computes. Both figures come out of a small electrical model of the site,
-described in [Power Factor and kVA Allocation — Level 2 EV Chargers on a 75 kVA, 600–208 V Transformer](ev-charger-power-factor-and-kva-allocation.md), and implemented in `src/session/site_load.rs`. It is worth knowing where the model and the shorthand part company.
+described in [Power Factor and kVA Allocation — Level 2 EV Chargers on a 75 kVA, 600–208 V Transformer](ev-charger-power-factor-and-kva-allocation.md), and implemented in `src/session/site_model.rs`. It is worth knowing where the model and the shorthand part company.
 
 **The per-EV kW figure is an average, not a constant.** A charging station is current-limited rather than
 power-limited: the pilot signal caps it at 32 A, so it draws about 6.59 kW whatever else is

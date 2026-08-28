@@ -21,7 +21,7 @@
 
 use super::{
     Anomaly, AnomalyKind, Bracket, IntervalEstimates, RSession, Segment, Session, SessionNotes,
-    site_load::{
+    site_model::{
         BREAKER_RATING_A, CONTINUOUS_DUTY_DERATE, PANEL_BREAKER_COUNT, PANEL_VOLTAGE_V,
         XFMR_RATING_KVA, ev_load, ev_pilot_current_a, loading_ratio, site_load,
     },

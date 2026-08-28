@@ -119,7 +119,7 @@ totals are not decoration: they are what catches a change in the 780-odd rows th
 ## Which constants are free, and which are derived
 
 
-The electrical model lives in `src/session/site_load.rs`. Its constants fall into two groups, and the
+The electrical model lives in `src/session/site_model.rs`. Its constants fall into two groups, and the
 distinction matters because it decides what may be changed and what will follow.
 
 **Free constants** — declared outright. Change any of them to describe a different installation:
@@ -192,7 +192,7 @@ break by accident:
 Change one free constant, run the suite, and confirm only the golden-fixture tests fail:
 
 ```sh
-# In src/session/site_load.rs, temporarily: BREAKER_RATING_A = 40.0 -> 32.0
+# In src/session/site_model.rs, temporarily: BREAKER_RATING_A = 40.0 -> 32.0
 cargo test --no-fail-fast
 cargo test --no-fail-fast --features historic
 # Expect failures only from golden-file comparisons:

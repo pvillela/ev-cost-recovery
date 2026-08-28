@@ -40,7 +40,7 @@ mod peak;
 mod report;
 
 // Only used by sub-modules. Nothing re-exported. It is the electrical engineering site model.
-mod site_load;
+mod site_model;
 
 // --- Named outside the crate -------------------------------------------------------------------
 
