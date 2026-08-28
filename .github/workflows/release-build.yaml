@@ -25,6 +25,21 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+      # The stamp every download carries: `v0_1_0_rc-1a2b3c` from tag `v0.1.0-rc` at that commit.
+      # It comes from the tag rather than the manifest because the tag is what names the release,
+      # and the two are compared here so a tag pushed against a stale `version =` fails the build
+      # instead of shipping a binary whose name and contents disagree. `shell: bash` on Windows
+      # too, so both legs of the matrix compute the same string.
+      - name: Compute the release stamp
+        id: stamp
+        shell: bash
+        run: |
+          manifest=$(grep -m1 '^version = ' Cargo.toml | cut -d'"' -f2)
+          if [ "$GITHUB_REF_NAME" != "v$manifest" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match Cargo.toml version $manifest" >&2
+            exit 1
+          fi
+          echo "stamp=${GITHUB_REF_NAME//[.-]/_}-${GITHUB_SHA::6}" >> "$GITHUB_OUTPUT"
       # The app opens files through rfd's GTK backend on Linux (see Cargo.toml), which compiles
       # against GTK's headers. The runner image does not carry them, and without them the build
       # fails rather than falling back to anything.
@@ -62,32 +77,38 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           mkdir -p dist
-          cp target/${{ matrix.target }}/release/ev_cost_recovery dist/
+          cp target/${{ matrix.target }}/release/ev_cost_recovery \
+            dist/ev_cost_recovery-${{ steps.stamp.outputs.stamp }}
           cp LICENSE-MIT LICENSE-APACHE THIRD-PARTY-NOTICES.md dist/
       - name: Stage the download (Windows)
         if: runner.os == 'Windows'
         run: |
           New-Item -ItemType Directory -Force -Path dist
-          Copy-Item target/${{ matrix.target }}/release/ev_cost_recovery.exe dist/
+          Copy-Item target/${{ matrix.target }}/release/ev_cost_recovery.exe `
+            dist/ev_cost_recovery-${{ steps.stamp.outputs.stamp }}.exe
           Copy-Item LICENSE-MIT, LICENSE-APACHE, THIRD-PARTY-NOTICES.md dist/
       # `upload-artifact` zips its inputs and drops the Unix mode bits, so an uploaded binary
       # arrives without its executable bit. Tarring first carries the mode through ourselves.
       - name: Package Linux binary
         if: runner.os == 'Linux'
-        run: tar -czf ev_cost_recovery-${{ matrix.target }}.tar.gz -C dist .
+        run: >
+          tar -czf
+          ev_cost_recovery-${{ matrix.target }}-${{ steps.stamp.outputs.stamp }}.tar.gz
+          -C dist .
       - name: Upload Linux Artifact
         if: runner.os == 'Linux'
         uses: actions/upload-artifact@v4
         with:
-          name: binary-${{ matrix.target }}
-          path: ev_cost_recovery-${{ matrix.target }}.tar.gz
+          name: binary-${{ matrix.target }}-${{ steps.stamp.outputs.stamp }}
+          path: ev_cost_recovery-${{ matrix.target }}-${{ steps.stamp.outputs.stamp }}.tar.gz
       # No tarball on Windows: nothing there depends on a permission bit surviving the trip, so
-      # the zip `upload-artifact` makes on its own is enough.
+      # the zip `upload-artifact` makes on its own is enough. That zip is named after the artifact,
+      # which is why the stamp has to be on `name` here and not only on the file inside.
       - name: Upload Windows Artifact
         if: runner.os == 'Windows'
         uses: actions/upload-artifact@v4
         with:
-          name: binary-${{ matrix.target }}
+          name: binary-${{ matrix.target }}-${{ steps.stamp.outputs.stamp }}
           path: dist/*
 
 
