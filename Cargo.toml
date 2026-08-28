@@ -8,6 +8,8 @@ description = "Supports calculation of net impact of EV charging activity on bui
 [dependencies]
 csv = "1.4.0"
 eframe = "0.36.1"
+# Used by eframe, block infected version 0.3.10.
+arrayref = "=0.3.9"
 egui_extras = { version = "0.36.1", features = ["datepicker"] }
 jiff = "0.2.35"
 # Object-level PDF access rather than a text extractor: a Toronto Hydro bill is a form whose
