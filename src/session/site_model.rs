@@ -29,8 +29,13 @@ const EV_TRUE_POWER_FACTOR: f64 = 0.99;
 const EV_CURRENT_THD: f64 = 0.045;
 
 // ---------------------------------------------------------------------------
-// Transformer constants (75 kVA dry type, 600-208 V)
+// Transformer constants (Marcus AMTH75A1: 75 kVA dry type, 600-208 V, 4.2% impedance)
 // ---------------------------------------------------------------------------
+//
+// The two loss figures come from the unit's datasheet; the reactance is derived from its nameplate
+// impedance; the magnetizing current is a typical figure for the class, because it is a factory
+// test result the datasheet does not publish. `docs/session/site-model-marcus.md` §3 shows each
+// derivation.
 
 pub const XFMR_RATING_KVA: f64 = 75.0;
 
@@ -42,10 +47,13 @@ const XFMR_FULL_LOAD_LOSS_KW: f64 = 1.293;
 
 /// Magnetizing current, per unit of rating. Treated as purely reactive and
 /// constant whenever the transformer is energised.
-const XFMR_MAGNETIZING_PU: f64 = 0.02; // estimate: 1% to 2% range
+// Estimated over a 1% to 2% range, held at the conservative end. It is nearly the whole of the
+// standing block, so it is the softest constant here.
+const XFMR_MAGNETIZING_PU: f64 = 0.02;
 
 /// Leakage reactance, per unit of rating. Reactive draw scales with the
 /// square of loading.
+// sqrt(0.042^2 - 0.0172^2), the nameplate impedance less per-unit winding resistance.
 const XFMR_REACTANCE_PU: f64 = 0.0383;
 
 // ---------------------------------------------------------------------------

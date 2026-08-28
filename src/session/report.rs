@@ -618,7 +618,7 @@ const PERCENT: f64 = 100.0;
 /// The site load model tabulated for every vehicle count the panel can hold.
 ///
 /// Fixed-width plain text rather than markdown: this is a table of the model's own constants, read
-/// beside `docs/ev-charger-power-factor-and-kva-allocation.md`, not a document anyone renders.
+/// beside `docs/session/site-model-marcus.md`, not a document anyone renders.
 pub fn site_load_report() -> String {
     let mut out = String::new();
     let per_ev = ev_load();

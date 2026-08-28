@@ -10,10 +10,10 @@ Estimates
 
 | Estimate     | Unit |    Min |    Max | Segment |
 |:-------------|:-----|-------:|-------:|:--------|
-| Energy-based | kW   | 16.162 | 17.474 | 16:15   |
-| Energy-based | kVA  | 16.609 | 17.933 | 16:15   |
-| Count-based  | kW   | 17.124 | 18.455 | 16:15   |
-| Count-based  | kVA  | 17.580 | 18.925 | 16:15   |
+| Energy-based | kW   | 15.995 | 17.304 | 16:15   |
+| Energy-based | kVA  | 16.445 | 17.767 | 16:15   |
+| Count-based  | kW   | 16.956 | 18.284 | 16:15   |
+| Count-based  | kVA  | 17.415 | 18.756 | 16:15   |
 
 Every figure is a bracket: the reported session times are stated only to the
 minute, so each estimate runs from what those times least support to what

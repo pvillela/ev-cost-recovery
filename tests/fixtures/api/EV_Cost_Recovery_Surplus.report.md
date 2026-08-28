@@ -7,8 +7,8 @@ Period       2026-05-24 - 2026-06-23  (31 days)
 |:-----------------|--------:|
 | Cost recovery    |    2.24 |
 | EV energy cost   |   -3.07 |
-| EV delivery cost | -139.79 |
-| Surplus          | -140.62 |
+| EV delivery cost | -136.93 |
+| Surplus          | -137.76 |
 
 The cost-recovery rates fell short of the chargers' share of the bill for
 this period, by the amount above.
@@ -97,10 +97,10 @@ Days adj.    31/30 = 1.0333
 
 | Item                       | Amount |
 |:---------------------------|-------:|
-| Delivery charges           | 135.72 |
-| HST                        |  17.64 |
-| Ontario Electricity Rebate | -13.57 |
-| Delivery cost              | 139.79 |
+| Delivery charges           | 132.95 |
+| HST                        |  17.28 |
+| Ontario Electricity Rebate | -13.29 |
+| Delivery cost              | 136.93 |
 
 Note: figures are rounded for display. A column can therefore differ by a
 cent, or by a thousandth of a kilowatt-hour, from the total stated for it,
@@ -111,9 +111,9 @@ Delivery charges by component
 
 | Delivery charges component     | Basis  | EV demand | Adj. demand | TH blended rate | Charge |
 |:-------------------------------|:-------|----------:|------------:|----------------:|-------:|
-| Distribution Charges           | kVA    |     4.817 |       4.977 |         10.0000 |  49.77 |
-| Transmission Connection Charge | kW     |    20.466 |      21.148 |          3.0000 |  63.45 |
-| Transmission Network Charge    | kW 7-7 |     4.355 |       4.500 |          5.0000 |  22.50 |
+| Distribution Charges           | kVA    |     4.678 |       4.834 |         10.0000 |  48.34 |
+| Transmission Connection Charge | kW     |    20.291 |      20.967 |          3.0000 |  62.90 |
+| Transmission Network Charge    | kW 7-7 |     4.201 |       4.341 |          5.0000 |  21.70 |
 
 
 

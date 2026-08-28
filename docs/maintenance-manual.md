@@ -168,7 +168,7 @@ The site-load report and its golden file are unaffected: `site_load_report()` ta
 
 Relationships between values may be relied on; the values may not.
 `idle_transformer_draws_only_excitation` is the model: it asserts against `XFMR_NO_LOAD_LOSS_KW`
-and `XFMR_MAGNETIZING_PU * XFMR_RATING_KVA`, not against 0.35 and 1.5.
+and `XFMR_MAGNETIZING_PU * XFMR_RATING_KVA`, not against 0.197 and 1.5.
 
 This is enforced by review, not by tooling, so it is worth knowing the two places it is easy to
 break by accident:

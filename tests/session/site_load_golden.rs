@@ -17,7 +17,7 @@ use super::fixtures_dir;
 
 /// `.txt` rather than `.md`: it is fixed-width plain text with no markdown in it at all, and
 /// naming it otherwise would invite someone to render it. It is the table
-/// `docs/session/ev-charger-power-factor-and-kva-allocation.md` §4 is read against, so a change to
+/// `docs/session/site-model-marcus.md` §4 is read against, so a change to
 /// any electrical constant should be seen here before it is believed anywhere else.
 #[test]
 fn the_site_load_table_matches_its_golden_file() {

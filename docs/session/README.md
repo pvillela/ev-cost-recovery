@@ -120,7 +120,7 @@ The software accounts for the above margin of uncertainty by providing values in
 
 ### Interval of interest with no EVs charging
 
-In such cases, the EV charging infrastructure still impacts the overall building's peak kW and kVA, but the impact is small (currently ~ 0.35 kW and ~1.54 kVA for the transformer), and the software reports these values.
+In such cases, the EV charging infrastructure still impacts the overall building's peak kW and kVA, but the impact is small (currently ~ 0.20 kW and ~1.51 kVA for the transformer), and the software reports these values.
 
 ## Technical Notes
 
@@ -143,7 +143,7 @@ The padding is a full `R` rather than one tick less for the same reason. A sessi
 The two formulas above — a per-EV kW rating and a division by a power factor — are a fair
 description of the *shape* of the estimates, and a defensible approximation of their values. They
 are not what the software computes. Both figures come out of a small electrical model of the site,
-described in [Power Factor and kVA Allocation — Level 2 EV Chargers on a 75 kVA, 600–208 V Transformer](ev-charger-power-factor-and-kva-allocation.md), and implemented in `src/session/site_model.rs`. It is worth knowing where the model and the shorthand part company.
+described in [Site Model — Level 2 EV Chargers on a Marcus AMTH75A1 75 kVA 600–208 V Transformer](site-model-marcus.md), and implemented in `src/session/site_model.rs`. It is worth knowing where the model and the shorthand part company.
 
 **The per-EV kW figure is an average, not a constant.** A charging station is current-limited rather than
 power-limited: the pilot signal caps it at 32 A, so it draws about 6.59 kW whatever else is
@@ -153,10 +153,10 @@ energised, and its copper loss rises with the *square* of loading.
 
 Divide the site total by the number of vehicles and those two effects pull opposite ways: the fixed
 block is diluted as vehicles are added, while the copper loss grows faster than the count does. The
-per-EV share therefore falls, flattens and edges back up — about 6.95 kW at one vehicle, 6.73 at
-three, a shallow minimum of 6.72 around five or six, and 6.75 at all ten. The `~6.7 kW` in the
-algorithm description is good to within about 1% across the whole range, and exact to two decimals
-near five vehicles, which is where this site's peaks have tended to sit. It is worth knowing that
+per-EV share therefore falls, flattens and edges back up — about 6.80 kW at one vehicle, 6.69 at
+three, a shallow minimum of 6.68 around four or five, and 6.71 at all ten. The `~6.7 kW` in the
+algorithm description is good to within about 1.5% at one vehicle and within 0.2% everywhere from
+three vehicles up, which is where this site's peaks have tended to sit. It is worth knowing that
 the *lowest* per-EV figure is the one in the middle, not the one at full occupancy.
 
 **kVA is a quadrature sum, not `kW ÷ PF`.** Real power, displacement reactive power and distortion
@@ -179,7 +179,7 @@ terms described above and give a figure for an installation nobody would build. 
 exactly at ten, so an estimate does not jump as a count crosses it, and below ten nothing changes.
 This affects the segment estimates only; the site-load table still runs 0 to 10 and is untouched.
 
-**Where the model is written down.** The above-mentioned [electrotechnical document](ev-charger-power-factor-and-kva-allocation.md) derives
+**Where the model is written down.** The above-mentioned [electrotechnical document](site-model-marcus.md) derives
 every constant and every formula, and tabulates the result for each vehicle count from 0 to 10;
 `cargo run --example site_load_report` prints that same table from the code, and
 `tests/fixtures/sessions/site_load.report.txt` pins it. `docs/Evolute-Simultaneous_Charging.pdf` is
