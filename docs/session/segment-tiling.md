@@ -132,5 +132,5 @@ name an arbitrary one.
 
 An interval that no session intersects still has its four segments, and they are not zero. The
 transformer is energised whether or not a vehicle is plugged in, and its core loss and magnetizing
-current are part of the building's demand. Every segment reports `site_load(0)` — the standing
+current are part of the building's demand. Every segment reports `site_load(0.0)` — the standing
 block — and the report says in prose why the figures are not zero.

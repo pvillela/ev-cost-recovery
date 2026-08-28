@@ -129,7 +129,7 @@ distinction matters because it decides what may be changed and what will follow.
 | `PANEL_VOLTAGE_V` | Secondary line-to-line voltage |
 | `BREAKER_RATING_A` | Rating of each EVSE branch breaker |
 | `CONTINUOUS_DUTY_DERATE` | Continuous-load derating (CEC Rule 8-104) |
-| `BREAKER_COUNT` | Number of EVSE breakers, which bounds the vehicle count |
+| `PANEL_BREAKER_COUNT` | Number of EVSE breakers in one panel, which bounds what that panel can charge |
 | `EV_TRUE_POWER_FACTOR` | True power factor of a vehicle's onboard charger at full current |
 | `EV_CURRENT_THD` | Total harmonic distortion of that charger's input current |
 | `XFMR_RATING_KVA` | Transformer nameplate |
@@ -143,6 +143,24 @@ edit the constant behind them. `ev_pilot_current_a()`, `ev_apparent_power_kva()`
 `ev_real_power_kw()`, `max_true_power_factor()`, `ev_load()`, `transformer_load()`, `site_load()`,
 `loading_ratio()`, and `BREAKER_RATING_KW` in `src/session/common.rs`, which is `ev_real_power_kw()` under
 the name the rest of the crate uses.
+
+#### Counts above one panel's capacity
+
+`site_load()` models one panel on one transformer and will happily take a count above
+`PANEL_BREAKER_COUNT`, but the answer it gives there is a transformer driven past its nameplate:
+its copper-loss and reactance terms rise with the square of loading, so the figure climbs steeply
+and describes an installation nobody would build.
+
+The segment estimates therefore do not call `site_load()` directly. `Segment::count_based_load` and
+`Segment::energy_based_load` both go through `Segment::scaled_load` (`src/session/common.rs`),
+which is `site_load()` up to `PANEL_BREAKER_COUNT` vehicles and proportional to the count above it,
+at the rate one full panel sets. Reading a larger count as more panels rather than as one
+overloaded transformer is what lets the estimates scale when stalls are added. The two branches
+meet at `PANEL_BREAKER_COUNT`, so a segment's estimate does not jump on which side of the boundary
+its count happens to fall.
+
+The site-load report and its golden file are unaffected: `site_load_report()` tabulates 0 to
+`PANEL_BREAKER_COUNT` and stays within the one-panel branch.
 
 #### The rule the tests are written to
 
@@ -163,7 +181,7 @@ break by accident:
   (`src/session/test_support.rs`) rather than asserting on them whole. If you add a test in either
   that reads a whole anomaly list, filter it the same way.
 - **Two constants read against each other.** `full_occupancy_stays_within_nameplate` does this on
-  purpose: it asserts that `BREAKER_COUNT` vehicles do not exceed `XFMR_RATING_KVA`. That is a
+  purpose: it asserts that `PANEL_BREAKER_COUNT` vehicles do not exceed `XFMR_RATING_KVA`. That is a
   sizing invariant, not a number — a configuration violating it describes an installation that
   would trip — so the test failing is the correct outcome and the constants are what is wrong. It
   is the only deliberate instance; add another only with the same justification, and say so in the

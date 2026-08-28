@@ -104,7 +104,7 @@ The three components are orthogonal, so they combine in quadrature rather than b
 | $V$ | `PANEL_VOLTAGE_V` | 208.0 V |
 | $I_b$ | `BREAKER_RATING_A` | 40.0 A |
 | $k$ | `CONTINUOUS_DUTY_DERATE` | 0.80 |
-| — | `BREAKER_COUNT` | 10 |
+| — | `PANEL_BREAKER_COUNT` | 10 |
 | $PF$ | `EV_TRUE_POWER_FACTOR` | 0.99 |
 | $THD$ | `EV_CURRENT_THD` | 0.045 |
 | $S_{rated}$ | `XFMR_RATING_KVA` | 75.0 kVA |

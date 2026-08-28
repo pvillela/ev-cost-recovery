@@ -18,7 +18,7 @@ pub const BREAKER_RATING_A: f64 = 40.0;
 /// Sets the J1772 pilot current the vehicle is permitted to draw.
 pub const CONTINUOUS_DUTY_DERATE: f64 = 0.80;
 
-/// Number of EVSE breakers in the panel. Bounds the vehicle count.
+/// Number of EVSE breakers in one panel. Bounds how many vehicles that panel can charge.
 pub const PANEL_BREAKER_COUNT: u32 = 10;
 
 /// True (distortion-inclusive) power factor of the vehicle's onboard
@@ -179,8 +179,15 @@ pub(crate) fn transformer_load(secondary: Load) -> Load {
     }
 }
 
-/// Total load seen at the transformer primary for a given vehicle count;
-/// argument is `f64` to allow fractional counts.
+/// Total load seen at the transformer primary for a given vehicle count.
+///
+/// The count is fractional: a segment counts a vehicle by the share of the segment it covers, so
+/// whole numbers are the exception. It is not bounded by [`PANEL_BREAKER_COUNT`] either, but a
+/// count above that one describes a single transformer carrying more than the panel in front of it
+/// can hold, and the square-law loss and reactance terms make it a poor answer for a site that
+/// would in fact have been built with a second panel. `Segment::count_based_load` and
+/// `Segment::energy_based_load` are what handle that case; callers wanting a load for a count they
+/// cannot bound should go through them.
 pub fn site_load(ev_count: f64) -> Load {
     let secondary = ev_load().scaled(ev_count);
     secondary + transformer_load(secondary)
@@ -278,6 +285,20 @@ mod tests {
     #[test]
     fn full_occupancy_stays_within_nameplate() {
         assert!(loading_ratio(site_load(PANEL_BREAKER_COUNT as f64)) < 1.0);
+    }
+
+    /// A count between two whole vehicles gives a load between their two loads.
+    ///
+    /// The whole-number cases say nothing about the fractional counts a segment actually produces,
+    /// and the transformer terms are square-law, so this is worth pinning rather than assuming.
+    #[test]
+    fn a_fractional_count_lands_between_its_whole_neighbours() {
+        for ev_count in 0..PANEL_BREAKER_COUNT {
+            let low = site_load(f64::from(ev_count)).apparent_kva();
+            let mid = site_load(f64::from(ev_count) + 0.5).apparent_kva();
+            let high = site_load(f64::from(ev_count) + 1.0).apparent_kva();
+            assert!(low < mid && mid < high, "at {ev_count} vehicles");
+        }
     }
 
     #[test]

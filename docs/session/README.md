@@ -169,6 +169,16 @@ At one vehicle the site power factor is about 0.94; by five it is 0.98, and it p
 above that. With no vehicle charging at all it is far lower still, because the standing block is
 then the whole of the load.
 
+**Past ten vehicles the model adds panels rather than overloading the transformer.** The site as
+built holds ten stalls, and the electrical model describes that site: one panel on one transformer.
+Segment counts are not bounded by it, though — a future site with more stalls would produce larger
+ones — so the estimates read a count above ten as more panels of the same kind, and the site total
+becomes proportional to the count at the rate a full panel sets. The alternative, feeding the
+larger count into the one transformer, would compound the square-law copper loss and reactance
+terms described above and give a figure for an installation nobody would build. The two rules meet
+exactly at ten, so an estimate does not jump as a count crosses it, and below ten nothing changes.
+This affects the segment estimates only; the site-load table still runs 0 to 10 and is untouched.
+
 **Where the model is written down.** The above-mentioned [electrotechnical document](ev-charger-power-factor-and-kva-allocation.md) derives
 every constant and every formula, and tabulates the result for each vehicle count from 0 to 10;
 `cargo run --example site_load_report` prints that same table from the code, and
@@ -178,7 +188,7 @@ Evolute's own description of how the installation behaves when several vehicles 
 ### Assumptions
 
 - **Session end times are truncated, not rounded.** `adj_conn_end = Conn_DateTime_End + R` is the exclusive bound of the window the true end lies in only because the reported end is the true end rounded *down* to `R`. Under rounding to nearest, or under a convention where the reported end is the first instant the vehicle was no longer drawing power, the correct padding would differ — in the latter case it would be zero.
-- **Breaker ratings are uniform across panels.** `count_based_kw` and `count_based_kva` are an aggregate session count multiplied by a single rating, so an installation mixing breakers of different ratings would skew both. Nothing else in the estimates depends on how many panels there are or on which panel a session ran: the session report carries no panel ID, and none is needed.
+- **Breaker ratings are uniform across panels.** `count_based_kw` and `count_based_kva` are an aggregate session count multiplied by a single rating, so an installation mixing breakers of different ratings would skew both. Panels enter the estimates in one other place only — the count at which the site total switches from the one-panel model to proportional scaling, described above — and that too assumes every panel is like the first. Which panel a session ran on is never used: the session report carries no panel ID, and none is needed.
   - A session whose own average power exceeds that rating contradicts the assumption directly, and is flagged `ExcessiveAvgKw`. It is not excluded — the figure says something is wrong with `Energy_Use` or `Active_Charge_Time`, not which — but it is worth knowing about, because a segment whose aggregate average power exceeds its member count times the rating would put `energy_based_kw` *above* `count_based_kw` and invert the typical order of these two values. A segment can only invert if one of its sessions draws more than the rating, and every such member is flagged.
 
 ### Other

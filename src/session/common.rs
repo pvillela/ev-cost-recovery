@@ -1,10 +1,7 @@
 use super::log::SourceLog;
-use crate::{
-    session::site_load::{PANEL_BREAKER_COUNT, PANEL_VOLTAGE_V, site_load},
-    time::{Interval, duration, time_zone, truncate_to},
-};
+use crate::time::{Interval, duration, time_zone, truncate_to};
 
-use super::site_load::{Load, ev_load, ev_real_power_kw, transformer_load};
+use super::site_load::{Load, PANEL_BREAKER_COUNT, ev_load, ev_real_power_kw, site_load};
 use jiff::{Timestamp, Zoned};
 use std::{
     collections::BTreeMap,
@@ -630,28 +627,42 @@ impl Segment {
             .sum()
     }
 
+    /// Site load implied by how many vehicles were connected over the segment.
     pub fn count_based_load(&self) -> Bracket<Load> {
-        let scaling = self.agg_count();
-        scaling.map(|s| Self::scaled_load(*s))
+        self.agg_count().map(|count| Self::scaled_load(*count))
     }
 
+    /// Site load implied by the energy the segment's sessions drew.
+    ///
+    /// The aggregate power is converted to an equivalent vehicle count first, so both derivations
+    /// go through the same `scaled_load` and can be compared directly.
     pub fn energy_based_load(&self) -> Bracket<Load> {
         let single_ev_real_kw = ev_load().real_kw;
         let scaling = self.agg_kw().map(|v| v / single_ev_real_kw);
-        scaling.map(|s| Self::scaled_load(*s))
+        scaling.map(|count| Self::scaled_load(*count))
     }
 
+    /// Site load for a vehicle count, which may be fractional and may exceed one panel's capacity.
+    ///
+    /// Up to `PANEL_BREAKER_COUNT` vehicles this is [`site_load`] unchanged: one panel on one
+    /// transformer, whose fixed excitation and no-load loss are spread across however many
+    /// vehicles are charging.
+    ///
+    /// A larger count is one the present installation cannot hold, so it is read as a site with
+    /// more panels rather than as one transformer driven past its nameplate: load is proportional
+    /// to the count, at the rate one full panel sets. Feeding the excess into a single transformer
+    /// instead would compound its square-law loss and reactance terms, which grow without bound
+    /// and describe an installation nobody would build.
+    ///
+    /// The two branches meet at `PANEL_BREAKER_COUNT`, so the result is continuous in `scaling`
+    /// and non-decreasing in it.
     fn scaled_load(scaling: f64) -> Load {
-        if scaling <= PANEL_BREAKER_COUNT as f64 {
+        let panel_capacity = f64::from(PANEL_BREAKER_COUNT);
+        if scaling <= panel_capacity {
             site_load(scaling)
         } else {
-            let nameplate_scaling = scaling.min(PANEL_BREAKER_COUNT as f64);
-            let excess_scaling = scaling - nameplate_scaling;
-            let nameplate_load = site_load(nameplate_scaling);
-            let unit_excess_load =
-                site_load(PANEL_BREAKER_COUNT as f64).scaled(1.0 / PANEL_BREAKER_COUNT as f64);
-            let excess_load = unit_excess_load.scaled(excess_scaling);
-            nameplate_load + excess_load
+            let full_panel = site_load(panel_capacity);
+            full_panel.scaled(scaling / panel_capacity)
         }
     }
 
@@ -1409,6 +1420,130 @@ mod test {
         ] {
             assert_eq!(notes.excluded.len(), 1, "{notes:?}");
             assert!(!notes.is_clean());
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Scaling past one panel
+    // -----------------------------------------------------------------------
+
+    const LOAD_TOLERANCE: f64 = 1e-9;
+
+    fn panel_capacity() -> f64 {
+        f64::from(PANEL_BREAKER_COUNT)
+    }
+
+    fn assert_load_close(actual: Load, expected: Load, context: &str) {
+        for (a, e, component) in [
+            (actual.real_kw, expected.real_kw, "real_kw"),
+            (
+                actual.reactive_kvar,
+                expected.reactive_kvar,
+                "reactive_kvar",
+            ),
+            (
+                actual.distortion_kvar,
+                expected.distortion_kvar,
+                "distortion_kvar",
+            ),
+        ] {
+            assert!(
+                (a - e).abs() < LOAD_TOLERANCE,
+                "{context}: {component} was {a}, expected {e}"
+            );
+        }
+    }
+
+    /// Within one panel the extension is not an extension: it is the site model itself.
+    ///
+    /// Fractional counts as well as whole ones, because a segment counts vehicles by the share of
+    /// the segment they cover and almost never lands on an integer.
+    #[test]
+    fn up_to_one_panel_the_scaled_load_is_the_site_load_model() {
+        for tenths in 0..=(PANEL_BREAKER_COUNT * 10) {
+            let count = f64::from(tenths) / 10.0;
+            assert_load_close(
+                Segment::scaled_load(count),
+                site_load(count),
+                &format!("at {count} vehicles"),
+            );
+        }
+    }
+
+    /// The branch boundary is not a step.
+    ///
+    /// A discontinuity here would put a segment's estimate on which side of a threshold its count
+    /// happened to fall, which is exactly what a graceful extension must not do.
+    #[test]
+    fn the_two_branches_meet_at_the_panel_boundary() {
+        let capacity = panel_capacity();
+        let full_panel = site_load(capacity);
+
+        assert_load_close(Segment::scaled_load(capacity), full_panel, "at capacity");
+        assert_load_close(
+            Segment::scaled_load(capacity + 1e-12),
+            full_panel,
+            "just above capacity",
+        );
+    }
+
+    /// Past one panel, load is proportional to the count at the rate a full panel sets.
+    ///
+    /// Stated as the ratio rather than as a figure, so it says what the model claims without
+    /// naming a constant by value: two panels' worth of vehicles draw twice a full panel's load.
+    #[test]
+    fn beyond_one_panel_load_is_proportional_to_the_count() {
+        let capacity = panel_capacity();
+        let full_panel = site_load(capacity);
+
+        for multiple in [1.5, 2.0, 3.7, 10.0] {
+            assert_load_close(
+                Segment::scaled_load(capacity * multiple),
+                full_panel.scaled(multiple),
+                &format!("at {multiple} panels' worth"),
+            );
+        }
+    }
+
+    /// Adding a vehicle never lowers the site load, on either side of the boundary or across it.
+    ///
+    /// The property the whole extension exists to preserve. Beyond one panel the old model bent
+    /// upward on the transformer's square-law terms; this asserts the shape stays monotone without
+    /// asserting how steep it is.
+    #[test]
+    fn load_never_falls_as_vehicles_are_added() {
+        let mut previous = Segment::scaled_load(0.0).apparent_kva();
+
+        // Well past one panel, so the sweep crosses the boundary rather than stopping at it.
+        for tenths in 1..=(PANEL_BREAKER_COUNT * 30) {
+            let count = f64::from(tenths) / 10.0;
+            let current = Segment::scaled_load(count).apparent_kva();
+            assert!(
+                current >= previous,
+                "load fell from {previous} to {current} at {count} vehicles"
+            );
+            previous = current;
+        }
+    }
+
+    /// Beyond one panel the load stays under what the unextended model would have charged.
+    ///
+    /// This is the change stated as a comparison: `site_load` alone drives one transformer past
+    /// its nameplate, and its loss and reactance terms rise with the square of loading, so it
+    /// exceeds a proportional second panel at every count above capacity.
+    #[test]
+    fn the_extension_charges_less_than_overloading_one_transformer() {
+        let capacity = panel_capacity();
+
+        for extra in [0.5, 1.0, 5.0, 20.0] {
+            let count = capacity + extra;
+            let extended = Segment::scaled_load(count).apparent_kva();
+            let overloaded = site_load(count).apparent_kva();
+            assert!(
+                extended < overloaded,
+                "at {count} vehicles the extension gave {extended}, \
+                 not below the {overloaded} one overloaded transformer would draw"
+            );
         }
     }
 }

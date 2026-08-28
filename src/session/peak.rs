@@ -629,9 +629,9 @@ mod test {
     /// energy-based figure follows it exactly.
     ///
     /// The same identity as above read at a fractional count, which is what a segment ordinarily
-    /// holds: `site_load` takes a whole number of vehicles, so the check is that the two
-    /// derivations still agree with each other rather than against a third figure. A third rather
-    /// than a half, for the reason given above: halves are off the time grid.
+    /// holds. `site_load` takes a fractional vehicle count, so the two derivations are checked
+    /// against it as well as against each other. A third rather than a half, for the reason given
+    /// above: halves are off the time grid.
     #[test]
     fn the_two_derivations_agree_on_a_partially_covered_segment() {
         let sessions = vec![session(
@@ -642,8 +642,21 @@ mod test {
         )];
         let segments = segments_for_ioi(hour(), &sessions);
         let est = segment_estimate(&segments[0]);
+        let expected = site_load(1.0 / 3.0);
 
         assert!((segments[0].agg_count().max - 1.0 / 3.0).abs() < TOLERANCE);
+        assert!(
+            (est.count_based_kw.max - expected.real_kw).abs() < TOLERANCE,
+            "{:?} vs {:?}",
+            est.count_based_kw,
+            expected.real_kw
+        );
+        assert!(
+            (est.count_based_kva.max - expected.apparent_kva()).abs() < TOLERANCE,
+            "{:?} vs {:?}",
+            est.count_based_kva,
+            expected.apparent_kva()
+        );
         assert!(
             (est.energy_based_kw.max - est.count_based_kw.max).abs() < TOLERANCE,
             "{:?} vs {:?}",
