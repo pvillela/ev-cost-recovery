@@ -157,21 +157,23 @@ program and getting the files to it.
 ### Getting it
 
 The Windows build is produced by `.github/workflows/release-build.yaml`, which runs when a tag
-matching `v*` is pushed. It is a **workflow artifact**, not a GitHub Release:
+matching `v*` is pushed, and attaches the result to that tag's **GitHub Release**:
 
-1. Open the repository on GitHub, then **Actions** → the **Release Binaries** run for that tag.
-2. Under **Artifacts**, download **`binary-x86_64-pc-windows-msvc`**.
-3. It arrives as a `.zip`. Extract it — Windows will otherwise run the program from inside the
-   archive, where it behaves oddly.
+1. Open the repository on GitHub, then **Releases** → the release for that tag.
+2. Under **Assets**, download
+   **`ev_cost_recovery-x86_64-pc-windows-msvc-<stamp>.zip`**, where `<stamp>` names the version
+   and commit — `v0_1_0-1a2b3c`. A release marked **Pre-release** came from a tag like `v0.1.0-rc`.
+3. Extract the `.zip` — Windows will otherwise run the program from inside the archive, where it
+   behaves oddly.
 
-Two things about artifacts: you must be signed in to GitHub to download one, and they expire (90
-days by default). If the download is not there, the tag build needs re-running.
+No GitHub account is needed, and the asset stays on the release page indefinitely. If the release
+is not there, the tag build failed or has not run.
 
 Extracting gives four files:
 
 | File | What it is |
 |:---|:---|
-| `ev_cost_recovery.exe` | The program. Nothing else is needed to run it |
+| `ev_cost_recovery-<stamp>.exe` | The program. Nothing else is needed to run it |
 | `THIRD-PARTY-NOTICES.md` | Licences of every crate linked in. Also readable inside the app, under **About** |
 | `LICENSE-MIT`, `LICENSE-APACHE` | This program's own terms |
 
@@ -180,7 +182,7 @@ uninstall, delete the folder.
 
 ### Starting it
 
-Double-click `ev_cost_recovery.exe`.
+Double-click `ev_cost_recovery-<stamp>.exe` — the only `.exe` in the folder.
 
 The first launch shows SmartScreen's **"Windows protected your PC"**, because the binary is not
 code-signed. Choose **More info**, then **Run anyway**. Later launches are silent.
@@ -215,7 +217,7 @@ Only the file names matter, and only for the two session reports.
 
 Two things from above do **not** apply:
 
-- **Checking it against the command line.** The artifact contains the app and nothing else — no
+- **Checking it against the command line.** The download contains the app and nothing else — no
   `cost_recovery_surplus_cli` — so there is nothing on that machine to diff against. Do that check
   on a development machine.
 - **The bad-name test** needs a copy under a name without dates. In File Explorer: copy the CSV,

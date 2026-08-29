@@ -10,6 +10,11 @@ jobs:
   build:
     name: Build for ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
+    # Attaching an asset to the release — and creating that release, which whichever leg of the
+    # matrix arrives first does — are writes to the repository's contents. The default token is
+    # read-only, so without this the upload fails at the end of an otherwise successful build.
+    permissions:
+      contents: write
     strategy:
       matrix:
         include:
@@ -40,6 +45,13 @@ jobs:
             exit 1
           fi
           echo "stamp=${GITHUB_REF_NAME//[.-]/_}-${GITHUB_SHA::6}" >> "$GITHUB_OUTPUT"
+          # A hyphen in the tag is a pre-release suffix — `v0.1.0-rc` — because the version it was
+          # checked against is a Cargo version, where that is the only thing a hyphen can mean.
+          # The release page then labels it, instead of offering it as the current download.
+          case "$GITHUB_REF_NAME" in
+            *-*) echo "prerelease=true" >> "$GITHUB_OUTPUT" ;;
+            *)   echo "prerelease=false" >> "$GITHUB_OUTPUT" ;;
+          esac
       # The app opens files through rfd's GTK backend on Linux (see Cargo.toml), which compiles
       # against GTK's headers. The runner image does not carry them, and without them the build
       # fails rather than falling back to anything.
@@ -87,28 +99,37 @@ jobs:
           Copy-Item target/${{ matrix.target }}/release/ev_cost_recovery.exe `
             dist/ev_cost_recovery-${{ steps.stamp.outputs.stamp }}.exe
           Copy-Item LICENSE-MIT, LICENSE-APACHE, THIRD-PARTY-NOTICES.md dist/
-      # `upload-artifact` zips its inputs and drops the Unix mode bits, so an uploaded binary
-      # arrives without its executable bit. Tarring first carries the mode through ourselves.
+      # A release asset is a single file, so each platform's `dist` is packed into one archive
+      # named for its target and stamp. Tar on Linux because zip drops the Unix mode bits and the
+      # binary would arrive without its executable bit; zip on Windows because that is what the
+      # platform opens without extra tooling.
+      #
+      # Each step records the name it produced in `ARCHIVE`, so the upload below names one file
+      # that exists rather than a pair of candidates of which one is always absent — which is what
+      # lets `fail_on_unmatched_files` mean something.
       - name: Package Linux binary
         if: runner.os == 'Linux'
-        run: >
-          tar -czf
-          ev_cost_recovery-${{ matrix.target }}-${{ steps.stamp.outputs.stamp }}.tar.gz
-          -C dist .
-      - name: Upload Linux Artifact
-        if: runner.os == 'Linux'
-        uses: actions/upload-artifact@v4
-        with:
-          name: binary-${{ matrix.target }}-${{ steps.stamp.outputs.stamp }}
-          path: ev_cost_recovery-${{ matrix.target }}-${{ steps.stamp.outputs.stamp }}.tar.gz
-      # No tarball on Windows: nothing there depends on a permission bit surviving the trip, so
-      # the zip `upload-artifact` makes on its own is enough. That zip is named after the artifact,
-      # which is why the stamp has to be on `name` here and not only on the file inside.
-      - name: Upload Windows Artifact
+        run: |
+          archive=ev_cost_recovery-${{ matrix.target }}-${{ steps.stamp.outputs.stamp }}.tar.gz
+          tar -czf "$archive" -C dist .
+          echo "ARCHIVE=$archive" >> "$GITHUB_ENV"
+      - name: Package Windows binary
         if: runner.os == 'Windows'
-        uses: actions/upload-artifact@v4
+        run: |
+          $archive = "ev_cost_recovery-${{ matrix.target }}-${{ steps.stamp.outputs.stamp }}.zip"
+          Compress-Archive -Path dist/* -DestinationPath $archive
+          "ARCHIVE=$archive" >> $env:GITHUB_ENV
+      # Straight onto the release page for the pushed tag, rather than a workflow artifact: the
+      # download then outlives the run's retention window and needs no GitHub account to fetch.
+      # Both legs of the matrix name the same tag, so whichever finishes first creates the release
+      # and the other adds its asset to it — `files` replaces only assets of the same name, and the
+      # two archives never collide because the target is in the name.
+      - name: Publish to the release page
+        uses: softprops/action-gh-release@v2
         with:
-          name: binary-${{ matrix.target }}-${{ steps.stamp.outputs.stamp }}
-          path: dist/*
+          tag_name: ${{ github.ref_name }}
+          prerelease: ${{ steps.stamp.outputs.prerelease }}
+          fail_on_unmatched_files: true
+          files: ${{ env.ARCHIVE }}
 
 
