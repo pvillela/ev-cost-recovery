@@ -16,6 +16,10 @@ jobs:
     permissions:
       contents: write
     strategy:
+      # One platform's failure leaves the other still worth knowing. The default cancelled the
+      # Linux leg mid-compile over a Windows test failure, which reported a build that had never
+      # been run as one that had been stopped, and said nothing about whether Linux would pass.
+      fail-fast: false
       matrix:
         include:
           # Pinned rather than `ubuntu-latest`: glibc is only backward compatible, so the binary
@@ -29,7 +33,7 @@ jobs:
         #     target: aarch64-apple-darwin
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       # The stamp every download carries: `v0_1_0_rc-1a2b3c` from tag `v0.1.0-rc` at that commit.
       # It comes from the tag rather than the manifest because the tag is what names the release,
       # and the two are compared here so a tag pushed against a stale `version =` fails the build

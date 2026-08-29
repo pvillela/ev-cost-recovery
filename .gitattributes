@@ -1,11 +1,28 @@
-# The golden report files are compared byte for byte by tests/report_rendering.rs, and the renderer
-# emits `\n` on every platform. Without this, a checkout on Windows — where git ships with
-# `core.autocrlf=true`, as GitHub's runners do — rewrites them to CRLF and every line differs.
-*.report.md text eol=lf
+# Every fixture, golden and input alike. The goldens are compared byte for byte and the renderers
+# emit `\n` on every platform; without this a checkout on Windows — where git ships with
+# `core.autocrlf=true`, as GitHub's runners do — rewrites them to CRLF and every line differs. The
+# inputs are pinned for the matching reason: what a conversion produces must not depend on the
+# platform the repository was checked out on.
+#
+# Stated over the whole directory rather than per extension, because naming extensions is what
+# failed. `*.report.md` and `tests/fixtures/*.csv` covered every fixture when they were written;
+# then `.report.txt` and `.golden.txt` goldens were added and never listed, and the CSVs moved down
+# a level into `sessions/`, where a single `*` no longer reaches them — it does not cross a `/`.
+# Neither omission had to touch this file in order to compile, and neither shows on Linux, so the
+# gap surfaced only on the Windows leg of a release build.
+tests/fixtures/** text eol=lf
 
-# The inputs those goldens are generated from, pinned for the same reason: the conversion should not
-# depend on the platform the repository was checked out on.
-tests/fixtures/*.csv text eol=lf
+# Except the workbook, which is a zip: line-ending conversion would corrupt it. Git's own heuristic
+# already treats it as binary, but the rule above is explicit, so this has to be too.
+tests/fixtures/**/*.xlsx binary
+
+# And except the Green Button feeds, which are stored with the CRLF Toronto Hydro serves them with.
+# `-text` is "convert nothing, in either direction", which is not the same as `eol=lf`: these are
+# specimens cut from a real export, and normalising them would make the fixtures differ from the
+# bytes the reader actually meets in the field. It fixes the Windows checkout just as well — the
+# reason CRLF is a problem elsewhere is that it appears on one platform and not the other, and a
+# file git never converts is identical everywhere.
+tests/fixtures/**/*.XML -text
 
 # The app icon: embedded into the Windows executables by build.rs and into the GUI binary by
 # `include_bytes!`. Marked binary so that no checkout can rewrite a byte of it.
