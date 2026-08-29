@@ -29,10 +29,8 @@
 //! No assertion here names an electrical constant. The numbers this file does state are clock
 //! times and session counts, which are properties of the fixture rather than of the site model.
 
-use super::{
-    AnomalyKind, BREAKER_RATING_KW, IntervalEstimates, csv::csv_sessions, estimates_from_sessions,
-};
-use crate::{golden, time::Interval};
+use super::{AnomalyKind, IntervalEstimates, csv::csv_sessions, estimates_from_sessions};
+use crate::{golden, session::BREAKER_MAX_NORMAL_KW, time::Interval};
 use jiff::{Timestamp, Zoned, tz::TimeZone};
 use std::rc::Rc;
 
@@ -206,7 +204,7 @@ fn the_maximal_segment_is_one_of_the_busy_middle_quarters() {
 /// `InconsistentDuration` is the only kind that removes a session.
 ///
 /// The anomalies it does carry are checked against the rating rather than counted. Which sessions
-/// exceed `BREAKER_RATING_KW` depends on that constant's value, and no test here may; what does not
+/// exceed [`BREAKER_MAX_NORMAL_KW`] depends on that constant's value, and no test here may; what does not
 /// depend on it is that the flag and the comparison agree.
 #[test]
 fn no_session_is_excluded_and_every_flag_agrees_with_the_rating() {
@@ -231,8 +229,8 @@ fn no_session_is_excluded_and_every_flag_agrees_with_the_rating() {
                 .any(|a| a.session.id == session.id && a.kind == AnomalyKind::ExcessiveAvgKw);
             assert_eq!(
                 flagged,
-                session.avg_kw() > BREAKER_RATING_KW,
-                "{} draws {} against a {BREAKER_RATING_KW} rating",
+                session.avg_kw() > BREAKER_MAX_NORMAL_KW,
+                "{} draws {} against a {BREAKER_MAX_NORMAL_KW} max rating",
                 session.id,
                 session.avg_kw()
             );

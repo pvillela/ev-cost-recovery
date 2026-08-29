@@ -4,7 +4,10 @@ use super::{
         Load, PANEL_BREAKER_COUNT, PANEL_COUNT, ev_load, ev_real_power_kw, single_panel_load,
     },
 };
-use crate::time::{Interval, duration, time_zone, truncate_to};
+use crate::{
+    session::site_model::NORMAL_VOLTAGE_FLUCTUATION_FACTOR,
+    time::{Interval, duration, time_zone, truncate_to},
+};
 use jiff::{Timestamp, Zoned};
 use std::{
     collections::BTreeMap,
@@ -63,6 +66,10 @@ pub const SEGMENT_DURATION: Duration = Duration::from_mins(15);
 
 /// Continuous use breaker kW rating.
 pub const BREAKER_RATING_KW: f64 = ev_real_power_kw();
+
+/// Voltage draws above this value are anomalous.
+pub const BREAKER_MAX_NORMAL_KW: f64 =
+    BREAKER_RATING_KW * (1.0 + NORMAL_VOLTAGE_FLUCTUATION_FACTOR);
 
 // ---------------------------------------------------------------------------
 // Reported time, adjusted

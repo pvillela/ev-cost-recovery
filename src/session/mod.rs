@@ -58,7 +58,7 @@ pub use report::site_load_report;
 // of something the API returns -- `SessionNotes` and `TouKwh` off an `Energy`, `AnomalyKind` off a
 // `SessionNotes`, `RSession` off a `Sessions`. `api/mod.rs` explains why a field type is not
 // re-exported: reading one never requires naming it, but the type still has to be public.
-pub use common::{AnomalyKind, BREAKER_RATING_KW, RSession, SessionNotes};
+pub use common::{AnomalyKind, BREAKER_MAX_NORMAL_KW, BREAKER_RATING_KW, RSession, SessionNotes};
 pub use energy::TouKwh;
 pub use file_name::SessionReportCoverage;
 pub use peak::EstimateSet;

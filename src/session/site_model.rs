@@ -16,6 +16,9 @@
 /// Secondary (panel) line-to-line voltage.
 pub const PANEL_VOLTAGE_V: f64 = 208.0;
 
+/// Factor by which voltage may normally fluctuate.
+pub const NORMAL_VOLTAGE_FLUCTUATION_FACTOR: f64 = 0.05;
+
 /// Rating of each EVSE branch breaker.
 pub const BREAKER_RATING_A: f64 = 40.0;
 
