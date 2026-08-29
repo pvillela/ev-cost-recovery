@@ -20,13 +20,10 @@
 //! the two apart.
 
 use super::{
-    Anomaly, AnomalyKind, RSession, RunLog, Session, Sessions, SourceLog, TIME_GRID_STEP,
-    duration_is_consistent,
+    Anomaly, AnomalyKind, BREAKER_MAX_NORMAL_KW, RSession, RunLog, Session, Sessions, SourceLog,
+    TIME_GRID_STEP, duration_is_consistent,
 };
-use crate::{
-    session::common::BREAKER_MAX_NORMAL_KW,
-    time::{is_on_grid, local_datetime, time_zone, wall_clock_instant},
-};
+use crate::time::{is_on_grid, local_datetime, time_zone, wall_clock_instant};
 use jiff::{
     SignedDuration, Timestamp, civil,
     tz::{AmbiguousOffset, TimeZone},
@@ -578,9 +575,10 @@ impl CsvSession {
         if self.active_charge_time.is_zero() {
             common.push(AnomalyKind::ZeroActiveChargeTime);
         } else {
-            // Above the normal max breaker rating is something unusual, so the record
-            // says something is wrong with `Energy_Use` or `Active_Charge_Time` — but not which,
-            // which is why this only reports and never excludes.
+            // The bound is the breaker rating at the top of the normal voltage band, not the
+            // rating itself: a draw inside that band is the installation working. Above it, the
+            // record says something is wrong with `Energy_Use` or `Active_Charge_Time` — but not
+            // which, which is why this only reports and never excludes.
             let avg_kw = self.energy_use / (self.active_charge_time.as_secs_f64() / 3600.0);
             if avg_kw > BREAKER_MAX_NORMAL_KW {
                 common.push(AnomalyKind::ExcessiveAvgKw);

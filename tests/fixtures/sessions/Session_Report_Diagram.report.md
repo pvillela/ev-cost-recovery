@@ -59,17 +59,5 @@ Sessions by segment
 Anomalies
 ---------
 
-| Row | Session | Anomaly               |
-|----:|:--------|:----------------------|
-|   5 | D       | ExcessiveAvgKw(6.600) |
-|   7 | F       | ExcessiveAvgKw(6.700) |
-
-Row numbers are rows of the source data file named above, so each one can be
-looked up directly. Only sessions reaching the interval of interest are
-listed here; a session anomalous elsewhere in the source report is not this
-interval's concern.
-
-- ExcessiveAvgKw - average kilowatts above the Evolute breaker rating, which
-  the hardware should not allow; the session still counts towards every
-  estimate.
+None. Every session considered for this interval was well formed.
 

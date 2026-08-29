@@ -127,6 +127,7 @@ distinction matters because it decides what may be changed and what will follow.
 | Constant | Meaning |
 |---|---|
 | `PANEL_VOLTAGE_V` | Secondary line-to-line voltage |
+| `NORMAL_VOLTAGE_FLUCTUATION_FACTOR` | Normal supply voltage band, either way (ANSI C84.1 Range A) |
 | `BREAKER_RATING_A` | Rating of each EVSE branch breaker |
 | `CONTINUOUS_DUTY_DERATE` | Continuous-load derating (CEC Rule 8-104) |
 | `PANEL_COUNT` | Number of installed panels, each on a transformer of its own |
@@ -142,8 +143,9 @@ distinction matters because it decides what may be changed and what will follow.
 **Derived values** — computed from the free ones, never declared. Do not edit these to a literal;
 edit the constant behind them. `ev_pilot_current_a()`, `ev_apparent_power_kva()`,
 `ev_real_power_kw()`, `max_true_power_factor()`, `ev_load()`, `transformer_load()`,
-`single_panel_load()`, `loading_ratio()`, and `BREAKER_RATING_KW` in `src/session/common.rs`, which
-is `ev_real_power_kw()` under the name the rest of the crate uses.
+`single_panel_load()`, `loading_ratio()`, and two in `src/session/common.rs`: `BREAKER_RATING_KW`,
+which is `ev_real_power_kw()` under the name the rest of the crate uses, and
+`BREAKER_MAX_NORMAL_KW`, that rating at the top of the normal voltage band.
 
 #### Spreading a count over the panels, and counts above what they hold
 
@@ -184,12 +186,13 @@ This is enforced by review, not by tooling, so it is worth knowing the two place
 break by accident:
 
 - **Fixture energy figures.** A CSV fixture states `Energy_Use` and `Active_Charge_Time` as fixed
-  text, so whether the average power they imply clears `BREAKER_RATING_KW` depends on
-  `BREAKER_RATING_A`. Lower the breaker rating and every fixture session starts picking up an
-  `ExcessiveAvgKw` flag. This is why the timestamp tests in `src/session/csv.rs` and
-  `src/session/excel.rs` filter their anomaly lists through `timing_anomalies`
-  (`src/session/test_support.rs`) rather than asserting on them whole. If you add a test in either
-  that reads a whole anomaly list, filter it the same way.
+  text, so whether the average power they imply clears `BREAKER_MAX_NORMAL_KW` depends on
+  `BREAKER_RATING_A` and `NORMAL_VOLTAGE_FLUCTUATION_FACTOR`. Lower the breaker rating and every
+  fixture session starts picking up an `ExcessiveAvgKw` flag; widen the voltage band and the
+  sessions built to carry that flag lose it. This is why the timestamp tests in
+  `src/session/csv.rs` and `src/session/excel.rs` filter their anomaly lists through
+  `timing_anomalies` (`src/session/test_support.rs`) rather than asserting on them whole. If you
+  add a test in either that reads a whole anomaly list, filter it the same way.
 - **Two constants read against each other.** `full_occupancy_stays_within_nameplate` does this on
   purpose: it asserts that `PANEL_BREAKER_COUNT` vehicles do not exceed `XFMR_RATING_KVA`. That is a
   sizing invariant, not a number — a configuration violating it describes an installation that

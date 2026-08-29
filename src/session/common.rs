@@ -1,13 +1,11 @@
 use super::{
     SourceLog,
     site_model::{
-        Load, PANEL_BREAKER_COUNT, PANEL_COUNT, ev_load, ev_real_power_kw, single_panel_load,
+        Load, NORMAL_VOLTAGE_FLUCTUATION_FACTOR, PANEL_BREAKER_COUNT, PANEL_COUNT, ev_load,
+        ev_real_power_kw, single_panel_load,
     },
 };
-use crate::{
-    session::site_model::NORMAL_VOLTAGE_FLUCTUATION_FACTOR,
-    time::{Interval, duration, time_zone, truncate_to},
-};
+use crate::time::{Interval, duration, time_zone, truncate_to};
 use jiff::{Timestamp, Zoned};
 use std::{
     collections::BTreeMap,
@@ -67,7 +65,10 @@ pub const SEGMENT_DURATION: Duration = Duration::from_mins(15);
 /// Continuous use breaker kW rating.
 pub const BREAKER_RATING_KW: f64 = ev_real_power_kw();
 
-/// Voltage draws above this value are anomalous.
+/// Highest average power a session can draw and still be normal.
+///
+/// [`BREAKER_RATING_KW`] at the top of the normal voltage band. The breaker limits current, not
+/// power, so a vehicle at full pilot current draws more kW when the supply voltage runs high.
 pub const BREAKER_MAX_NORMAL_KW: f64 =
     BREAKER_RATING_KW * (1.0 + NORMAL_VOLTAGE_FLUCTUATION_FACTOR);
 
@@ -772,27 +773,17 @@ pub enum AnomalyKind {
     /// Only fold starts are checked this way; the same inconsistency on any other date is caught,
     /// if at all, by [`AnomalyKind::InconsistentDuration`]. See docs/time/README.md, "Time zone".
     DstUnresolvable,
-    /// The session's average power exceeds [`BREAKER_RATING_KW`], which the hardware is
+    /// The session's average power exceeds [`BREAKER_MAX_NORMAL_KW`], which the hardware is
     /// supposed to make impossible.
     ///
+    /// [`BREAKER_RATING_KW`] alone is not the bound: the breaker limits current, so the power a
+    /// vehicle draws rises and falls with the supply voltage, and a draw within the normal voltage
+    /// band is what the installation does rather than a fault. Above the band, one of
+    /// `Energy_Use` and `Active_Charge_Time` is wrong.
+    ///
     /// Informational only: the session still takes part in every estimate, since nothing about the
-    /// figure says *which* of `Energy_Use` and `Active_Charge_Time` is wrong, or whether either is.
+    /// figure says *which* of the two is wrong, or whether either is.
     /// [`AnomalyKind::InconsistentDuration`] remains the only kind that excludes a session.
-    ///
-    /// It matters because the count-based figures are an aggregate session count times a single
-    /// rating, so a session drawing more than that rating breaks the assumption they rest on — see
-    /// docs/session/README.md, "Assumptions". A reader ordinarily finds the energy-based figures at or below the
-    /// count-based ones, and that ordering inverts exactly when a segment's `agg_kw` exceeds its
-    /// `agg_count` times the rating.
-    ///
-    /// The comparison is against the rating exactly, with no tolerance, which is what makes this
-    /// flag a complete account of that inversion: it takes a member above the rating to push a
-    /// segment's `agg_kw` past its `agg_count` times the rating, and every such member is flagged.
-    /// A tolerance would leave a band of sessions that invert the two silently.
-    ///
-    /// One consequence of exactness: a session meant to sit exactly at the rating may or may not be
-    /// flagged, according to how its `Energy_Use / Active_Charge_Time` rounds in binary floating
-    /// point. That is the price of the guarantee above, and it errs towards reporting.
     ExcessiveAvgKw,
     /// Another session in the same list carries the same `Charge_Session_ID`.
     ///
@@ -933,8 +924,9 @@ impl fmt::Display for AnomalyKind {
                  inconsistent; assumed EDT, timestamps may be an hour early"
             }
             Self::ExcessiveAvgKw => {
-                "average kilowatts above the Evolute breaker rating, which the hardware should not \
-                 allow; the session still counts towards every estimate"
+                "average kilowatts above the Evolute breaker rating at the top of the normal \
+                 voltage band, which the hardware should not allow; the session still counts \
+                 towards every estimate"
             }
             Self::DuplicateId => {
                 "another session in the report carries the same Charge_Session_ID; the id is not \

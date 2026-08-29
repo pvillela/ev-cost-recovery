@@ -10,8 +10,8 @@ Estimates
 
 | Estimate     | Unit |    Min |    Max | Segment |
 |:-------------|:-----|-------:|-------:|:--------|
-| Energy-based | kW   | 15.995 | 17.304 | 16:15   |
-| Energy-based | kVA  | 16.445 | 17.767 | 16:15   |
+| Energy-based | kW   | 16.176 | 17.506 | 16:15   |
+| Energy-based | kVA  | 16.628 | 17.971 | 16:15   |
 | Count-based  | kW   | 16.956 | 18.284 | 16:15   |
 | Count-based  | kVA  | 17.415 | 18.756 | 16:15   |
 
@@ -39,8 +39,8 @@ Segments
 | Segment |       Count |            kW |
 |:--------|------------:|--------------:|
 | 16:00   | 0.267-0.400 |   1.600-2.400 |
-| 16:15   | 2.533-2.733 | 15.740-17.039 |
-| 16:30   | 1.000-1.200 |   6.000-7.260 |
+| 16:15   | 2.533-2.733 | 15.920-17.239 |
+| 16:30   | 1.000-1.200 |   6.000-7.280 |
 | 16:45   | 0.000-0.000 |   0.000-0.000 |
 
 Times are local (ET), and each segment is 15 minutes long, named by the
@@ -87,7 +87,7 @@ Anomalies
 | Row | Session | Anomaly               |
 |----:|:--------|:----------------------|
 |   6 | SPIKE   | ZeroActiveChargeTime  |
-|   9 | EXCESS  | ExcessiveAvgKw(6.900) |
+|   9 | EXCESS  | ExcessiveAvgKw(7.200) |
 
 Row numbers are rows of the source data file named above, so each one can be
 looked up directly. Only sessions reaching the interval of interest are
@@ -99,7 +99,7 @@ reason.
   its energy in no time at all and has no finite average power; the
   estimating logic substitutes one, and the session is worth reviewing
   individually.
-- ExcessiveAvgKw - average kilowatts above the Evolute breaker rating, which
-  the hardware should not allow; the session still counts towards every
-  estimate.
+- ExcessiveAvgKw - average kilowatts above the Evolute breaker rating at the
+  top of the normal voltage band, which the hardware should not allow; the
+  session still counts towards every estimate.
 

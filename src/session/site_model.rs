@@ -16,7 +16,12 @@
 /// Secondary (panel) line-to-line voltage.
 pub const PANEL_VOLTAGE_V: f64 = 208.0;
 
-/// Factor by which voltage may normally fluctuate.
+/// Factor by which the supply voltage may normally fluctuate, either way.
+///
+/// ANSI C84.1 Range A, the band a utility undertakes to hold the service entrance within under
+/// normal operating conditions. The transformer passes primary variation through to the secondary
+/// proportionally, so the same factor applies at the panel.
+/// See `docs/session/Google_Voltage_Fluctuations_in_Building.md`.
 pub const NORMAL_VOLTAGE_FLUCTUATION_FACTOR: f64 = 0.05;
 
 /// Rating of each EVSE branch breaker.

@@ -15,6 +15,7 @@ Grouped by how likely a change is, not by module.
 | Constant | Here | Meaning |
 |---|---|---|
 | `PANEL_VOLTAGE_V` | 208.0 | Secondary line-to-line voltage |
+| `NORMAL_VOLTAGE_FLUCTUATION_FACTOR` | 0.05 | Normal supply voltage band, either way (ANSI C84.1 Range A) |
 | `BREAKER_RATING_A` | 40.0 | Rating of each EVSE branch breaker |
 | `CONTINUOUS_DUTY_DERATE` | 0.80 | Continuous-load derating, CEC Rule 8-104 |
 | `PANEL_COUNT` | 1 | Installed panels, each on a transformer of its own |
@@ -36,8 +37,8 @@ a different unit means going back to its own datasheet rather than scaling these
 hangs off the *same* transformer is not `PANEL_COUNT = 2`; it needs a different model.
 
 Do not edit the derived values to a literal — `ev_pilot_current_a()`, `ev_apparent_power_kva()`,
-`ev_real_power_kw()`, `single_panel_load()`, and `BREAKER_RATING_KW` in `src/session/common.rs`.
-Edit the constant behind them. The manual lists them in full.
+`ev_real_power_kw()`, `single_panel_load()`, and `BREAKER_RATING_KW` and `BREAKER_MAX_NORMAL_KW` in
+`src/session/common.rs`. Edit the constant behind them. The manual lists them in full.
 
 ## Likely to change: a different utility or province
 
@@ -94,6 +95,8 @@ constant.** Relationships may be relied on; values may not. See
 [`maintenance-manual.md`](maintenance-manual.md), "The rule the tests are written to".
 
 Expect fixture churn anyway. A CSV fixture states `Energy_Use` and `Active_Charge_Time` as fixed
-text, so whether the average power they imply clears `BREAKER_RATING_KW` depends on
-`BREAKER_RATING_A`. Lower the breaker rating and every fixture session picks up an `ExcessiveAvgKw`
-flag. The manual works through that exact experiment at 40 A → 32 A and names the tests it moves.
+text, so whether the average power they imply clears `BREAKER_MAX_NORMAL_KW` depends on
+`BREAKER_RATING_A` and `NORMAL_VOLTAGE_FLUCTUATION_FACTOR`. Lower the breaker rating and every
+fixture session picks up an `ExcessiveAvgKw` flag; widen the voltage band and the sessions built to
+carry that flag lose it. The manual works through that exact experiment at 40 A → 32 A and names
+the tests it moves.

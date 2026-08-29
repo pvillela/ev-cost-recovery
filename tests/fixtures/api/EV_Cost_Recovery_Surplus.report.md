@@ -139,9 +139,9 @@ needed a judgement call. Only what bears on these figures is listed.
 |:---------|----:|:--------|:---------------|
 | June.csv |   7 | HOT     | ExcessiveAvgKw |
 
-- ExcessiveAvgKw - average kilowatts above the Evolute breaker rating, which
-  the hardware should not allow; the session still counts towards every
-  estimate.
+- ExcessiveAvgKw - average kilowatts above the Evolute breaker rating at the
+  top of the normal voltage band, which the hardware should not allow; the
+  session still counts towards every estimate.
 
 Meter data
 ----------
