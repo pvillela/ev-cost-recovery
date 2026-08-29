@@ -18,6 +18,9 @@ pub const BREAKER_RATING_A: f64 = 40.0;
 /// Sets the J1772 pilot current the vehicle is permitted to draw.
 pub const CONTINUOUS_DUTY_DERATE: f64 = 0.80;
 
+/// Number of installed panels.
+pub const PANEL_COUNT: u8 = 1;
+
 /// Number of EVSE breakers in one panel. Bounds how many vehicles that panel can charge.
 pub const PANEL_BREAKER_COUNT: u32 = 10;
 
@@ -187,7 +190,7 @@ fn transformer_load(secondary: Load) -> Load {
     }
 }
 
-/// Total load seen at the transformer primary for a given vehicle count.
+/// Total load seen at the transformer primary for a single panel, given vehicle count.
 ///
 /// The count is fractional: a segment counts a vehicle by the share of the segment it covers, so
 /// whole numbers are the exception. It is not bounded by [`PANEL_BREAKER_COUNT`] either, but a
@@ -196,7 +199,7 @@ fn transformer_load(secondary: Load) -> Load {
 /// would in fact have been built with a second panel. `Segment::count_based_load` and
 /// `Segment::energy_based_load` are what handle that case; callers wanting a load for a count they
 /// cannot bound should go through them.
-pub fn site_load(ev_count: f64) -> Load {
+pub fn singe_panel_load(ev_count: f64) -> Load {
     let secondary = ev_load().scaled(ev_count);
     secondary + transformer_load(secondary)
 }
@@ -259,7 +262,7 @@ mod tests {
 
     #[test]
     fn idle_transformer_draws_only_excitation() {
-        let idle = site_load(0.0);
+        let idle = singe_panel_load(0.0);
         assert_close(idle.real_kw, XFMR_NO_LOAD_LOSS_KW);
         assert_close(idle.reactive_kvar, XFMR_MAGNETIZING_PU * XFMR_RATING_KVA);
         assert_close(idle.distortion_kvar, 0.0);
@@ -273,8 +276,8 @@ mod tests {
     /// on the vehicles alone — the transformer only ever adds reactive power on top.
     #[test]
     fn site_power_factor_rises_then_plateaus() {
-        let single = site_load(1.0).true_power_factor();
-        let plateau = site_load(PANEL_BREAKER_COUNT as f64).true_power_factor();
+        let single = singe_panel_load(1.0).true_power_factor();
+        let plateau = singe_panel_load(PANEL_BREAKER_COUNT as f64).true_power_factor();
         assert!(single < plateau, "PF should improve with loading");
         assert!(
             plateau <= max_true_power_factor(),
@@ -292,7 +295,7 @@ mod tests {
     /// constants are wrong, not the test.
     #[test]
     fn full_occupancy_stays_within_nameplate() {
-        assert!(loading_ratio(site_load(PANEL_BREAKER_COUNT as f64)) < 1.0);
+        assert!(loading_ratio(singe_panel_load(PANEL_BREAKER_COUNT as f64)) < 1.0);
     }
 
     /// A count between two whole vehicles gives a load between their two loads.
@@ -302,9 +305,9 @@ mod tests {
     #[test]
     fn a_fractional_count_lands_between_its_whole_neighbours() {
         for ev_count in 0..PANEL_BREAKER_COUNT {
-            let low = site_load(f64::from(ev_count)).apparent_kva();
-            let mid = site_load(f64::from(ev_count) + 0.5).apparent_kva();
-            let high = site_load(f64::from(ev_count) + 1.0).apparent_kva();
+            let low = singe_panel_load(f64::from(ev_count)).apparent_kva();
+            let mid = singe_panel_load(f64::from(ev_count) + 0.5).apparent_kva();
+            let high = singe_panel_load(f64::from(ev_count) + 1.0).apparent_kva();
             assert!(low < mid && mid < high, "at {ev_count} vehicles");
         }
     }
@@ -314,7 +317,7 @@ mod tests {
         // Quadrature addition is bounded by arithmetic addition.
         for ev_count in 0..=PANEL_BREAKER_COUNT {
             let secondary = ev_load().scaled(f64::from(ev_count));
-            let total = site_load(ev_count as f64).apparent_kva();
+            let total = singe_panel_load(ev_count as f64).apparent_kva();
             let scalar = secondary.apparent_kva() + transformer_load(secondary).apparent_kva();
             assert!(total <= scalar + TOLERANCE);
         }

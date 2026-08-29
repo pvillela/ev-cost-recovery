@@ -279,7 +279,7 @@ mod test {
     use super::{
         super::{
             SEGMENT_DURATION,
-            site_model::{ev_load, site_load},
+            site_model::{ev_load, singe_panel_load},
         },
         *,
     };
@@ -495,7 +495,7 @@ mod test {
     #[test]
     fn an_empty_segment_is_the_standing_block() {
         let segment = Segment::new(hour().start, SEGMENT_DURATION);
-        let standing = site_load(0.0);
+        let standing = singe_panel_load(0.0);
 
         for load in [
             segment.count_based_load().min,
@@ -599,7 +599,7 @@ mod test {
                 })
                 .collect();
             let segments = segments_for_ioi(hour(), &sessions);
-            let expected = site_load(n as f64);
+            let expected = singe_panel_load(n as f64);
 
             for segment in &segments {
                 let count = segment.agg_count();
@@ -642,7 +642,7 @@ mod test {
         )];
         let segments = segments_for_ioi(hour(), &sessions);
         let est = segment_estimate(&segments[0]);
-        let expected = site_load(1.0 / 3.0);
+        let expected = singe_panel_load(1.0 / 3.0);
 
         assert!((segments[0].agg_count().max - 1.0 / 3.0).abs() < TOLERANCE);
         assert!(
