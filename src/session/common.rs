@@ -1,12 +1,10 @@
 use super::{
     SourceLog,
-    site_model::{Load, PANEL_BREAKER_COUNT, ev_load, ev_real_power_kw, singe_panel_load},
+    site_model::{
+        Load, PANEL_BREAKER_COUNT, PANEL_COUNT, ev_load, ev_real_power_kw, single_panel_load,
+    },
 };
-use crate::{
-    session::site_model::PANEL_COUNT,
-    time::{Interval, duration, time_zone, truncate_to},
-};
-use eframe::egui::panel;
+use crate::time::{Interval, duration, time_zone, truncate_to};
 use jiff::{Timestamp, Zoned};
 use std::{
     collections::BTreeMap,
@@ -650,37 +648,45 @@ impl Segment {
     /// Site load for a vehicle count, which may be fractional, and may exceed aggregate panel
     /// capacity.
     ///
-    /// A larger count is one the present installation cannot hold, so it can be interpreted in
-    /// three non mutually exclusive ways: (1) more panels have been installed but [`PANEL_COUNT`]
-    /// hasn't been updated; and/or (2) the session start/end adjustments cause an artificial
-    /// overlap of charging sessions; and/or (3) normal power flucutations cause the per-EV power
-    /// draw to exceed [`ev_load()`].
+    /// Every installed panel is present in the figure whether or not it is charging anything.
+    /// [`single_panel_load`] carries a standing block — its transformer's core loss and
+    /// magnetizing current — and that block is drawn by each of the [`PANEL_COUNT`] panels around
+    /// the clock, so an idle panel contributes it and a busy one does not contribute more.
     ///
-    /// Without information about session allocation to panels, this calculation allocates the load
-    /// to the smallest possible number of panels.
+    /// Without information about which panel a session ran on, the vehicles are packed into the
+    /// smallest number of panels that can hold them: panels are filled to [`PANEL_BREAKER_COUNT`]
+    /// one at a time, one panel takes whatever is left over, and the rest stand idle. Packing this
+    /// way maximises the figure, because a panel's copper loss and leakage reactance rise with the
+    /// square of its loading.
+    ///
+    /// A count above aggregate capacity is one the present installation cannot hold, so it can be
+    /// interpreted in three ways, not mutually exclusive: (1) more panels have been installed but
+    /// [`PANEL_COUNT`] has not been updated; and/or (2) the session start/end adjustments cause an
+    /// artificial overlap of charging sessions; and/or (3) normal power fluctuations cause the
+    /// per-EV power draw to exceed [`ev_load()`]. The excess is priced as (1): further panels of
+    /// the same kind, so the load is proportional to the count at the rate one full panel sets.
     fn scaled_load(scaling: f64) -> Load {
-        let panel_capacity = PANEL_BREAKER_COUNT as f64;
-        let panel_count = PANEL_COUNT as f64;
-        let full_panels = (scaling / panel_capacity).floor().min(panel_count);
-        let residual_scaling = scaling - full_panels * panel_capacity;
-        let empty_panels: f64 = match () {
-            _ if full_panels < panel_count && residual_scaling == 0.0 => panel_count - full_panels,
-            _ if full_panels < panel_count => (panel_count - full_panels - 1.0).max(0.0),
-            _ => 0.0,
-        };
-        singe_panel_load(panel_capacity).scaled(full_panels)
-            + singe_panel_load(0.0).scaled(empty_panels)
-            + Self::excess_residual_load(residual_scaling)
-    }
+        let panel_capacity = f64::from(PANEL_BREAKER_COUNT);
+        let panel_count = f64::from(PANEL_COUNT);
+        let aggregate_capacity = panel_count * panel_capacity;
 
-    /// Imputed load for a residual vehicle count (`scaling`) above the aggregate panel capacity.
-    /// `scaling` may be fractional and may exceed a panel's capacity.
-    ///
-    /// Load is proportional to the average load of one full panel.
-    fn excess_residual_load(scaling: f64) -> Load {
-        let panel_capacity = PANEL_BREAKER_COUNT as f64;
-        let full_panel_load = singe_panel_load(panel_capacity);
-        full_panel_load.scaled(scaling / panel_capacity)
+        // Imputed load for a vehicle count (`scaling`) above the aggregate panel capacity.
+        // Load is proportional to the count, at the average load of a full panel.
+        if scaling > aggregate_capacity {
+            return single_panel_load(panel_capacity).scaled(scaling / panel_capacity);
+        }
+
+        let full_panels = (scaling / panel_capacity).floor();
+        let residual = scaling - full_panels * panel_capacity;
+        // A panel holding no vehicles is an idle panel, and `single_panel_load(0.0)` is what it
+        // draws; counting it as a partial one would add a second standing block for the same
+        // hardware.
+        let partial_panels = f64::from(residual > 0.0);
+        let idle_panels = panel_count - full_panels - partial_panels;
+
+        single_panel_load(panel_capacity).scaled(full_panels)
+            + single_panel_load(residual).scaled(partial_panels)
+            + single_panel_load(0.0).scaled(idle_panels)
     }
 
     pub(crate) fn add_session(&mut self, session: RSession) {
@@ -1450,6 +1456,19 @@ mod test {
         f64::from(PANEL_BREAKER_COUNT)
     }
 
+    /// What every panel on the site can hold between them.
+    fn aggregate_capacity() -> f64 {
+        panel_capacity() * f64::from(PANEL_COUNT)
+    }
+
+    /// The standing block of every panel but the one the vehicles are packed into.
+    ///
+    /// Zero at a one-panel site, which is why the tests below add it rather than assuming it away:
+    /// they then say the same thing whatever `PANEL_COUNT` is.
+    fn idle_remainder() -> Load {
+        single_panel_load(0.0).scaled(f64::from(PANEL_COUNT) - 1.0)
+    }
+
     fn assert_load_close(actual: Load, expected: Load, context: &str) {
         for (a, e, component) in [
             (actual.real_kw, expected.real_kw, "real_kw"),
@@ -1471,71 +1490,110 @@ mod test {
         }
     }
 
-    /// For counts up to `PANEL_BREAKER_COUNT`, `Segment::scaled_load` must return the same load as
-    /// `site_load`. The scaling rule only takes over above one panel's capacity.
+    /// An installed panel draws its standing block whether or not anything is plugged into it.
+    ///
+    /// Core loss and magnetizing current are present the moment a transformer is energised, so a
+    /// site with nothing charging still draws one standing block per panel. The count that comes
+    /// nearest to losing it is a hair above zero, not zero itself, so both are checked: an
+    /// arrangement that gave the first branch its own answer for an empty panel would pass the
+    /// first assertion and fail the second.
+    #[test]
+    fn every_installed_panel_draws_its_standing_block() {
+        let standing = single_panel_load(0.0);
+
+        assert_load_close(
+            Segment::scaled_load(0.0),
+            standing.scaled(f64::from(PANEL_COUNT)),
+            "with nothing charging",
+        );
+        assert_load_close(
+            Segment::scaled_load(1e-9),
+            single_panel_load(1e-9) + idle_remainder(),
+            "with almost nothing charging",
+        );
+    }
+
+    /// Vehicles that fit in one panel load that panel, and every other panel stands idle.
+    ///
+    /// This is the packing rule at its first step: `Segment::scaled_load` fills panels one at a
+    /// time, so a count within one panel's capacity is `single_panel_load` of that count, plus the
+    /// standing block of each panel left empty.
     ///
     /// Fractional counts are checked as well as whole ones, because `Segment::agg_count` sums the
     /// share of the segment each session covers, so its count is almost never an integer.
     #[test]
-    fn up_to_one_panel_the_scaled_load_is_the_site_load_model() {
-        for tenths in 0..=(PANEL_BREAKER_COUNT * 10) {
+    fn vehicles_within_one_panel_load_that_panel_and_leave_the_rest_idle() {
+        for tenths in 1..=(PANEL_BREAKER_COUNT * 10) {
             let count = f64::from(tenths) / 10.0;
             assert_load_close(
                 Segment::scaled_load(count),
-                singe_panel_load(count),
+                single_panel_load(count) + idle_remainder(),
                 &format!("at {count} vehicles"),
             );
         }
     }
 
-    /// The two branches of `Segment::scaled_load` must agree at `PANEL_BREAKER_COUNT`, so the load
-    /// does not jump as the count crosses it.
+    /// The load does not jump as a count crosses a panel boundary, nor as it crosses aggregate
+    /// capacity into the proportional branch.
     ///
-    /// If they disagreed, two segments with almost the same vehicle count would get noticeably
-    /// different estimates purely because one fell either side of the boundary.
+    /// If it did, two segments with almost the same vehicle count would get noticeably different
+    /// estimates purely because one fell either side of a boundary. Each boundary is approached
+    /// from both sides, by a step small enough that the load itself cannot move by more than the
+    /// tolerance even where the function is behaving.
     #[test]
-    fn the_two_branches_meet_at_the_panel_boundary() {
+    fn the_load_is_continuous_at_every_boundary() {
         let capacity = panel_capacity();
-        let full_panel = singe_panel_load(capacity);
+        let epsilon = 1e-12;
 
-        assert_load_close(Segment::scaled_load(capacity), full_panel, "at capacity");
-        assert_load_close(
-            Segment::scaled_load(capacity + 1e-12),
-            full_panel,
-            "just above capacity",
-        );
-    }
-
-    /// Above `PANEL_BREAKER_COUNT`, load rises in proportion to the count: twice a full panel's
-    /// worth of vehicles draws twice a full panel's load, and so on.
-    ///
-    /// The assertion is a ratio against `site_load(PANEL_BREAKER_COUNT)` rather than a kW figure,
-    /// so it pins the proportionality rule and not the load a full panel happens to draw.
-    #[test]
-    fn beyond_one_panel_load_is_proportional_to_the_count() {
-        let capacity = panel_capacity();
-        let full_panel = singe_panel_load(capacity);
-
-        for multiple in [1.5, 2.0, 3.7, 10.0] {
+        for panel in 1..=u32::from(PANEL_COUNT) {
+            let boundary = capacity * f64::from(panel);
+            let at = Segment::scaled_load(boundary);
             assert_load_close(
-                Segment::scaled_load(capacity * multiple),
-                full_panel.scaled(multiple),
-                &format!("at {multiple} panels' worth"),
+                Segment::scaled_load(boundary - epsilon),
+                at,
+                &format!("just below {panel} full panels"),
+            );
+            assert_load_close(
+                Segment::scaled_load(boundary + epsilon),
+                at,
+                &format!("just above {panel} full panels"),
             );
         }
     }
 
-    /// Adding a vehicle never lowers the site load, below the panel boundary, above it, or across
-    /// it.
+    /// Above aggregate capacity, load rises in proportion to the count: twice the site's worth of
+    /// vehicles draws twice the site's load, and so on.
     ///
-    /// The sweep runs well past `PANEL_BREAKER_COUNT`, so it crosses the branch boundary rather
-    /// than stopping at it. Only the ordering of successive loads is checked, never how far apart
-    /// they are.
+    /// The assertion is a ratio against one full panel rather than a kW figure, so it pins the
+    /// proportionality rule and not the load a full panel happens to draw.
+    #[test]
+    fn beyond_aggregate_capacity_load_is_proportional_to_the_count() {
+        let capacity = panel_capacity();
+        let full_panel = single_panel_load(capacity);
+
+        for multiple in [1.5, 2.0, 3.7, 10.0] {
+            let count = aggregate_capacity() * multiple;
+            assert_load_close(
+                Segment::scaled_load(count),
+                full_panel.scaled(count / capacity),
+                &format!("at {multiple} times the site's capacity"),
+            );
+        }
+    }
+
+    /// Adding a vehicle never lowers the site load — within a panel, across a panel boundary, or
+    /// past aggregate capacity.
+    ///
+    /// The sweep runs to three times aggregate capacity, so it crosses every boundary rather than
+    /// stopping at one. Only the ordering of successive loads is checked, never how far apart they
+    /// are.
     #[test]
     fn load_never_falls_as_vehicles_are_added() {
         let mut previous = Segment::scaled_load(0.0).apparent_kva();
 
-        for tenths in 1..=(PANEL_BREAKER_COUNT * 30) {
+        #[expect(clippy::cast_possible_truncation, reason = "a loop bound in tenths")]
+        let last_tenth = (aggregate_capacity() * 30.0) as u32;
+        for tenths in 1..=last_tenth {
             let count = f64::from(tenths) / 10.0;
             let current = Segment::scaled_load(count).apparent_kva();
             assert!(
@@ -1546,21 +1604,21 @@ mod test {
         }
     }
 
-    /// Above one panel, `Segment::scaled_load` reports less than `site_load` would for the same
-    /// count.
+    /// Above aggregate capacity, `Segment::scaled_load` reports less than `single_panel_load`
+    /// would for the same count.
     ///
-    /// `site_load` on its own models one transformer driven past its nameplate. Its copper-loss
-    /// and reactance terms rise with the square of loading, so past capacity it grows faster than
-    /// in proportion to the count, while a second panel on a second transformer grows in
-    /// proportion.
+    /// `single_panel_load` on its own models one transformer driven past its nameplate. Its
+    /// copper-loss and reactance terms rise with the square of loading, so past capacity it grows
+    /// faster than in proportion to the count, while further panels on further transformers grow
+    /// in proportion.
     #[test]
     fn the_extension_charges_less_than_overloading_one_transformer() {
-        let capacity = panel_capacity();
+        let capacity = aggregate_capacity();
 
         for extra in [0.5, 1.0, 5.0, 20.0] {
             let count = capacity + extra;
             let extended = Segment::scaled_load(count).apparent_kva();
-            let overloaded = singe_panel_load(count).apparent_kva();
+            let overloaded = single_panel_load(count).apparent_kva();
             assert!(
                 extended < overloaded,
                 "at {count} vehicles the extension gave {extended}, \

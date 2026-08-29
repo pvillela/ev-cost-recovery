@@ -169,15 +169,21 @@ At one vehicle the site power factor is about 0.94; by five it is 0.98, and it p
 above that. With no vehicle charging at all it is far lower still, because the standing block is
 then the whole of the load.
 
-**Past ten vehicles the model adds panels rather than overloading the transformer.** The site as
-built holds ten stalls, and the electrical model describes that site: one panel on one transformer.
-Segment counts are not bounded by it, though — a future site with more stalls would produce larger
-ones — so the estimates read a count above ten as more panels of the same kind, and the site total
-becomes proportional to the count at the rate a full panel sets. The alternative, feeding the
-larger count into the one transformer, would compound the square-law copper loss and reactance
-terms described above and give a figure for an installation nobody would build. The two rules meet
-exactly at ten, so an estimate does not jump as a count crosses it, and below ten nothing changes.
-This affects the segment estimates only; the site-load table still runs 0 to 10 and is untouched.
+**Past what the panels hold, the model adds panels rather than overloading a transformer.** The
+electrical model describes one panel on one transformer, and the site as built is one such panel of
+ten stalls. Where a site has several, the vehicles are packed into as few of them as will hold
+them: panels fill to ten one at a time, one panel takes the remainder, and the rest stand idle —
+still drawing their own standing block, because a transformer's core loss and magnetizing current
+do not wait for a car. Packing rather than spreading gives the larger figure, since a panel's
+copper loss and reactance are square-law in its own loading.
+
+Segment counts are not bounded by the panels, though — a future site with more stalls would produce
+larger ones — so the estimates read a count above what the panels hold as more panels of the same
+kind, and the site total becomes proportional to the count at the rate a full panel sets. The
+alternative, feeding the larger count into the installed transformers, would compound the
+square-law terms described above and give a figure for an installation nobody would build. Every
+boundary is continuous, so an estimate does not jump as a count crosses one. This affects the
+segment estimates only; the site-load table still runs 0 to 10 for a single panel and is untouched.
 
 **Where the model is written down.** The above-mentioned [electrotechnical document](site-model-marcus.md) derives
 every constant and every formula, and tabulates the result for each vehicle count from 0 to 10;

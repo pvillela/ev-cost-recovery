@@ -23,7 +23,7 @@ use super::{
     Anomaly, AnomalyKind, Bracket, IntervalEstimates, RSession, Segment, Session, SessionNotes,
     site_model::{
         BREAKER_RATING_A, CONTINUOUS_DUTY_DERATE, PANEL_BREAKER_COUNT, PANEL_VOLTAGE_V,
-        XFMR_RATING_KVA, ev_load, ev_pilot_current_a, loading_ratio, singe_panel_load,
+        XFMR_RATING_KVA, ev_load, ev_pilot_current_a, loading_ratio, single_panel_load,
     },
 };
 use crate::{
@@ -652,7 +652,7 @@ pub fn site_load_report() -> String {
     out.push_str(&format!("{}\n", "-".repeat(69)));
 
     for ev_count in 0..=PANEL_BREAKER_COUNT {
-        let load = singe_panel_load(ev_count as f64);
+        let load = single_panel_load(ev_count as f64);
         let percent = loading_ratio(load) * PERCENT;
         let flag = if percent > PERCENT {
             "  <- over nameplate"
@@ -673,7 +673,7 @@ pub fn site_load_report() -> String {
         ));
     }
 
-    let full = singe_panel_load(PANEL_BREAKER_COUNT as f64);
+    let full = single_panel_load(PANEL_BREAKER_COUNT as f64);
     out.push_str(&format!(
         "\nAt full occupancy: {:.2} kW, {:.2} kVA, {:.1}% of nameplate.\n",
         full.real_kw,

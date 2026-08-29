@@ -17,18 +17,27 @@ Grouped by how likely a change is, not by module.
 | `PANEL_VOLTAGE_V` | 208.0 | Secondary line-to-line voltage |
 | `BREAKER_RATING_A` | 40.0 | Rating of each EVSE branch breaker |
 | `CONTINUOUS_DUTY_DERATE` | 0.80 | Continuous-load derating, CEC Rule 8-104 |
+| `PANEL_COUNT` | 1 | Installed panels, each on a transformer of its own |
 | `PANEL_BREAKER_COUNT` | 10 | EVSE breakers in one panel |
 | `EV_TRUE_POWER_FACTOR` | 0.99 | Onboard charger's true power factor at full current |
 | `EV_CURRENT_THD` | 0.045 | Onboard charger's input current distortion |
 | `XFMR_RATING_KVA` | 75.0 | Transformer nameplate |
-| `XFMR_NO_LOAD_LOSS_KW` | 0.35 | Core loss, constant whenever energised |
-| `XFMR_FULL_LOAD_LOSS_KW` | 1.6 | Copper loss at rated load |
+| `XFMR_NO_LOAD_LOSS_KW` | 0.197 | Core loss, constant whenever energised |
+| `XFMR_FULL_LOAD_LOSS_KW` | 1.293 | Copper loss at rated load |
 | `XFMR_MAGNETIZING_PU` | 0.02 | Magnetizing current, per unit of rating |
-| `XFMR_REACTANCE_PU` | 0.04 | Leakage reactance, per unit of rating |
+| `XFMR_REACTANCE_PU` | 0.0383 | Leakage reactance, per unit of rating |
+
+The four transformer figures are the installed Marcus AMTH75A1's. Two are datasheet values, one is
+derived from its nameplate impedance, and the magnetizing current is a typical figure for the
+class; [`session/site-model-marcus.md`](session/site-model-marcus.md) §3 shows each derivation, and
+a different unit means going back to its own datasheet rather than scaling these.
+
+`PANEL_COUNT` multiplies the whole installation, transformer included. A site whose second panel
+hangs off the *same* transformer is not `PANEL_COUNT = 2`; it needs a different model.
 
 Do not edit the derived values to a literal — `ev_pilot_current_a()`, `ev_apparent_power_kva()`,
-`ev_real_power_kw()`, `site_load()`, and `BREAKER_RATING_KW` in `src/session/common.rs`. Edit the
-constant behind them. The manual lists them in full.
+`ev_real_power_kw()`, `single_panel_load()`, and `BREAKER_RATING_KW` in `src/session/common.rs`.
+Edit the constant behind them. The manual lists them in full.
 
 ## Likely to change: a different utility or province
 

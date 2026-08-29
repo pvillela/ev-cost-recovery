@@ -3,6 +3,11 @@
 //!
 //! Computes total kW and kVA at the transformer primary for every vehicle
 //! count from 0 up to the number of breakers in the panel.
+//!
+//! One panel on one transformer is the whole of what is modelled here.
+//! Spreading a count over the [`PANEL_COUNT`] panels the site has, and
+//! answering for a count larger than they can hold, is `Segment::scaled_load`
+//! in `common.rs`.
 
 // ---------------------------------------------------------------------------
 // Panel and vehicle constants
@@ -18,7 +23,11 @@ pub const BREAKER_RATING_A: f64 = 40.0;
 /// Sets the J1772 pilot current the vehicle is permitted to draw.
 pub const CONTINUOUS_DUTY_DERATE: f64 = 0.80;
 
-/// Number of installed panels.
+/// Number of installed panels, each on a transformer of its own.
+///
+/// Every figure this module produces is for one panel and its transformer. A site of several is
+/// that figure taken several times, which holds only while each panel is fed the way the one
+/// modelled here is.
 pub const PANEL_COUNT: u8 = 1;
 
 /// Number of EVSE breakers in one panel. Bounds how many vehicles that panel can charge.
@@ -199,7 +208,7 @@ fn transformer_load(secondary: Load) -> Load {
 /// would in fact have been built with a second panel. `Segment::count_based_load` and
 /// `Segment::energy_based_load` are what handle that case; callers wanting a load for a count they
 /// cannot bound should go through them.
-pub fn singe_panel_load(ev_count: f64) -> Load {
+pub fn single_panel_load(ev_count: f64) -> Load {
     let secondary = ev_load().scaled(ev_count);
     secondary + transformer_load(secondary)
 }
@@ -262,7 +271,7 @@ mod tests {
 
     #[test]
     fn idle_transformer_draws_only_excitation() {
-        let idle = singe_panel_load(0.0);
+        let idle = single_panel_load(0.0);
         assert_close(idle.real_kw, XFMR_NO_LOAD_LOSS_KW);
         assert_close(idle.reactive_kvar, XFMR_MAGNETIZING_PU * XFMR_RATING_KVA);
         assert_close(idle.distortion_kvar, 0.0);
@@ -276,8 +285,8 @@ mod tests {
     /// on the vehicles alone — the transformer only ever adds reactive power on top.
     #[test]
     fn site_power_factor_rises_then_plateaus() {
-        let single = singe_panel_load(1.0).true_power_factor();
-        let plateau = singe_panel_load(PANEL_BREAKER_COUNT as f64).true_power_factor();
+        let single = single_panel_load(1.0).true_power_factor();
+        let plateau = single_panel_load(PANEL_BREAKER_COUNT as f64).true_power_factor();
         assert!(single < plateau, "PF should improve with loading");
         assert!(
             plateau <= max_true_power_factor(),
@@ -295,7 +304,7 @@ mod tests {
     /// constants are wrong, not the test.
     #[test]
     fn full_occupancy_stays_within_nameplate() {
-        assert!(loading_ratio(singe_panel_load(PANEL_BREAKER_COUNT as f64)) < 1.0);
+        assert!(loading_ratio(single_panel_load(PANEL_BREAKER_COUNT as f64)) < 1.0);
     }
 
     /// A count between two whole vehicles gives a load between their two loads.
@@ -305,9 +314,9 @@ mod tests {
     #[test]
     fn a_fractional_count_lands_between_its_whole_neighbours() {
         for ev_count in 0..PANEL_BREAKER_COUNT {
-            let low = singe_panel_load(f64::from(ev_count)).apparent_kva();
-            let mid = singe_panel_load(f64::from(ev_count) + 0.5).apparent_kva();
-            let high = singe_panel_load(f64::from(ev_count) + 1.0).apparent_kva();
+            let low = single_panel_load(f64::from(ev_count)).apparent_kva();
+            let mid = single_panel_load(f64::from(ev_count) + 0.5).apparent_kva();
+            let high = single_panel_load(f64::from(ev_count) + 1.0).apparent_kva();
             assert!(low < mid && mid < high, "at {ev_count} vehicles");
         }
     }
@@ -317,7 +326,7 @@ mod tests {
         // Quadrature addition is bounded by arithmetic addition.
         for ev_count in 0..=PANEL_BREAKER_COUNT {
             let secondary = ev_load().scaled(f64::from(ev_count));
-            let total = singe_panel_load(ev_count as f64).apparent_kva();
+            let total = single_panel_load(ev_count as f64).apparent_kva();
             let scalar = secondary.apparent_kva() + transformer_load(secondary).apparent_kva();
             assert!(total <= scalar + TOLERANCE);
         }

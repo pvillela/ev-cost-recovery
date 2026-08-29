@@ -129,6 +129,7 @@ distinction matters because it decides what may be changed and what will follow.
 | `PANEL_VOLTAGE_V` | Secondary line-to-line voltage |
 | `BREAKER_RATING_A` | Rating of each EVSE branch breaker |
 | `CONTINUOUS_DUTY_DERATE` | Continuous-load derating (CEC Rule 8-104) |
+| `PANEL_COUNT` | Number of installed panels, each on a transformer of its own |
 | `PANEL_BREAKER_COUNT` | Number of EVSE breakers in one panel, which bounds what that panel can charge |
 | `EV_TRUE_POWER_FACTOR` | True power factor of a vehicle's onboard charger at full current |
 | `EV_CURRENT_THD` | Total harmonic distortion of that charger's input current |
@@ -140,27 +141,36 @@ distinction matters because it decides what may be changed and what will follow.
 
 **Derived values** — computed from the free ones, never declared. Do not edit these to a literal;
 edit the constant behind them. `ev_pilot_current_a()`, `ev_apparent_power_kva()`,
-`ev_real_power_kw()`, `max_true_power_factor()`, `ev_load()`, `transformer_load()`, `site_load()`,
-`loading_ratio()`, and `BREAKER_RATING_KW` in `src/session/common.rs`, which is `ev_real_power_kw()` under
-the name the rest of the crate uses.
+`ev_real_power_kw()`, `max_true_power_factor()`, `ev_load()`, `transformer_load()`,
+`single_panel_load()`, `loading_ratio()`, and `BREAKER_RATING_KW` in `src/session/common.rs`, which
+is `ev_real_power_kw()` under the name the rest of the crate uses.
 
-#### Counts above one panel's capacity
+#### Spreading a count over the panels, and counts above what they hold
 
-`site_load()` models one panel on one transformer and will happily take a count above
+`single_panel_load()` models one panel on one transformer. It will happily take a count above
 `PANEL_BREAKER_COUNT`, but the answer it gives there is a transformer driven past its nameplate:
 its copper-loss and reactance terms rise with the square of loading, so the figure climbs steeply
 and describes an installation nobody would build.
 
-The segment estimates therefore do not call `site_load()` directly. `Segment::count_based_load` and
-`Segment::energy_based_load` both go through `Segment::scaled_load` (`src/session/common.rs`),
-which is `site_load()` up to `PANEL_BREAKER_COUNT` vehicles and proportional to the count above it,
-at the rate one full panel sets. Reading a larger count as more panels rather than as one
-overloaded transformer is what lets the estimates scale when stalls are added. The two branches
-meet at `PANEL_BREAKER_COUNT`, so a segment's estimate does not jump on which side of the boundary
-its count happens to fall.
+The segment estimates therefore do not call `single_panel_load()` directly.
+`Segment::count_based_load` and `Segment::energy_based_load` both go through
+`Segment::scaled_load` (`src/session/common.rs`), which does two things:
 
-The site-load report and its golden file are unaffected: `site_load_report()` tabulates 0 to
-`PANEL_BREAKER_COUNT` and stays within the one-panel branch.
+- **Packs the vehicles into as few panels as possible.** Panels fill to `PANEL_BREAKER_COUNT` one
+  at a time, one panel takes the remainder, and the rest stand idle. Packing rather than spreading
+  gives the larger figure, because a panel's copper loss and leakage reactance are square-law in
+  its own loading. **Every panel is in the total whether or not it is charging anything** — an idle
+  one still draws `single_panel_load(0.0)`, its transformer's standing block, and that is the part
+  easiest to lose by accident.
+- **Reads a count above aggregate capacity as further panels of the same kind**, so the load is
+  proportional to the count at the rate one full panel sets. This is what lets the estimates scale
+  when stalls are added.
+
+Both boundaries — each panel filling, and aggregate capacity — are continuous, so a segment's
+estimate does not jump on which side of one its count happens to fall.
+
+The site-load report and its golden file are unaffected: `site_load_report()` calls
+`single_panel_load()` and tabulates 0 to `PANEL_BREAKER_COUNT`, one panel throughout.
 
 #### The rule the tests are written to
 

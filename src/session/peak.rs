@@ -279,7 +279,7 @@ mod test {
     use super::{
         super::{
             SEGMENT_DURATION,
-            site_model::{ev_load, singe_panel_load},
+            site_model::{Load, PANEL_COUNT, ev_load, single_panel_load},
         },
         *,
     };
@@ -289,6 +289,16 @@ mod test {
     /// Tolerance for figures reached by two different routes through the same floating-point
     /// arithmetic. Loose enough to survive reassociation, far tighter than any constant here.
     const TOLERANCE: f64 = 1e-9;
+
+    /// What the site draws with `count` vehicles charging, for a count one panel can hold.
+    ///
+    /// `Segment::scaled_load` packs the vehicles into as few panels as it can, so one panel takes
+    /// them all and the others stand idle at their own standing block. Written out here rather
+    /// than as `single_panel_load(count)` because that is only the whole answer at a one-panel
+    /// site, and these tests are not about how many panels this one has.
+    fn site_load_for(count: f64) -> Load {
+        single_panel_load(count) + single_panel_load(0.0).scaled(f64::from(PANEL_COUNT) - 1.0)
+    }
 
     fn ts(s: &str) -> Timestamp {
         s.parse().unwrap()
@@ -490,12 +500,12 @@ mod test {
         assert!((count.max - 1.0 / 3.0).abs() < TOLERANCE, "{count:?}");
     }
 
-    /// An empty segment is not a zero: the transformer is energised whether or not a car is
-    /// plugged in, and both derivations agree on what that standing block is.
+    /// An empty segment is not a zero: every panel's transformer is energised whether or not a car
+    /// is plugged in, and both derivations agree on what that standing block is.
     #[test]
     fn an_empty_segment_is_the_standing_block() {
         let segment = Segment::new(hour().start, SEGMENT_DURATION);
-        let standing = singe_panel_load(0.0);
+        let standing = site_load_for(0.0);
 
         for load in [
             segment.count_based_load().min,
@@ -579,7 +589,7 @@ mod test {
     /// The identity the numeric tests rest on: a segment fully covered by `n` sessions each drawing
     /// exactly one EV's real power is indistinguishable from `n` vehicles charging.
     ///
-    /// Both derivations must land on `site_load(n)` — the count-based one because it counts them,
+    /// Both derivations must land on the site load for `n` — the count-based one because it counts them,
     /// the energy-based one because it divides their aggregate power by exactly the figure each was
     /// given. That the two agree is the point: they reach the same answer down two different
     /// routes, and neither route mentions a constant by value.
@@ -599,7 +609,7 @@ mod test {
                 })
                 .collect();
             let segments = segments_for_ioi(hour(), &sessions);
-            let expected = singe_panel_load(n as f64);
+            let expected = site_load_for(f64::from(n));
 
             for segment in &segments {
                 let count = segment.agg_count();
@@ -629,7 +639,7 @@ mod test {
     /// energy-based figure follows it exactly.
     ///
     /// The same identity as above read at a fractional count, which is what a segment ordinarily
-    /// holds. `site_load` takes a fractional vehicle count, so the two derivations are checked
+    /// holds. The model takes a fractional vehicle count, so the two derivations are checked
     /// against it as well as against each other. A third rather than a half, for the reason given
     /// above: halves are off the time grid.
     #[test]
@@ -642,7 +652,7 @@ mod test {
         )];
         let segments = segments_for_ioi(hour(), &sessions);
         let est = segment_estimate(&segments[0]);
-        let expected = singe_panel_load(1.0 / 3.0);
+        let expected = site_load_for(1.0 / 3.0);
 
         assert!((segments[0].agg_count().max - 1.0 / 3.0).abs() < TOLERANCE);
         assert!(
