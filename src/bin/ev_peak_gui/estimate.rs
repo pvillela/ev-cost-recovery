@@ -2,7 +2,8 @@
 
 use crate::{
     state::{EstimateState, WorkingDir, report_sections},
-    theme, widgets,
+    theme::{self, Bold as _},
+    widgets,
 };
 use eframe::egui;
 use egui_extras::DatePickerButton;
@@ -242,9 +243,9 @@ fn headline(ui: &mut egui::Ui, report: &IntervalEstimates) {
         .num_columns(4)
         .show(ui, |ui| {
             ui.label("");
-            ui.label(egui::RichText::new("kW").strong());
-            ui.label(egui::RichText::new("kVA").strong());
-            ui.label(egui::RichText::new("Segment").strong());
+            ui.label(egui::RichText::new("kW").bold());
+            ui.label(egui::RichText::new("kVA").bold());
+            ui.label(egui::RichText::new("Segment").bold());
             ui.end_row();
 
             // Coloured by derivation, not by high and low: with every figure now a bracket, the

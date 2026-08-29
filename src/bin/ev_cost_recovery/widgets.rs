@@ -6,7 +6,7 @@
 
 use crate::{
     state::{RatesForm, Section, WorkingDir},
-    theme,
+    theme::{self, Bold as _},
 };
 use eframe::egui;
 use egui_extras::DatePickerButton;
@@ -27,8 +27,17 @@ pub fn dialog(working: &WorkingDir) -> rfd::FileDialog {
 
 /// A tab's title, in the app's colour. Headings are the one place colour does structural work:
 /// they say where a screen begins without a rule across the window.
+///
+/// Sized explicitly rather than left at egui's 18pt `heading`, which was smaller than the 20pt
+/// figures the tabs state under it — the title of a screen read as subordinate to a line within it.
 pub fn heading(ui: &mut egui::Ui, text: &str) {
-    ui.label(egui::RichText::new(text).heading().color(theme::accent(ui)));
+    ui.label(
+        egui::RichText::new(text)
+            .heading()
+            .size(24.0)
+            .bold()
+            .color(theme::accent(ui)),
+    );
 }
 
 /// The colour a failure is shown in, in whichever theme is on.
@@ -158,7 +167,7 @@ pub fn amount_label(ui: &mut egui::Ui, amount: f64, answer: bool) {
         .monospace()
         .size(18.0);
     if answer {
-        text = text.strong().color(if amount < 0.0 {
+        text = text.bold().color(if amount < 0.0 {
             ui.visuals().error_fg_color
         } else {
             theme::accent(ui)

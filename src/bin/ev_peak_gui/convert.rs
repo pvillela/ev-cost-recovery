@@ -2,6 +2,7 @@
 
 use crate::{
     state::{ConvertState, WorkingDir},
+    theme::Bold as _,
     widgets,
 };
 use eframe::egui;
@@ -49,7 +50,7 @@ pub fn ui(ui: &mut egui::Ui, state: &mut ConvertState, working: &mut WorkingDir)
         ui.add_space(16.0);
         ui.separator();
         ui.add_space(8.0);
-        ui.label(egui::RichText::new("Workbook written").strong());
+        ui.label(egui::RichText::new("Workbook written").bold());
         ui.add(egui::Label::new(outcome.workbook.display().to_string()).wrap());
 
         ui.add_space(12.0);

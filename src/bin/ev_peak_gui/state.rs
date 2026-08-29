@@ -19,7 +19,8 @@ use std::path::{Path, PathBuf};
 
 /// Which of the two jobs the user is doing. `None` is the landing screen: the app opens with
 /// neither tab chosen, so that converting and estimating are both deliberate acts.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+// `Hash` so the tab can salt the central panel's scroll area — see `app.rs`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Tab {
     Convert,
     Estimate,

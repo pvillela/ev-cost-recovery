@@ -31,7 +31,8 @@ use std::path::{Path, PathBuf};
 /// by eye, which is what the two command-line converters do, and it is here so that the app is the
 /// only thing anyone has to open. It comes last because nothing else needs it: every figure this
 /// app produces is taken from the source files directly.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+// `Hash` so the tab can salt the central panel's scroll area — see `app.rs`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Tab {
     #[default]
     Surplus,

@@ -1,6 +1,9 @@
 //! Small pieces of chrome the two tabs share.
 
-use crate::{state::WorkingDir, theme};
+use crate::{
+    state::WorkingDir,
+    theme::{self, Bold as _},
+};
 use eframe::egui;
 use std::path::Path;
 
@@ -19,8 +22,17 @@ pub fn dialog(working: &WorkingDir) -> rfd::FileDialog {
 
 /// A tab's title, in the app's colour. Headings are the one place colour does structural work:
 /// they say where a screen begins without a rule across the window.
+///
+/// Sized explicitly rather than left at egui's 18pt `heading`, which was smaller than the 20pt
+/// figures the tabs state under it — the title of a screen read as subordinate to a line within it.
 pub fn heading(ui: &mut egui::Ui, text: &str) {
-    ui.label(egui::RichText::new(text).heading().color(theme::accent(ui)));
+    ui.label(
+        egui::RichText::new(text)
+            .heading()
+            .size(24.0)
+            .bold()
+            .color(theme::accent(ui)),
+    );
 }
 
 /// The colour a failure is shown in, in whichever theme is on.

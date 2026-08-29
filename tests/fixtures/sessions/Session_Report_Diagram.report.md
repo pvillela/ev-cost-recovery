@@ -32,7 +32,7 @@ whole hour.
 Segments
 --------
 
-| Segment |       Count |            kW |
+| Segment | Count-based |  Energy-based |
 |:--------|------------:|--------------:|
 | 16:00   | 2.400-2.467 | 14.880-15.293 |
 | 16:15   | 2.933-3.133 | 17.940-19.200 |
@@ -42,9 +42,11 @@ Segments
 Times are local (ET), and each segment is 15 minutes long, named by the
 minute it starts on. Segments are half-open: each runs from its own start up
 to but not including the next one's, so no instant falls in two of them and
-they tile the interval exactly. "Count" is a session count weighted by how
-much of the segment each session covered, so it is fractional; "kW" weights
-each session's average power the same way.
+they tile the interval exactly. The two columns are the aggregates the
+estimates of the same name are derived from. "Count-based" is a session
+count weighted by how much of the segment each session covered, so it is
+fractional; "Energy-based" weights each session's average power the same
+way, and is in kW.
 
 
 Sessions by segment

@@ -25,7 +25,7 @@ use crate::{
     hydro_bill::{
         NotABillingPeriodEnding, ZeroDenominator, billing_period_dates, billing_period_span,
     },
-    markdown::{Left, Right, amounts, field, h1, h2, rounding_note, table},
+    markdown::{Left, Right, amounts, field, h1, h2, rounding_note, table, wrap},
     session::{Bracket, EstimateSet, IntervalEstimates, SessionNotes, estimates_from_sessions},
     time::Interval,
 };
@@ -557,6 +557,18 @@ impl fmt::Display for DeliveryCost {
                 self.blended_transmission_network_rate,
                 self.transmission_network_charge,
             ),
+            // The Charge column totalled, and nothing else: the three demands are levied on
+            // different bases -- kVA against two kinds of kW -- so a column of them adds up to no
+            // quantity at all. This is the "Delivery charges" figure above, stated where the rows
+            // that make it up are, so the table can be checked without scrolling back.
+            vec![
+                "Total".to_owned(),
+                String::new(),
+                String::new(),
+                String::new(),
+                String::new(),
+                format!("{charges:.2}"),
+            ],
         ];
 
         writeln!(f, "{}\n", h1("EV Delivery Cost"))?;
@@ -611,6 +623,19 @@ impl fmt::Display for DeliveryCost {
                 ],
                 &rows,
                 &[Left, Left, Right, Right, Right, Right],
+            )
+        )?;
+        writeln!(
+            f,
+            "{}\n",
+            wrap(
+                "Each EV demand is a single figure taken from a range: the mid-point of the \
+                 \"Energy-based\" range for the 15-minute segment that charge was priced on. It \
+                 is the energy-based estimate in every case, never the count-based one. The \
+                 figure is a range to begin with because the reported session times are stated \
+                 only to the minute. The ranges themselves, and the interval each was drawn from, \
+                 are in the peak power detail report for that charge.",
+                "",
             )
         )?;
         writeln!(f, "{}", self.notes.to_markdown())?;

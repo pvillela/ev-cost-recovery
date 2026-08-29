@@ -6,7 +6,8 @@
 
 use crate::{
     state::{ReimbursementState, WorkingDir, report_sections},
-    theme, widgets,
+    theme::{self, Bold as _},
+    widgets,
 };
 use eframe::egui;
 use ev_cost_recovery::api::ReimbursementReconciliation;
@@ -143,7 +144,7 @@ fn inputs(ui: &mut egui::Ui, state: &mut ReimbursementState, working: &mut Worki
 }
 
 fn rates(ui: &mut egui::Ui, state: &mut ReimbursementState) {
-    ui.label(egui::RichText::new("Cost-recovery rates").strong());
+    ui.label(egui::RichText::new("Cost-recovery rates").bold());
     widgets::note(
         ui,
         "The rates in effect over the month, in dollars per kilowatt-hour. One schedule only: our \
@@ -204,7 +205,7 @@ fn headline(ui: &mut egui::Ui, r: &ReimbursementReconciliation) {
             .show(ui, |ui| {
                 for (label, amount, answer) in rows {
                     let text = egui::RichText::new(label);
-                    ui.label(if answer { text.strong() } else { text });
+                    ui.label(if answer { text.bold() } else { text });
                     widgets::amount_label(ui, amount, answer);
                     ui.weak(unit);
                     ui.end_row();

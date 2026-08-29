@@ -114,6 +114,14 @@ Delivery charges by component
 | Distribution Charges           | kVA    |     4.678 |       4.834 |         10.0000 |  48.34 |
 | Transmission Connection Charge | kW     |    20.291 |      20.967 |          3.0000 |  62.90 |
 | Transmission Network Charge    | kW 7-7 |     4.201 |       4.341 |          5.0000 |  21.70 |
+| Total                          |        |           |             |                 | 132.95 |
+
+Each EV demand is a single figure taken from a range: the mid-point of the
+"Energy-based" range for the 15-minute segment that charge was priced on. It
+is the energy-based estimate in every case, never the count-based one. The
+figure is a range to begin with because the reported session times are
+stated only to the minute. The ranges themselves, and the interval each was
+drawn from, are in the peak power detail report for that charge.
 
 
 

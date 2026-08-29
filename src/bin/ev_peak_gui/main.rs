@@ -33,8 +33,13 @@ fn main() -> eframe::Result<()> {
         options,
         Box::new(|cc| {
             // egui follows the system light/dark setting on its own; all that is wanted here is
-            // slightly larger text than the default, on top of whatever the display's scaling is.
-            cc.egui_ctx.set_zoom_factor(1.15);
+            // larger text than the default, on top of whatever the display's scaling is.
+            //
+            // 1.30 rather than the 1.15 this started at. egui's default body text is 13pt in a
+            // light-weight face, which is thin enough on a pale panel to read as grey however
+            // black it actually is. Size is the one lever that works on that without a font file:
+            // it thickens every stroke on the screen at once.
+            cc.egui_ctx.set_zoom_factor(1.30);
             theme::apply(&cc.egui_ctx);
             Ok(Box::<app::App>::default())
         }),

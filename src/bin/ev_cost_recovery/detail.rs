@@ -5,7 +5,7 @@
 
 use crate::{
     state::{SurplusState, WorkingDir},
-    theme, widgets,
+    widgets,
 };
 use eframe::egui;
 use ev_cost_recovery::{api::pure::PricedInterval, time::time_zone};
@@ -33,17 +33,17 @@ pub fn ui(ui: &mut egui::Ui, state: &mut SurplusState, working: &mut WorkingDir)
     export_row(ui, working, &text, &default_name);
     ui.add_space(12.0);
 
+    // Plain text and open to begin with, which is how `widgets::section_ui` draws the other tabs'
+    // report sections. These three are the same thing — a report broken into collapsible parts —
+    // so they are drawn the same way. Colouring them and opening only the first made one report
+    // look like a different kind of screen from the rest.
     for (i, priced) in intervals.iter().enumerate() {
-        egui::CollapsingHeader::new(
-            egui::RichText::new(heading_for(priced))
-                .strong()
-                .color(theme::accent(ui)),
-        )
-        .id_salt(i)
-        .default_open(i == 0)
-        .show(ui, |ui| {
-            widgets::monospace_block(ui, priced.estimates.to_markdown().trim_end());
-        });
+        egui::CollapsingHeader::new(heading_for(priced))
+            .id_salt(i)
+            .default_open(true)
+            .show(ui, |ui| {
+                widgets::monospace_block(ui, priced.estimates.to_markdown().trim_end());
+            });
     }
 }
 

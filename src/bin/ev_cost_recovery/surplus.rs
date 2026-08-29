@@ -2,7 +2,8 @@
 
 use crate::{
     state::{Input, SurplusState, WorkingDir, report_sections},
-    theme, widgets,
+    theme::{self, Bold as _},
+    widgets,
 };
 use eframe::egui;
 use ev_cost_recovery::api::CostRecoverySurplus;
@@ -86,7 +87,7 @@ fn inputs(ui: &mut egui::Ui, state: &mut SurplusState, working: &mut WorkingDir)
 }
 
 fn rates(ui: &mut egui::Ui, state: &mut SurplusState) {
-    ui.label(egui::RichText::new("Cost-recovery rates").strong());
+    ui.label(egui::RichText::new("Cost-recovery rates").bold());
     widgets::note(ui, "In dollars per kilowatt-hour.");
     ui.add_space(6.0);
 
@@ -158,7 +159,7 @@ fn headline(ui: &mut egui::Ui, surplus: &CostRecoverySurplus) {
                 ("Surplus", surplus.surplus, true),
             ] {
                 let text = egui::RichText::new(label);
-                ui.label(if strong { text.strong() } else { text });
+                ui.label(if strong { text.bold() } else { text });
                 widgets::amount_label(ui, amount, strong);
                 ui.end_row();
             }

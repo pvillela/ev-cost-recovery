@@ -3,7 +3,7 @@
 use crate::{
     about, convert, estimate,
     state::{AppState, Tab},
-    theme,
+    theme::{self, Bold as _},
 };
 use eframe::egui;
 
@@ -49,7 +49,7 @@ impl eframe::App for App {
                         // as selected: entering one is a deliberate act, and leaving one is not
                         // possible.
                         let selected = self.state.tab == Some(tab);
-                        let text = egui::RichText::new(label).strong();
+                        let text = egui::RichText::new(label).bold();
                         let text = if selected {
                             text.color(theme::accent(ui))
                         } else {
@@ -65,6 +65,10 @@ impl eframe::App for App {
                         if ui.button("About").clicked() {
                             self.about_open = true;
                         }
+                        // Added last, so it sits inboard of About. It changes how the window
+                        // looks and nothing about the work, which is what puts it in this group
+                        // rather than in the tabs.
+                        theme::toggle_button(ui);
                     });
                 });
                 let rect = ui.max_rect();
@@ -76,7 +80,12 @@ impl eframe::App for App {
         egui::CentralPanel::default().show(root_ui, |ui| {
             // One scroll area for the whole tab: a long report scrolls together with the controls
             // that produced it, rather than being clipped into a panel of its own.
+            //
+            // Salted by the tab, so each keeps its own offset. Unsalted, the landing screen and
+            // the two tabs share one, and a tab opened while another was scrolled down opens
+            // part-way through its own contents.
             egui::ScrollArea::vertical()
+                .id_salt(self.state.tab)
                 .auto_shrink([false, false])
                 .show(ui, |ui| match self.state.tab {
                     None => {
@@ -129,7 +138,7 @@ fn landing(ui: &mut egui::Ui, state: &mut AppState, logo: &egui::TextureHandle) 
         ui.label(
             egui::RichText::new(APP_NAME)
                 .size(26.0)
-                .strong()
+                .bold()
                 .color(theme::accent(ui)),
         );
         ui.add_space(8.0);

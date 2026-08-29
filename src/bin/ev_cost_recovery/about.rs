@@ -8,7 +8,10 @@
 //! executable cannot, and the licences of the crates linked into it require that their notices
 //! reach whoever holds the program.
 
-use crate::{app::APP_NAME, theme};
+use crate::{
+    app::APP_NAME,
+    theme::{self, Bold as _},
+};
 use eframe::egui;
 use std::sync::LazyLock;
 
@@ -35,7 +38,7 @@ pub fn window(ctx: &egui::Context, open: &mut bool) {
         ui.label(
             egui::RichText::new(APP_NAME)
                 .size(20.0)
-                .strong()
+                .bold()
                 .color(theme::accent(ui)),
         );
         ui.label(egui::RichText::new(format!("Version {}", env!("CARGO_PKG_VERSION"))).weak());
@@ -53,7 +56,7 @@ pub fn window(ctx: &egui::Context, open: &mut bool) {
         ui.separator();
         ui.add_space(4.0);
         ui.horizontal(|ui| {
-            ui.label(egui::RichText::new("Third-party notices").strong());
+            ui.label(egui::RichText::new("Third-party notices").bold());
             // A copy button rather than selectable text. The scroll area lays out only the rows on
             // screen, so a drag can never reach the rest of a document this long -- and the whole
             // of it is what anyone asking for the notices needs.

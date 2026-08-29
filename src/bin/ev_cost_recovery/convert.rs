@@ -9,7 +9,8 @@ use crate::{
         Conversion, ConversionSlot, ConvertState, GbConversion, SessionConversion, SessionWorkbook,
         Which, WorkingDir,
     },
-    theme, widgets,
+    theme::{self, Bold as _},
+    widgets,
 };
 use eframe::egui;
 use ev_cost_recovery::api::{GbWriteReport, OnExistingWorkbook};
@@ -88,7 +89,7 @@ fn chooser(ui: &mut egui::Ui, which: &mut Which) {
             let selected = *which == value;
             let text = egui::RichText::new(label);
             let text = if selected {
-                text.strong().color(theme::accent(ui))
+                text.bold().color(theme::accent(ui))
             } else {
                 text
             };
@@ -114,7 +115,7 @@ fn picker<C: Conversion>(
     extensions: &[&str],
     note: &str,
 ) {
-    ui.label(egui::RichText::new(title).strong());
+    ui.label(egui::RichText::new(title).bold());
     widgets::note(ui, note);
     ui.add_space(8.0);
 
@@ -182,7 +183,7 @@ fn replace_prompt<C: Conversion>(ui: &mut egui::Ui, slot: &mut ConversionSlot<C>
 /// Where the workbook went. The same line for both conversions, so they read alike.
 fn written(ui: &mut egui::Ui, path: &Path) {
     ui.add_space(14.0);
-    ui.label(egui::RichText::new("Workbook written").strong());
+    ui.label(egui::RichText::new("Workbook written").bold());
     ui.add(egui::Label::new(path.display().to_string()).wrap());
 }
 
@@ -245,7 +246,7 @@ fn gb_outcome(ui: &mut egui::Ui, outcome: &GbWriteReport) {
             .iter()
             .map(|(kind, count)| format!("{kind} x{count}"))
             .collect();
-        ui.label(egui::RichText::new("Anomalies").strong());
+        ui.label(egui::RichText::new("Anomalies").bold());
         widgets::note(
             ui,
             "Highlighted in the sheet, against the readings they concern. They do not stop the \

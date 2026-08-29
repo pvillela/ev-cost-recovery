@@ -399,8 +399,11 @@ impl IntervalEstimates {
                 ]
             })
             .collect();
+        // The two columns are named for the two derivations in Estimates above, because that is
+        // what they are: each derivation is a function of the column of the same name, and calling
+        // them "Count" and "kW" here made the same pair of quantities look like a different pair.
         out.push(table(
-            &["Segment", "Count", "kW"],
+            &["Segment", "Count-based", "Energy-based"],
             &rows,
             &[Left, Right, Right],
         ));
@@ -409,9 +412,10 @@ impl IntervalEstimates {
             "Times are local (ET), and each segment is 15 minutes long, named by the minute it \
              starts on. Segments are half-open: each runs from its own start up to but not \
              including the next one's, so no instant falls in two of them and they tile the \
-             interval exactly. \"Count\" is a session count weighted by how much of the segment \
-             each session covered, so it is fractional; \"kW\" weights each session's average \
-             power the same way.",
+             interval exactly. The two columns are the aggregates the estimates of the same name \
+             are derived from. \"Count-based\" is a session count weighted by how much of the \
+             segment each session covered, so it is fractional; \"Energy-based\" weights each \
+             session's average power the same way, and is in kW.",
             "",
         ));
         out.push(String::new());

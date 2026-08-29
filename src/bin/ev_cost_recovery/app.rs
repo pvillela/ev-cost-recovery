@@ -3,7 +3,8 @@
 use crate::{
     about, convert, detail, reimbursement,
     state::{AppState, Tab},
-    surplus, theme,
+    surplus,
+    theme::{self, Bold as _},
 };
 use eframe::egui;
 
@@ -83,7 +84,7 @@ impl eframe::App for App {
                         (Tab::Convert, "Convert to workbook", true),
                     ] {
                         let selected = self.state.tab == tab;
-                        let text = egui::RichText::new(label).strong();
+                        let text = egui::RichText::new(label).bold();
                         let text = if selected {
                             text.color(theme::accent(ui))
                         } else {
@@ -108,6 +109,10 @@ impl eframe::App for App {
                         if ui.button("About").clicked() {
                             self.about_open = true;
                         }
+                        // Added last, so it sits inboard of About and the corner stays the
+                        // mark's. It changes how the window looks and nothing about the work,
+                        // which is what puts it in this group rather than in the tabs.
+                        theme::toggle_button(ui);
                     });
                 });
                 let rect = ui.max_rect();
@@ -125,7 +130,12 @@ impl eframe::App for App {
         egui::CentralPanel::default().show(root_ui, |ui| {
             // One scroll area for the whole tab: a long report scrolls together with the controls
             // that produced it, rather than being clipped into a panel of its own.
+            //
+            // Salted by the tab, so each keeps its own offset. Unsalted, the four share one, and a
+            // tab opened while another was scrolled down opens part-way through its own contents —
+            // which is what the detail tab did, arriving in the middle of the first interval.
             egui::ScrollArea::vertical()
+                .id_salt(self.state.tab)
                 .auto_shrink([false, false])
                 .show(ui, |ui| match self.state.tab {
                     Tab::Surplus => {
