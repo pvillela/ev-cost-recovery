@@ -2,8 +2,6 @@
 
 This software supports the calculation of the impact of EV charging activity on the building's finances.
 
-*(If in a hurry, jump to the [Quick start guide](#quick-start-guide).)*
-
 ## Background
 
 The building is on a time-of-use (**TOU**) billing plan with Toronto Hydro.
@@ -56,34 +54,40 @@ The software architecture was designed with these goals:
 - Runs fast -- Written in Rust, a language that operates at a low level under the hood.
 - Maintainable -- Modular structure, written in Rust, a modern high-level language.
 
-## The software
-
-### What the software does
+## What the software does
 
 The **`ev_cost_recovery`** application performs the following functions:
 
-- Calculate the net financial impact of EV charging sessions during a billing period:
+- **Cost recovery** -- Calculate the net financial impact of EV charging sessions during a billing period:
   - Energy consumption and regulatory wholesale market costs attributable to EV charging. These are energy-based.
   - Delivery charges attributable to EV charging. These are based on peak power demand.
   - Gross cost recovery from TOU EV cost-recovery rates.
   - Net recovery surplus or deficit.
-- Report on peak power demand details -- At what intervals was peak power attained and what was the portion attributable to EV charging. This is an <u>optional function</u>, not required for routine monthly or quarterly financial reporting and review of EV charging activity.
-- Reconcile Evolute reimbursement -- Match actual amount received from Evolute for a calendar month with calculated energy consumption and amounts from two Evolute reports.
-- Convert to Excel -- Convert source data files from Toronto Hydro metering and Evolute sessions to Excel workbooks to facilitate data review and exploration. This is an <u>optional function</u>, not required for routine monthly or quarterly financial reporting and review of EV charging activity.
+- **Peak power detail** -- Report on peak power demand details -- At what intervals was peak power attained and what was the portion attributable to EV charging. This is an **optional function**, not required for routine monthly or quarterly financial reporting and review of EV charging activity.
+- **Evolute reimbursement** -- Reconcile Evolute reimbursement -- Match actual amount received from Evolute for a calendar month with calculated energy consumption and amounts from two Evolute reports.
+- **Convert to workbook** -- Convert source data files from Toronto Hydro metering and Evolute sessions to Excel workbooks to facilitate data review and exploration. This is an **optional function**, not required for routine monthly or quarterly financial reporting and review of EV charging activity.
 
-### Inputs for recovery surplus
+### Inputs and outputs for `Cost recovery` <small>(and `Peak power detail`)</small>
+
+#### Inputs
 
 Four files and a rate schedule:
 
 | Input                      | What it is                                                   |
 | :------------------------- | :----------------------------------------------------------- |
 | Toronto Hydro bill         | The PDF invoice for the billing period.                      |
-| Green Button export        | Toronto Hydro's ESPI XML feed of meter readings. The download must cover at least the full billing period. |
+| Green Button export        | Toronto Hydro's ESPI XML feed of meter readings for a date range. The data must cover at least the full billing period. |
 | Session report 1           | The Evolute monthly Session Report CSV file covering one end of the billing period. |
 | Session report 2           | The Session Report CSV covering the other end of the billing period. |
 | TOU EV cost-recovery rates | TOU EV cost-recovery rates in effect at the beginning of the billing period. If the cost-recovery rates change during the billing period then a second set of rates also needs to be provided. |
 
-### Inputs for reimbursement reconciliation
+#### Outputs
+
+On-screen reports for the cost recovery surplus calculation and peak power details. The reports can be saved and/or copied to the clipboard.
+
+### Inputs and outputs for `Evolute reimbursement`
+
+#### Inputs
 
 Two files, a remittance amount, and a rate schedule:
 
@@ -94,13 +98,39 @@ Two files, a remittance amount, and a rate schedule:
 | Remittance                 | The reimbursement received from Evolute for the calendar month. |
 | TOU EV cost-recovery rates | TOU EV cost-recovery rates in effect during the calendar month. |
 
-### What it writes
+#### Outputs
 
-- **A run log** beside each file read, named `<report>.csv.read.log`.
-- **A report**, when you press Save. Each tab saves its own.
+On-screen report for the Evolute reimbursement reconciliation. The report can be saved and/or copied to the clipboard.
 
-Anomalies appear in three places, deliberately: in the run log, in the report's own notes sections,
-and — for the intervals the demand charges were priced on — in the Peak power detail tab.
+### Inputs and outputs for `Convert to workbook`
+
+#### Inputs
+
+When converting an Evolute Session Report:
+
+| Input          | What it is                                                   |
+| :------------- | :----------------------------------------------------------- |
+| Session report | The Evolute monthly Session Report CSV file for a calendar month. |
+
+When converting a Green Button export:
+
+| Input               | What it is                                                   |
+| :------------------ | :----------------------------------------------------------- |
+| Green Button export | Toronto Hydro's ESPI XML feed of meter readings for a date range. |
+
+#### Outputs
+
+Converted files are written to the same folder as the input files. Each converted files has the same name as its input file, but with the ".xlsx" file type.
+
+### Error reporting and logging
+
+The software checks for problems when reading the inputs.
+
+Some problems are temporary, e.g., due to an oversight by the user. Such cases just merit an on-screen message.
+
+Other problems are more persistent. Such problems are reported on-screen and also logged to a log file created in the same folder as the input file.
+
+Serious errors block the performance of the desired function. Less severe anomalies do not block function execution, but must still be reported on-screen and logged for the user's awareness. Certain anomalies are additionally included in the functional reports (as opposed to error reports) produced by the software functions.
 
 ## Quick start guide
 
