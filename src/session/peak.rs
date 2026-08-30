@@ -1,5 +1,5 @@
-use super::{Anomaly, Bracket, RSegment, RSession, SEGMENT_DURATION, Segment, Sessions, SourceLog};
-use crate::time::Interval;
+use super::{Anomaly, Bracket, RSegment, RSession, SEGMENT_DURATION, Segment, Sessions};
+use crate::{log::SourceLog, time::Interval};
 use std::{error::Error, path::PathBuf, rc::Rc};
 
 /// Estimates for an interval of interest.

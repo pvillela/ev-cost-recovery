@@ -224,7 +224,8 @@ impl EstimateState {
         self.carried_over = false;
         match xlsx_to_sessions(&path) {
             Ok(report) => {
-                // Written here rather than by the reader, for the reason `convert` gives above.
+                // Written here rather than by the reader, for the reason the conversion gives
+                // above.
                 if let Err(e) = report.write_logs() {
                     self.workbook = None;
                     self.error = Some(e.to_string());

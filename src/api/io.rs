@@ -85,7 +85,7 @@ pub use crate::{
 /// their file names before anything is read. Which is given first makes no difference; the names
 /// say what each holds.
 ///
-/// Nothing here writes. Each report read returns its `csv.read` log unwritten on the result's
+/// Nothing here writes. Each report read returns its `session.csv.read` log unwritten on the result's
 /// `notes` -- see the private `session::csv::csv_sessions` -- and
 /// [`SessionNotes::write_logs`](crate::session::SessionNotes::write_logs) is what a binary calls
 /// to put one beside its input.
@@ -138,7 +138,7 @@ pub fn peak_power(
 /// The two reports must cover the billing period completely between them, checked from their file
 /// names. Which is given first makes no difference; the names say what each holds.
 ///
-/// Nothing here writes. Each report read returns its `csv.read` log unwritten on the result's
+/// Nothing here writes. Each report read returns its `session.csv.read` log unwritten on the result's
 /// `notes` -- see the private `session::csv::csv_sessions` -- and
 /// [`SessionNotes::write_logs`](crate::session::SessionNotes::write_logs) is what a binary calls
 /// to put one beside its input.
@@ -194,7 +194,7 @@ pub fn peak_power_cost(
 /// [`pure::energy`](fn@super::pure::energy) sums whatever it is given, so a month's report missing
 /// from the call yields a total that is simply too low, with nothing in the figures to say so.
 ///
-/// Nothing here writes. Each report read returns its `csv.read` log unwritten on the result's
+/// Nothing here writes. Each report read returns its `session.csv.read` log unwritten on the result's
 /// `notes` -- see the private `session::csv::csv_sessions` -- and
 /// [`SessionNotes::write_logs`](crate::session::SessionNotes::write_logs) is what a binary calls
 /// to put one beside its input.
@@ -236,7 +236,7 @@ pub fn energy(
 /// The two reports must cover the billing period completely between them, checked from their file
 /// names. Which is given first makes no difference; the names say what each holds.
 ///
-/// Nothing here writes. Each report read returns its `csv.read` log unwritten on the result's
+/// Nothing here writes. Each report read returns its `session.csv.read` log unwritten on the result's
 /// `notes` -- see the private `session::csv::csv_sessions` -- and
 /// [`SessionNotes::write_logs`](crate::session::SessionNotes::write_logs) is what a binary calls
 /// to put one beside its input.
@@ -289,7 +289,7 @@ pub fn energy_cost(
 /// [`energy`]: the recovery is a sum over whatever it is given, so a month's report missing from
 /// the call yields a figure that is simply too low, with nothing in it to say so.
 ///
-/// Nothing here writes. Each report read returns its `csv.read` log unwritten on the result's
+/// Nothing here writes. Each report read returns its `session.csv.read` log unwritten on the result's
 /// `notes` -- see the private `session::csv::csv_sessions` -- and
 /// [`SessionNotes::write_logs`](crate::session::SessionNotes::write_logs) is what a binary calls
 /// to put one beside its input.
@@ -339,7 +339,7 @@ pub fn cost_recovery(
 /// The two reports must cover the billing period completely between them, checked from their file
 /// names. Which is given first makes no difference; the names say what each holds.
 ///
-/// Nothing here writes. Each report read returns its `csv.read` log unwritten on the result's
+/// Nothing here writes. Each report read returns its `session.csv.read` log unwritten on the result's
 /// `notes` -- see the private `session::csv::csv_sessions` -- and
 /// [`SessionNotes::write_logs`](crate::session::SessionNotes::write_logs) is what a binary calls
 /// to put one beside its input.
@@ -412,7 +412,7 @@ pub fn cost_recovery_surplus(
 /// Reconciling one month's charges against another month's sessions produces a variance that looks
 /// exactly like an underpayment.
 ///
-/// Nothing here writes. The report's `csv.read` log comes back unwritten on the result's `notes` --
+/// Nothing here writes. The report's `session.csv.read` log comes back unwritten on the result's `notes` --
 /// see the private `session::csv::csv_sessions` -- and
 /// [`SessionNotes::write_logs`](crate::session::SessionNotes::write_logs) is what a binary calls to
 /// put it beside its input.
@@ -435,8 +435,9 @@ pub fn reconcile_evolute_reimbursement(
     let sessions = read_sessions(&[session_csv])?;
 
     // Before the reconciliation rather than inside it, because it is the one question that needs
-    // both documents in hand and `pure` is handed only their figures.
-    pure::check_charges_report_covers_month(&sessions, &charges)?;
+    // both documents in hand and `pure` is handed only their figures. It both refuses a report
+    // that does not belong to the month and collects what should be said about one that does.
+    let charges_notes = pure::charges_notes(&sessions, &charges)?;
 
     Ok(pure::reconcile_evolute_reimbursement(
         &sessions,
@@ -444,7 +445,8 @@ pub fn reconcile_evolute_reimbursement(
         charges.total_amount,
         reimbursed,
         cost_recovery_rates,
-    )?)
+    )?
+    .with_charges_notes(charges_notes))
 }
 
 // --------------------------------------------------------------------------------------------
@@ -487,7 +489,7 @@ pub enum OnExistingWorkbook {
 /// where every reader of these files expects to find it.
 ///
 /// Nothing else here writes. The conversion's run log comes back unwritten on the result's `log` --
-/// see [`SessionWriteReport`] -- and [`SourceLog::write`](crate::session::SourceLog::write) is what
+/// see [`SessionWriteReport`] -- and [`SourceLog::write`](crate::log::SourceLog::write) is what
 /// a binary calls to put it beside the workbook.
 ///
 /// # Errors

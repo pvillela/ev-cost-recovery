@@ -60,9 +60,9 @@ The API reaches sessions from the CSV, through the crate-private `session::csv::
 workbook is a
 faithful rendering of that same CSV, so reading one back gets you to the same place by a longer
 road, plus one thing the CSV route cannot offer: a comparison of the workbook's stored derived
-columns against the recomputed values, logged to `<stem>.xlsx.read.log`. That comparison is the
-whole point of `ev_peak_gui`'s Estimate tab, and it is worth keeping. It is not worth carrying in
-the library API, which has the source in hand and nothing to compare against.
+columns against the recomputed values, logged to `<stem>.session.xlsx.read.log`. That comparison
+is the whole point of `ev_peak_gui`'s Estimate tab, and it is worth keeping. It is not worth
+carrying in the library API, which has the source in hand and nothing to compare against.
 
 Naming it `historic` rather than `workbook-reading` says which way this is going: the code stays
 because the workflow it serves is still in use, not because the API is expected to grow into it.

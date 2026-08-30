@@ -9,9 +9,12 @@
 //! spreadsheet is reconciled against a utility invoice to three decimal places, and accumulating
 //! 744 floating-point divisions before summing them loses that agreement.
 
-use crate::time::is_on_grid;
+use crate::{
+    log::RunLog,
+    time::{is_on_grid, time_zone},
+};
 use jiff::Timestamp;
-use std::{fmt, time::Duration};
+use std::{collections::BTreeMap, fmt, time::Duration};
 
 /// One hour, the interval every reading in a Toronto Hydro export covers.
 ///
@@ -152,6 +155,56 @@ impl Anomaly {
 impl fmt::Display for Anomaly {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.as_str())
+    }
+}
+
+/// How many offending hours a log line names before it stops and gives a count instead.
+///
+/// The same three [`csv::note_off_grid_rows`](crate::session) settled on, and for the same reason:
+/// an export that lost a month names 744 hours under `MissingInterval`, and a log that long is a
+/// log nobody reads. Three is enough to go and look at one.
+const EXAMPLE_HOURS: usize = 3;
+
+/// Summarises anomalies into a run log: one line per kind, however many hours carried it.
+///
+/// Shared by the two things that write a Green Button log — the workbook conversion, which sees
+/// the whole feed, and the billing-period read, which sees one period. Both group by kind rather
+/// than listing hours, because the failure that matters is nearly always systematic: a meter that
+/// stopped reporting kVA does not produce one anomalous hour, it produces every hour.
+///
+/// Each line ends in the kind's own [`Anomaly::description`], so a log read on its own says what
+/// the token means without the reader going to find a glossary.
+///
+/// Hours are written in local time, as the workbook's own columns and the report's anomaly table
+/// are. The feed timestamps in UTC, but nobody reconciling a bill thinks in it.
+pub fn note_anomalies(anomalies: impl IntoIterator<Item = (Timestamp, Anomaly)>, log: &mut RunLog) {
+    let mut by_kind: BTreeMap<Anomaly, Vec<Timestamp>> = BTreeMap::new();
+    for (at, kind) in anomalies {
+        by_kind.entry(kind).or_default().push(at);
+    }
+
+    for (kind, hours) in by_kind {
+        let examples: Vec<String> = hours
+            .iter()
+            .take(EXAMPLE_HOURS)
+            .map(|at| {
+                at.to_zoned(time_zone())
+                    .strftime("%Y-%m-%d %H:%M")
+                    .to_string()
+            })
+            .collect();
+        let more = hours.len().saturating_sub(examples.len());
+        let and_more = if more == 0 {
+            String::new()
+        } else {
+            format!(", and {more} more")
+        };
+        log.note(format!(
+            "{} hour(s) carry {kind}: {}{and_more}. {}.",
+            hours.len(),
+            examples.join(", "),
+            kind.description()
+        ));
     }
 }
 

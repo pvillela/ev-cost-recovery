@@ -181,8 +181,12 @@ impl BillError {
 
 impl fmt::Display for BillError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Every arm opens with the kind of document expected, so that a reader can tell which
+        // input slot rejected the file rather than only which file it was. The path follows,
+        // except on `Unreadable`, where `pdf_text::read_pages` already names the file and often
+        // the page as well.
+        write!(f, "Hydro Bill ")?;
         match self {
-            // `pdf_text::read_pages` already names the file, and often the page as well.
             BillError::Unreadable { source, .. } => write!(f, "{source}"),
             BillError::Missing { path, what } => {
                 write!(f, "{}: the bill has no {what}", path.display())
@@ -604,29 +608,31 @@ mod test {
         assert_eq!(date("FEB 29 2024").unwrap(), civil_date(2024, 2, 29));
     }
 
-    /// Every error the parse can raise names the bill it came from, and reads as a sentence about
-    /// that bill rather than as a fragment needing the caller to prefix it.
+    /// Every error the parse can raise names the kind of document expected and the bill it came
+    /// from, and reads as a sentence about that bill rather than as a fragment needing the caller
+    /// to prefix it. The kind is what tells a reader which input slot rejected the file.
     #[test]
     fn a_problem_becomes_an_error_naming_the_bill() {
         let path = Path::new("data/hydro_bills/TH_2025_07_28.pdf");
         for (problem, message) in [
             (
                 missing("line labelled \"Your Electricity Charges\""),
-                "data/hydro_bills/TH_2025_07_28.pdf: the bill has no line labelled \
+                "Hydro Bill data/hydro_bills/TH_2025_07_28.pdf: the bill has no line labelled \
                  \"Your Electricity Charges\"",
             ),
             (
                 shape("the total comes before the charges it totals"),
-                "data/hydro_bills/TH_2025_07_28.pdf: the total comes before the charges it totals",
+                "Hydro Bill data/hydro_bills/TH_2025_07_28.pdf: the total comes before the \
+                 charges it totals",
             ),
             (
                 Problem::UnknownCharge("Rate Rider for Deferral $12.34".to_owned()),
-                "data/hydro_bills/TH_2025_07_28.pdf: unrecognised charge line: \
+                "Hydro Bill data/hydro_bills/TH_2025_07_28.pdf: unrecognised charge line: \
                  Rate Rider for Deferral $12.34",
             ),
             (
                 malformed("a number", " CR "),
-                "data/hydro_bills/TH_2025_07_28.pdf: not a number: \"CR\"",
+                "Hydro Bill data/hydro_bills/TH_2025_07_28.pdf: not a number: \"CR\"",
             ),
         ] {
             let error = problem.at(path);
@@ -650,7 +656,9 @@ mod test {
         );
     }
 
-    /// `pdf_text::read_pages` names the file itself, so the wrapper must not name it twice.
+    /// `pdf_text::read_pages` names the file itself, so the wrapper must not name it twice. The
+    /// kind still goes in front: which slot rejected the file is not something the reader below
+    /// knows.
     #[test]
     fn an_unreadable_file_is_reported_as_the_reader_reported_it() {
         let error = BillError::Unreadable {
@@ -659,7 +667,7 @@ mod test {
         };
         assert_eq!(
             error.to_string(),
-            "bill.pdf: page 2: font /F1: no ToUnicode CMap"
+            "Hydro Bill bill.pdf: page 2: font /F1: no ToUnicode CMap"
         );
         assert!(error.source().is_some());
     }

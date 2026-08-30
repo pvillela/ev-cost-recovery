@@ -4,14 +4,15 @@
 //! kVA happens once, in the sheet writer. The June 2026 invoice agrees with these figures to the
 //! digit, and it would not survive accumulating 744 floating-point divisions before summing them.
 
-use super::{Anomaly, METER_INTERVAL, Reading, Readings};
+use super::{Anomaly, METER_INTERVAL, Reading, Readings, note_anomalies};
 use crate::{
     hydro_bill::BillingPeriod,
+    log::{RunLog, SourceLog},
     markdown::{Left, h2, table, wrap},
     time::{Interval, Tou, is_off_peak, time_zone, tou_of},
 };
 use jiff::Timestamp;
-use std::{collections::BTreeMap, path::PathBuf};
+use std::{collections::BTreeMap, error::Error, path::PathBuf};
 
 /// A reported maximum, and the state of the interval it was found in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -102,6 +103,42 @@ impl MeterNotes {
     /// Whether there is nothing to report.
     pub fn is_clean(&self) -> bool {
         self.anomalies.is_empty()
+    }
+
+    /// The run log for the export these figures came from, unwritten.
+    ///
+    /// `None` when the readings came from a string rather than a file: a log is written beside its
+    /// source, and there is nowhere to put one.
+    ///
+    /// **The scope is the billing period, not the export.** [`MeterNotes`] carries the anomalies
+    /// of the period the figures were priced over, so a clean log here says that period was clean
+    /// and says nothing about the rest of the file. The operation line says so, since a log read
+    /// on its own would otherwise claim more than it knows. The whole-file counterpart is the
+    /// `meter.convert` log the workbook conversion writes.
+    pub fn log(&self) -> Option<SourceLog> {
+        let source = self.source.clone()?;
+        let mut log = RunLog::new();
+        note_anomalies(self.anomalies.iter().copied(), &mut log);
+        Some(SourceLog {
+            source,
+            suffix: "meter.xml.read",
+            operation: "Read Green Button Export, billing period only",
+            log,
+        })
+    }
+
+    /// Writes the run log beside the export, returning where it went.
+    ///
+    /// For a binary. The meter-side counterpart of
+    /// [`SessionNotes::write_logs`](crate::session::SessionNotes::write_logs), and `Ok(None)` for
+    /// readings that came from no file.
+    ///
+    /// # Errors
+    ///
+    /// Whatever the write failed with. Returned rather than swallowed, for the reason
+    /// [`SourceLog::write`] gives.
+    pub fn write_log(&self) -> Result<Option<PathBuf>, Box<dyn Error>> {
+        self.log().map(|log| log.write()).transpose()
     }
 
     /// Renders the meter side as markdown that also reads as plain text.
@@ -462,5 +499,37 @@ mod test {
         assert!(text.contains("2026-06-15 12:00"), "{text}");
         assert!(text.contains("MissingKw"), "{text}");
         assert!(text.contains("no kW"), "the glossary is missing:\n{text}");
+    }
+
+    /// The log goes beside the export under the meter suffix, groups by kind rather than listing
+    /// every hour, and says in its header that it covers only the period priced.
+    #[test]
+    fn the_meter_log_sits_beside_the_export_and_groups_by_kind() {
+        let noon = local_hour(date(2026, 6, 15), 12);
+        let one = local_hour(date(2026, 6, 15), 13);
+        let notes = MeterNotes {
+            source: Some(PathBuf::from("/data/Usage.XML")),
+            anomalies: vec![(noon, Anomaly::MissingKw), (one, Anomaly::MissingKw)],
+        };
+
+        let log = notes.log().expect("readings that came from a file");
+        assert_eq!(log.path(), PathBuf::from("/data/Usage.meter.xml.read.log"));
+
+        let text = log.render();
+        assert!(
+            text.contains("billing period only"),
+            "the header must not claim the whole export:\n{text}"
+        );
+        // One line for the kind, not one per hour, and the count is on it.
+        assert!(text.contains("1 item(s)"), "{text}");
+        assert!(text.contains("2 hour(s) carry MissingKw"), "{text}");
+        assert!(text.contains("2026-06-15 12:00"), "{text}");
+    }
+
+    /// Readings parsed from a string have no file to sit beside, so there is no log to write.
+    #[test]
+    fn readings_from_no_file_produce_no_log() {
+        assert!(MeterNotes::default().log().is_none());
+        assert!(MeterNotes::default().write_log().unwrap().is_none());
     }
 }

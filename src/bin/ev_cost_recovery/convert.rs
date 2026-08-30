@@ -6,14 +6,14 @@
 
 use crate::{
     state::{
-        Conversion, ConversionSlot, ConvertState, GbConversion, SessionConversion, SessionWorkbook,
-        Which, WorkingDir,
+        Conversion, ConversionSlot, ConvertState, GbConversion, GbWorkbook, SessionConversion,
+        SessionWorkbook, Which, WorkingDir,
     },
     theme::{self, Bold as _},
     widgets,
 };
 use eframe::egui;
-use ev_cost_recovery::api::{GbWriteReport, OnExistingWorkbook};
+use ev_cost_recovery::api::OnExistingWorkbook;
 use std::path::Path;
 
 pub fn ui(ui: &mut egui::Ui, state: &mut ConvertState, working: &mut WorkingDir) {
@@ -217,8 +217,15 @@ fn session_outcome(ui: &mut egui::Ui, outcome: &SessionWorkbook) {
     widgets::monospace_lines(ui, &outcome.anomalies.join("\n"));
 }
 
-fn gb_outcome(ui: &mut egui::Ui, outcome: &GbWriteReport) {
+fn gb_outcome(ui: &mut egui::Ui, gb: &GbWorkbook) {
+    let outcome = &gb.report;
     written(ui, &outcome.path);
+
+    // Beneath the workbook's path, for the reason `session_outcome` gives.
+    if let Some(message) = &gb.log_failure {
+        ui.add_space(8.0);
+        widgets::error_block(ui, message);
+    }
 
     ui.add_space(10.0);
     ui.label(format!(

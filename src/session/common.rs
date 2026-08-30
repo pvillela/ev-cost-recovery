@@ -1,11 +1,11 @@
-use super::{
-    SourceLog,
-    site_model::{
-        Load, NORMAL_VOLTAGE_FLUCTUATION_FACTOR, PANEL_BREAKER_COUNT, PANEL_COUNT, ev_load,
-        ev_real_power_kw, single_panel_load,
-    },
+use super::site_model::{
+    Load, NORMAL_VOLTAGE_FLUCTUATION_FACTOR, PANEL_BREAKER_COUNT, PANEL_COUNT, ev_load,
+    ev_real_power_kw, single_panel_load,
 };
-use crate::time::{Interval, duration, time_zone, truncate_to};
+use crate::{
+    log::SourceLog,
+    time::{Interval, duration, time_zone, truncate_to},
+};
 use jiff::{Timestamp, Zoned};
 use std::{
     collections::BTreeMap,

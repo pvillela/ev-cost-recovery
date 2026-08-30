@@ -35,7 +35,6 @@ mod excel;
 #[cfg(feature = "historic")]
 mod ioi;
 
-mod log;
 mod peak;
 mod report;
 
@@ -47,7 +46,6 @@ mod site_model;
 pub use common::{Bracket, Segment, Session, Sessions};
 pub use excel::{SessionWriteReport, session_csv_to_xlsx};
 pub use file_name::report_coverage;
-pub use log::{RunLog, SourceLog};
 pub use peak::IntervalEstimates;
 pub use report::site_load_report;
 

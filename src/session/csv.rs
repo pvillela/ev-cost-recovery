@@ -20,10 +20,13 @@
 //! the two apart.
 
 use super::{
-    Anomaly, AnomalyKind, BREAKER_MAX_NORMAL_KW, RSession, RunLog, Session, Sessions, SourceLog,
-    TIME_GRID_STEP, duration_is_consistent,
+    Anomaly, AnomalyKind, BREAKER_MAX_NORMAL_KW, RSession, Session, Sessions, TIME_GRID_STEP,
+    duration_is_consistent,
 };
-use crate::time::{is_on_grid, local_datetime, time_zone, wall_clock_instant};
+use crate::{
+    log::{RunLog, SourceLog},
+    time::{is_on_grid, local_datetime, time_zone, wall_clock_instant},
+};
 use jiff::{
     SignedDuration, Timestamp, civil,
     tz::{AmbiguousOffset, TimeZone},
@@ -115,10 +118,13 @@ impl SessionCsvError {
 
 impl fmt::Display for SessionCsvError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // Every arm names the file, from the variant's own `path`. The `csv` crate's errors do not
-        // carry it and a per-row failure knows only its row, so without this a caller is told what
-        // went wrong and left to guess where.
-        write!(f, "{}: ", self.path().display())?;
+        // Every arm names the kind of document expected and then the file, from the variant's own
+        // `path`. The `csv` crate's errors do not carry the path and a per-row failure knows only
+        // its row, so without this a caller is told what went wrong and left to guess where. The
+        // kind is there because the path alone does not say which input slot rejected the file: a
+        // Charges Report picked for this slot fails on a missing column, and so does a session
+        // report picked for the Charges Report slot. See `ChargesReportError`'s counterpart.
+        write!(f, "Session Report {}: ", self.path().display())?;
         match self {
             Self::Unreadable { cause, .. } => write!(f, "{cause}"),
             Self::MissingColumn { name, .. } => write!(f, "missing required column `{name}`"),
@@ -167,8 +173,8 @@ impl Error for SessionCsvError {
 /// of them; none is dropped.
 ///
 /// The anomalies found, and the off-grid warning if it applies, are returned on
-/// [`Sessions::logs`] as a `csv.read` log — the same content [`super::excel::session_csv_to_xlsx`]
-/// puts in its `convert` log, because the two run the same parse. Nothing is written here.
+/// [`Sessions::logs`] as a `session.csv.read` log — the same content [`super::excel::session_csv_to_xlsx`]
+/// puts in its `session.convert` log, because the two run the same parse. Nothing is written here.
 /// [`Sessions::write_logs`] is what puts it beside the input, and only a binary calls it.
 ///
 /// # Errors
@@ -185,8 +191,8 @@ fn read_sessions(path: &Path) -> Result<Sessions, SessionCsvError> {
     let rows = csv_session_rows(path)?;
     let log = SourceLog {
         source: path.to_path_buf(),
-        suffix: "csv.read",
-        operation: "Read from session report",
+        suffix: "session.csv.read",
+        operation: "Read Session Report",
         log: rows.log,
     };
     // One list, so there is nothing to collapse across files -- but it still goes through the
@@ -276,7 +282,7 @@ pub(super) fn csv_session_rows(path: &Path) -> Result<SessionRows, SessionCsvErr
     }
 
     // Anomalies only: there is nothing to compare against on this side, since this is what
-    // produces the values in the first place. See `session::log` for why discrepancies are a
+    // produces the values in the first place. See `crate::log` for why discrepancies are a
     // separate channel.
     let mut log = RunLog::new();
     note_off_grid_rows(&rows, &mut log);
@@ -1142,10 +1148,11 @@ S3,2026-06-03 09:00,2026-06-03 09:00,0:00:00,0:00:00,4.2
         assert_eq!(report.spikes.len(), 1);
         assert_eq!(report.spikes[0].id, "S3");
 
-        // Beside the CSV, under its own suffix, so it cannot collide with the workbook's logs.
+        // Beside the CSV, under its own suffix, so it cannot collide with the workbook's logs. The
+        // suffix leads with the kind of document, as the error messages do.
         assert_eq!(
             report.logs[0].path(),
-            dir.join("Session_Report_Test.csv.read.log")
+            dir.join("Session_Report_Test.session.csv.read.log")
         );
         // The log's text, not a file: the reader no longer writes one. See `Sessions::logs`.
         let log = report.logs[0].render();
@@ -1159,6 +1166,22 @@ S3,2026-06-03 09:00,2026-06-03 09:00,0:00:00,0:00:00,4.2
 
     /// A missing required column invalidates the whole file rather than one row: the sessions it
     /// would describe cannot be trusted.
+    /// The message opens with the kind of document expected, ahead of the path. Picking a Charges
+    /// Report for this slot fails on a missing column, and so does picking a session report for
+    /// the Charges Report slot; the path alone leaves the two indistinguishable. The paired test
+    /// is `charges_report::test::a_message_opens_with_the_kind_of_document_expected`.
+    #[test]
+    fn a_message_opens_with_the_kind_of_document_expected() {
+        let err = SessionCsvError::MissingColumn {
+            path: PathBuf::from("XX-XX_charges_2026-06-01.csv"),
+            name: "Energy_Use",
+        };
+        assert_eq!(
+            err.to_string(),
+            "Session Report XX-XX_charges_2026-06-01.csv: missing required column `Energy_Use`"
+        );
+    }
+
     #[test]
     fn a_missing_required_column_is_rejected() {
         const CSV: &str = "\

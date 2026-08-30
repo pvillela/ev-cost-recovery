@@ -96,10 +96,9 @@ mod test {
             path: PathBuf::from("data/hydro_bills/TH_2025_07_28.pdf"),
             what: "line labelled \"Your Electricity Charges\"".to_owned(),
         });
-        assert!(
-            advice
-                .starts_with("data/hydro_bills/TH_2025_07_28.pdf: the bill has no line labelled ")
-        );
+        assert!(advice.starts_with(
+            "Hydro Bill data/hydro_bills/TH_2025_07_28.pdf: the bill has no line labelled "
+        ));
         assert!(advice.ends_with("hydro_bill_dump --lines data/hydro_bills/TH_2025_07_28.pdf"));
     }
 
@@ -111,7 +110,7 @@ mod test {
         });
         assert_eq!(
             advice,
-            "README.md: couldn't parse input: invalid file header"
+            "Hydro Bill README.md: couldn't parse input: invalid file header"
         );
     }
 }

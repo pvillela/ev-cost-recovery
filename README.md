@@ -84,9 +84,15 @@ succeeded, and a changed input takes it away again: figures describe the inputs 
 
 Two things, and only when you ask for them:
 
-- **A run log** beside each session report read, named `<report>.csv.read.log`. Written on every run,
-  before the report is shown, so a failure to write one is not buried under it. It records what the
-  reader found — the rows it accepted, and every row that needed a judgement call.
+- **A run log** beside each file read, named for the kind of document and the format:
+  `<report>.session.csv.read.log` beside each session report, `<export>.meter.xml.read.log` beside
+  the Green Button export on the Surplus tab, and `<report>.charges.csv.read.log` beside the
+  Charges Report on the Reimbursement tab. Written on every run, before the report is shown, so a
+  failure to write one is not buried under it. Each records what the reader found: the rows or
+  hours it accepted, and everything that needed a judgement call.
+
+  The meter log covers **only the billing period priced**, which its first line says. A clean one
+  means that period was clean, not that the export is.
 - **A report**, when you press Save. Each tab saves its own.
 
 Anomalies appear in three places, deliberately: in the run log, in the report's own notes sections,

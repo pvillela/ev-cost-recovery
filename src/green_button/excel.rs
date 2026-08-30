@@ -26,11 +26,13 @@
 //! default, and machine names are `lower_snake_case` throughout so that reading a sheet back by
 //! column name cannot be defeated by a capitalisation difference.
 
-use super::{Anomaly, Feed, Peak, PeriodValues, Reading, period_values};
+use super::{Anomaly, Feed, Peak, PeriodValues, Reading, note_anomalies, period_values};
 use crate::{
     error::ConversionError,
+    log::{RunLog, SourceLog},
     time::{serial_of_date, serial_of_instant, serial_of_local},
 };
+use jiff::Timestamp;
 use std::{
     collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
@@ -260,7 +262,10 @@ impl Out {
 }
 
 /// What was written, for the CLI to report.
-#[derive(Debug, Clone, Default)]
+///
+/// No `Default`. It carried one while every field was a number or a map, and nothing ever asked
+/// for it; a report with an empty `path` and a log naming no file is not a report of anything.
+#[derive(Debug, Clone)]
 pub struct GbWriteReport {
     pub path: PathBuf,
     pub interval_rows: usize,
@@ -268,6 +273,13 @@ pub struct GbWriteReport {
     /// Periods whose interval count is not what a complete period should hold.
     pub incomplete_periods: usize,
     pub anomaly_counts: BTreeMap<Anomaly, usize>,
+
+    /// The run log, unwritten: what the conversion found, or that it found nothing.
+    ///
+    /// Held rather than written, for the reason [`SourceLog`] gives — a library returns what it
+    /// found and a binary decides whether it reaches a file. The counterpart on the session side
+    /// is [`SessionWriteReport::log`](crate::session::SessionWriteReport).
+    pub log: SourceLog,
 }
 
 /// Builds the workbook and writes it to `path`.
@@ -290,18 +302,48 @@ pub fn write_gb_workbook(
     let readings = feed.readings();
     let periods = period_values(&readings, bill_end_day);
 
-    let mut report = GbWriteReport {
+    let incomplete_periods = periods.iter().filter(|p| !p.is_complete()).count();
+
+    // The log and the counts come off the same walk, so the cell and the log file cannot disagree
+    // about what was found. `note_anomalies` wants pairs; `readings.anomalies` holds a set of
+    // kinds per hour, so it is flattened once here and counted on the way past.
+    let mut anomaly_counts: BTreeMap<Anomaly, usize> = BTreeMap::new();
+    let mut pairs: Vec<(Timestamp, Anomaly)> = Vec::new();
+    for (at, kinds) in &readings.anomalies {
+        for kind in kinds {
+            *anomaly_counts.entry(*kind).or_default() += 1;
+            pairs.push((*at, *kind));
+        }
+    }
+
+    let mut run_log = RunLog::new();
+    note_anomalies(pairs, &mut run_log);
+    // A period short of its hours is a fact about the workbook rather than about any one hour, so
+    // it is not an `Anomaly` and has to be said separately. It is what the red fill on
+    // `nbr_of_intervals` marks, and a reader who has only the log should learn it too.
+    if incomplete_periods > 0 {
+        run_log.note(format!(
+            "{incomplete_periods} of {} billing period(s) hold fewer hours than a complete period \
+             should. The Peak_values sheet marks them in red on `nbr_of_intervals`.",
+            periods.len()
+        ));
+    }
+
+    let report = GbWriteReport {
         path: path.to_path_buf(),
         interval_rows: readings.rows.len(),
         period_rows: periods.len(),
-        incomplete_periods: periods.iter().filter(|p| !p.is_complete()).count(),
-        anomaly_counts: BTreeMap::new(),
+        incomplete_periods,
+        anomaly_counts,
+        log: SourceLog {
+            // Beside the workbook rather than the export, because that is what this run produced.
+            // The session conversion puts its log in the same place for the same reason.
+            source: path.to_path_buf(),
+            suffix: "meter.convert",
+            operation: "Converted Green Button Export",
+            log: run_log,
+        },
     };
-    for kinds in readings.anomalies.values() {
-        for kind in kinds {
-            *report.anomaly_counts.entry(*kind).or_default() += 1;
-        }
-    }
 
     let mut book = umya_spreadsheet::new_file_empty_worksheet();
 
@@ -590,7 +632,10 @@ fn column_letters(mut index: u32) -> String {
 // cargo test --lib -- green_button::excel::test --nocapture
 #[cfg(test)]
 mod test {
-    use super::*;
+    use super::{super::METER_INTERVAL, super::Series, *};
+    use crate::{hydro_bill::BILL_END_DAY, time::local_hour};
+    use jiff::civil::date;
+    use std::{env, fs, process};
 
     #[test]
     fn the_column_tables_have_unique_machine_names() {
@@ -673,6 +718,65 @@ mod test {
         let counts = BTreeMap::from([(Anomaly::MissingKw, 2), (Anomaly::MissingInterval, 3)]);
         assert_eq!(format_counts(&counts), "MissingKw(2),MissingInterval(3)");
         assert_eq!(format_counts(&BTreeMap::new()), "");
+    }
+
+    /// A scratch directory of its own per test, since these run in parallel within one process.
+    fn temp_dir(tag: &str) -> PathBuf {
+        let dir = env::temp_dir().join(format!("ev_gb_excel_{}_{tag}", process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    /// One hour of kWh and kW and no kVA at all, so the conversion has a `MissingKva` to report on
+    /// every row it writes.
+    fn feed_missing_kva(start: Timestamp, hours: i64) -> Feed {
+        let series = |present: bool| Series {
+            values: (0..hours)
+                .filter(|_| present)
+                .map(|i| {
+                    (
+                        Timestamp::from_second(
+                            start.as_second() + i * METER_INTERVAL.as_secs() as i64,
+                        )
+                        .unwrap(),
+                        1_000,
+                    )
+                })
+                .collect(),
+            power_of_ten: 0,
+            duplicates: BTreeSet::new(),
+        };
+        Feed {
+            kwh: series(true),
+            kw: series(true),
+            kva: series(false),
+        }
+    }
+
+    /// The conversion's log sits beside the workbook it produced, under the meter suffix, and
+    /// groups the anomalies by kind rather than writing one line per hour.
+    #[test]
+    fn the_conversion_log_sits_beside_the_workbook_and_groups_by_kind() {
+        let dir = temp_dir("convert_log");
+        let output = dir.join("Usage.xlsx");
+        let start = local_hour(date(2026, 6, 15), 0);
+
+        let report = write_gb_workbook(&output, &feed_missing_kva(start, 4), BILL_END_DAY).unwrap();
+
+        assert_eq!(report.log.path(), dir.join("Usage.meter.convert.log"));
+
+        let text = report.log.render();
+        assert!(text.contains("Converted Green Button Export"), "{text}");
+        // One line for the kind, carrying the count, not four lines for four hours.
+        assert!(text.contains("4 hour(s) carry MissingKva"), "{text}");
+        assert!(text.contains("2026-06-15 00:00"), "{text}");
+        // Four hours is not a billing period, so the incompleteness is said too.
+        assert!(
+            text.contains("fewer hours than a complete period"),
+            "{text}"
+        );
+
+        fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

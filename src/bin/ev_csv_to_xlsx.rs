@@ -13,8 +13,8 @@ workbook's Anomalies column; they do not stop the conversion. Row numbers are ro
 record duplicated to resolve a DST fold is reported twice against the one row it came from, once
 per copy; the -EDT/-EST suffix on the session id tells the two apart.
 
-A .convert.log is written beside the workbook. It lists the same findings, or says there were
-none.";
+A .session.convert.log is written beside the workbook. It lists the same findings, or says there
+were none.";
 
 fn main() -> ExitCode {
     let args: Vec<PathBuf> = env::args_os().skip(1).map(PathBuf::from).collect();

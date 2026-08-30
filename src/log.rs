@@ -1,14 +1,22 @@
 //! Plain-text run logs written beside each output file.
 //!
-//! One per operation, overwritten each run: `<stem>.convert.log` for CSV to Excel,
-//! `<stem>.csv.read.log` for CSV straight to sessions, and `<stem>.xlsx.read.log` for Excel back
-//! to sessions. Three suffixes because all three files share a stem, so a shared one would have
-//! each run overwrite the last. A log always says one of two things — that everything was fine, or
-//! what was found — so an empty-looking run is distinguishable from one that was never made.
+//! One per operation, overwritten each run: `<stem>.session.convert.log` for CSV to Excel,
+//! `<stem>.session.csv.read.log` for CSV straight to sessions, and
+//! `<stem>.session.xlsx.read.log` for Excel back to sessions. A log always says one of two
+//! things — that everything was fine, or what was found — so an empty-looking run is
+//! distinguishable from one that was never made.
+//!
+//! # What a suffix is made of
+//!
+//! The kind of document, then the format read, then the operation. The kind comes first because a
+//! log names its subject the way an error message does: the reader has several kinds of file in
+//! one folder, and `June.csv` alone does not say which of them this log is about. The format has
+//! to stay because the three logs of one session report share a stem — the CSV and the workbook it
+//! converts to — so dropping it would have each run overwrite the last.
 //!
 //! # Why discrepancies are not anomalies
 //!
-//! [`AnomalyKind`](super::AnomalyKind) describes the *session*: something about the reported data
+//! [`AnomalyKind`](crate::session::AnomalyKind) describes the *session*: something about the reported data
 //! needs a judgement call, and one kind, `InconsistentDuration`, removes the session from every
 //! estimate. A discrepancy describes the *workbook*: a stored column disagrees with what the
 //! `Session` methods recompute, which means the sheet is stale or was edited, and says nothing
@@ -100,7 +108,7 @@ impl RunLog {
 ///
 /// It carries `suffix` and `operation` because the reader knows them and the caller does not. A
 /// binary writing the logs it was handed should not have to know that a CSV read is called
-/// `csv.read` while a read-back from a workbook is called `xlsx.read`.
+/// `session.csv.read` while a read-back from a workbook is called `session.xlsx.read`.
 #[derive(Debug, Clone)]
 pub struct SourceLog {
     /// The file the log is about, and the file it is written beside.
@@ -145,7 +153,7 @@ fn log_path(output: &Path, suffix: &str) -> PathBuf {
     output.with_file_name(format!("{stem}.{suffix}.log"))
 }
 
-// cargo test --lib -- session::log::test --nocapture
+// cargo test --lib -- log::test --nocapture
 #[cfg(test)]
 mod test {
     use super::*;
@@ -176,18 +184,27 @@ mod test {
     #[test]
     fn the_log_path_sits_beside_its_output() {
         assert_eq!(
-            log_path(Path::new("/data/Session_Report_June.xlsx"), "convert"),
-            Path::new("/data/Session_Report_June.convert.log")
+            log_path(
+                Path::new("/data/Session_Report_June.xlsx"),
+                "session.convert"
+            ),
+            Path::new("/data/Session_Report_June.session.convert.log")
         );
         assert_eq!(
-            log_path(Path::new("/data/Session_Report_June.xlsx"), "xlsx.read"),
-            Path::new("/data/Session_Report_June.xlsx.read.log")
+            log_path(
+                Path::new("/data/Session_Report_June.xlsx"),
+                "session.xlsx.read"
+            ),
+            Path::new("/data/Session_Report_June.session.xlsx.read.log")
         );
         // Beside the CSV rather than the workbook, and under its own suffix, so the three logs of
         // one session report cannot overwrite each other.
         assert_eq!(
-            log_path(Path::new("/data/Session_Report_June.csv"), "csv.read"),
-            Path::new("/data/Session_Report_June.csv.read.log")
+            log_path(
+                Path::new("/data/Session_Report_June.csv"),
+                "session.csv.read"
+            ),
+            Path::new("/data/Session_Report_June.session.csv.read.log")
         );
     }
 }

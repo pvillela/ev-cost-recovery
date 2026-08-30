@@ -124,7 +124,7 @@ to catch.
 A run rewrites a log beside each session report it read:
 
 ```sh
-ls -l data/*.csv.read.log
+ls -l data/*.session.csv.read.log
 ```
 
 Both timestamps should move on every run, whether or not you save anything. Nothing else is written
@@ -198,9 +198,9 @@ it. A window that never appears at all is the one case with nothing to read — 
 Put the bill, the meter export and the two session reports somewhere writable — your Documents
 folder or the Desktop, not `C:\Program Files` and not a folder still inside the downloaded zip.
 
-Writable matters. Every run writes a `.csv.read.log` beside each session report it reads. If that
-folder is read-only the run reports it and stops before showing any figures, which reads as a
-failure of the calculation when it is a failure to write a log.
+Writable matters. Every run writes a `.session.csv.read.log` beside each session report it reads.
+If that folder is read-only the run reports it and stops before showing any figures, which reads as
+a failure of the calculation when it is a failure to write a log.
 
 The two session reports must keep the names Evolute gave them —
 `Session_Report_June_1_2026-June_30_2026.csv` and the like. The name is the only thing that says
@@ -224,5 +224,5 @@ Two things from above do **not** apply:
   paste it in the same folder, and rename the copy to `sessions.csv`.
 
 To see the run logs, open the folder holding the session reports and look at the **Date modified**
-column on the two `.csv.read.log` files. Both should change on every run, whether or not you save
-anything.
+column on the two `.session.csv.read.log` files. Both should change on every run, whether or not
+you save anything.

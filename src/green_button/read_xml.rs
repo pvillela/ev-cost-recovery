@@ -66,18 +66,24 @@ impl GbReadError {
 
 impl fmt::Display for GbReadError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // The arms that name a file name the kind of document expected in front of it, so that a
+        // reader can tell which input slot rejected the file rather than only which file it was.
+        // The two argument checks have no path and take no prefix: they are settled before
+        // anything is opened, so there is no file for the kind to be a claim about.
+        if let Some(path) = self.path() {
+            write!(f, "Green Button Export {}: ", path.display())?;
+        }
         match self {
-            Self::Unreadable { path, cause } => write!(f, "{}: {cause}", path.display()),
-            Self::Malformed { path, cause } => write!(f, "{}: {cause}", path.display()),
+            Self::Unreadable { cause, .. } => write!(f, "{cause}"),
+            Self::Malformed { cause, .. } => write!(f, "{cause}"),
             Self::PeriodNotCovered {
-                path,
                 period_ending,
                 covers,
+                ..
             } => {
                 write!(
                     f,
-                    "{}: no readings in the billing period ending {period_ending}. ",
-                    path.display()
+                    "no readings in the billing period ending {period_ending}. "
                 )?;
                 match covers {
                     Some((first, last)) => write!(f, "The feed covers {first} to {last}."),
@@ -219,6 +225,27 @@ mod test {
         )
         .unwrap_err()
         .to_string()
+    }
+
+    /// An arm that names a file opens with the kind of document expected, so a reader can tell
+    /// which input slot rejected the file. The argument checks name none, and so claim nothing
+    /// about one.
+    #[test]
+    fn only_the_arms_that_name_a_file_name_the_kind_of_document_expected() {
+        let named = GbReadError::PeriodNotCovered {
+            path: PathBuf::from("meter.XML"),
+            period_ending: date(2026, 6, 30),
+            covers: None,
+        };
+        assert!(
+            named
+                .to_string()
+                .starts_with("Green Button Export meter.XML: "),
+            "{named}"
+        );
+
+        let unnamed = GbReadError::BillEndDayOutOfRange { bill_end_day: 40 };
+        assert!(!unnamed.to_string().contains("Green Button"), "{unnamed}");
     }
 
     #[test]

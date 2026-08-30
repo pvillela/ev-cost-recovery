@@ -261,8 +261,9 @@ Should Evolute begin reporting seconds, the allowances become wider than the dat
 get a padded end they no longer require, and the consistency window admits records it could now
 reject. Nothing crashes and no figure looks wrong, which is why the conversion says so out loud:
 the run log carries one line naming the count and the first three offending rows —
-`<stem>.convert.log` when the CSV is converted to a workbook, `<stem>.csv.read.log` when it is read
-straight to sessions. Both come from the same parse, so both say it.
+`<stem>.session.convert.log` when the CSV is converted to a workbook,
+`<stem>.session.csv.read.log` when it is read straight to sessions. Both come from the same parse,
+so both say it.
 
 The fix is **not** to set `TIME_GRID_STEP` to one second. Not because one second is an illegal
 grid — it divides 15 minutes and `LEGAL_START_MINUTES` still lands on it — but because this

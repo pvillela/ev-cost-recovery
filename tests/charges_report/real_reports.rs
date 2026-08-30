@@ -56,6 +56,13 @@ fn every_charges_report_parses_and_totals_its_own_columns() {
         for (status, count) in &report.statuses {
             println!("  Bill_Status {status:?}: {count}");
         }
+        // Printed rather than asserted. Every report seen so far carries one span on every row,
+        // but whether a row may state its breaker's own subscription span is an open question with
+        // Evolute -- see docs/Questions_for_Evolute.md -- so a file with several is not a failure.
+        // This is how a new shape gets noticed.
+        for ((from, to), rows) in &report.spans {
+            println!("  {from} to {to}: {} row(s)", rows.len());
+        }
 
         assert!(report.rows > 0, "{}: no rows", path.display());
         assert!(

@@ -41,7 +41,6 @@ pub use recovery::{
     cost_recovery_surplus, /* PeriodValues, HydroBill, Sessions */
 };
 pub use reimbursement::{
-    ChargesReport, ReimbursementError, ReimbursementReconciliation,
-    check_charges_report_covers_month,
+    ChargesNotes, ChargesReport, ReimbursementError, ReimbursementReconciliation, charges_notes,
     reconcile_evolute_reimbursement, /* CostRecoveryRates, Sessions */
 };

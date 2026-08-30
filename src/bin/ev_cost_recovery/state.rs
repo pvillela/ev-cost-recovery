@@ -336,6 +336,13 @@ impl SurplusState {
                     self.error = Some(format!("cannot write the run log: {e}"));
                     return;
                 }
+                // The meter export has notes of its own, kept apart from the session side because
+                // the two are checked against different things. Its log covers the billing period
+                // priced, not the whole export; `MeterNotes::log` says why.
+                if let Err(e) = surplus.meter.write_log() {
+                    self.error = Some(format!("cannot write the run log: {e}"));
+                    return;
+                }
                 self.outcome = Some(SurplusOutcome {
                     text: surplus.to_string(),
                     surplus,
@@ -524,9 +531,15 @@ impl ReimbursementState {
 
         match reconcile_evolute_reimbursement(&csv, &charges, reimbursed, rates) {
             Ok(reconciliation) => {
-                // The app is the end of the line, so the run log is written here, as it is for a
-                // surplus. See `SessionNotes::write_logs`.
+                // The app is the end of the line, so the run logs are written here, as they are
+                // for a surplus. See `SessionNotes::write_logs`.
                 if let Err(e) = reconciliation.notes.write_logs() {
+                    self.error = Some(format!("cannot write the run log: {e}"));
+                    return;
+                }
+                // The Charges Report has notes of its own. It carries no per-row anomalies -- it
+                // is read all-or-nothing -- so its log holds only what leaves the figures standing.
+                if let Err(e) = reconciliation.charges.write_log() {
                     self.error = Some(format!("cannot write the run log: {e}"));
                     return;
                 }
@@ -628,17 +641,41 @@ impl Conversion for SessionConversion {
 /// The Green Button meter export conversion.
 pub struct GbConversion;
 
+/// What a Green Button conversion produced, and whether its log reached disk.
+///
+/// The meter-side counterpart of [`SessionWorkbook`], and it exists for the same reason: the
+/// library's own report has nowhere to say that the log failed, because the library does not write
+/// the log.
+pub struct GbWorkbook {
+    pub report: GbWriteReport,
+    /// Why the run log could not be written, if it could not. See [`SessionWorkbook::log_failure`]
+    /// for why this is carried rather than raised.
+    pub log_failure: Option<String>,
+}
+
 impl Conversion for GbConversion {
-    type Outcome = GbWriteReport;
+    type Outcome = GbWorkbook;
 
     fn workbook(input: &Path) -> PathBuf {
         input.with_extension("xlsx")
     }
 
-    fn run(input: &Path, on_existing: OnExistingWorkbook) -> Result<GbWriteReport, String> {
+    fn run(input: &Path, on_existing: OnExistingWorkbook) -> Result<GbWorkbook, String> {
         // No path prefix, for the reason `SessionConversion::run` gives: a read failure here is a
         // `GbReadError`, which names the export itself.
-        gb_xml_to_xlsx(input, on_existing).map_err(|e| e.to_string())
+        let report = gb_xml_to_xlsx(input, on_existing).map_err(|e| e.to_string())?;
+        // The app is the end of the line, so the run log is written here, as it is for a session
+        // report. The library returns what it found and writes nothing.
+        let log_failure = report.log.write().err().map(|e| {
+            format!(
+                "The workbook was written, but its run log was not.\n{}: {e}",
+                report.log.path().display()
+            )
+        });
+        Ok(GbWorkbook {
+            report,
+            log_failure,
+        })
     }
 }
 

@@ -14,11 +14,12 @@
 //! what removes a session from the estimates. See [`AnomalyKind`].
 
 use super::{
-    Anomaly, AnomalyKind, SourceLog,
+    Anomaly, AnomalyKind,
     csv::{SessionRows, csv_session_rows},
 };
 use crate::{
     error::ConversionError,
+    log::SourceLog,
     time::{serial_of_civil, serial_of_duration, serial_of_instant},
 };
 use std::{
@@ -188,8 +189,8 @@ fn write_session_xlsx(
     let log = SourceLog {
         // Beside the workbook rather than the CSV, because that is what this run produced.
         source: output_path.clone(),
-        suffix: "convert",
-        operation: "Converted from session report",
+        suffix: "session.convert",
+        operation: "Converted Session Report",
         log: rows.log,
     };
 
@@ -482,7 +483,7 @@ fn add_comments(sheet: &mut Worksheet) {
              variants. Empty means the row needed no judgement call. This cell IS read back, and \
              InconsistentDuration is what removes a session from every estimate -- so editing it \
              changes the figures. The adjusted columns are not read back: they are recomputed, and \
-             a disagreement is written to the .xlsx.read.log rather than obeyed.",
+             a disagreement is written to the .session.xlsx.read.log rather than obeyed.",
         ),
     ];
     for (source, text) in notes {
@@ -529,9 +530,8 @@ fn set_widths(sheet: &mut Worksheet) {
 pub mod historic {
     use super::*;
     use crate::{
-        session::{
-            IntervalEstimates, RSession, RunLog, Session, Sessions, estimates_from_sessions,
-        },
+        log::RunLog,
+        session::{IntervalEstimates, RSession, Session, Sessions, estimates_from_sessions},
         time::{Interval, duration_of_serial, instant_of_serial},
     };
     use jiff::Timestamp;
@@ -575,7 +575,7 @@ pub mod historic {
     /// holds a formula whose cached value this crate never writes. For a spike that leaves it infinite
     /// or `NaN`, which is the honest reading; the estimating logic substitutes a finite value.
     ///
-    /// A `<stem>.xlsx.read.log` is written beside the workbook, listing any stored column that
+    /// A `<stem>.session.xlsx.read.log` is written beside the workbook, listing any stored column that
     /// disagreed with the recomputed value. That channel has no counterpart in the private `csv::csv_sessions`,
     /// which reads the source and so has nothing to compare against.
     ///
@@ -641,8 +641,8 @@ pub mod historic {
 
         let log = SourceLog {
             source: path.to_path_buf(),
-            suffix: "xlsx.read",
-            operation: "Read back from workbook",
+            suffix: "session.xlsx.read",
+            operation: "Read back Session Report Workbook",
             log,
         };
 
@@ -1382,10 +1382,11 @@ CKT-7,,Toronto,,Station-7,Evolute Inc.,FLO,G5,S00002,,2026-06-03 10:00,2026-06-0
         let report = xlsx_to_sessions(&xlsx).unwrap();
 
         // Beside the workbook, under its own suffix, so it cannot collide with the convert log or
-        // with the CSV reader's.
+        // with the CSV reader's. The suffix leads with the kind of document, as the error messages
+        // do.
         assert_eq!(
             report.logs[0].path(),
-            xlsx.with_file_name("Session_Report_Test.xlsx.read.log")
+            xlsx.with_file_name("Session_Report_Test.session.xlsx.read.log")
         );
 
         // A zero-Energy_Use session with a real charge time is an ordinary session: its average

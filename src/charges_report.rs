@@ -11,6 +11,10 @@
 //!
 //! In production these files sit in the same folder as the session reports.
 
+use crate::{
+    log::{RunLog, SourceLog},
+    markdown::{h2, wrap},
+};
 use jiff::civil::Date;
 use std::{
     collections::BTreeMap,
@@ -37,10 +41,27 @@ const DATE_FORMAT: &str = "%d-%b-%y";
 pub struct ChargesReport {
     /// The file this was read from.
     pub path: PathBuf,
-    /// First day the report covers, from `Start_Date`.
+    /// Earliest `Start_Date` on any row.
+    ///
+    /// The envelope of [`Self::spans`], not a period the file declares. The report states no span
+    /// of its own; it states one per row.
     pub from: Date,
-    /// Last day the report covers, inclusive, from `End_Date`.
+    /// Latest `End_Date` on any row, inclusive.
     pub to: Date,
+    /// Each distinct `(Start_Date, End_Date)` seen, and the rows carrying it, in row order.
+    ///
+    /// Kept per row rather than collapsed to one span, because rows are **not** required to agree.
+    /// They did in every report seen so far — every row of every one reads the whole month — but
+    /// what the two columns mean per row is an open question with Evolute (see
+    /// `docs/Questions_for_Evolute.md`), and the reading that fits the data equally well is that
+    /// each row states the span its breaker was subscribed for. Under that reading a subscriber
+    /// who joins mid-month produces a row that differs from its neighbours, and refusing such a
+    /// file would refuse a correct one.
+    ///
+    /// Whether a span is acceptable is not this reader's question: it depends on the month being
+    /// reconciled, which comes from the session report. See
+    /// [`charges_notes`](crate::api::pure::charges_notes).
+    pub spans: BTreeMap<(Date, Date), Vec<usize>>,
     /// The `kWh` column, totalled over every row.
     pub total_kwh: f64,
     /// The `Cost` column, totalled over every row, in dollars.
@@ -53,13 +74,171 @@ pub struct ChargesReport {
     /// rather than acted on because only `Issued` has ever been seen, and dropping a row on a
     /// status this code has never met would be a guess that quietly changes a figure. A reader who
     /// sees an unfamiliar status here knows to ask.
+    ///
+    /// Reaches the reader through [`ChargesNotes`], which the reconciliation prints and logs. It
+    /// was collected and read by nothing for months, which made it a warning channel with no exit.
     pub statuses: BTreeMap<String, usize>,
 }
 
-impl ChargesReport {
-    /// Whether the report covers exactly the calendar month beginning on `month_start`.
-    pub fn covers_month(&self, month_start: Date) -> bool {
-        self.from == month_start && self.to == month_start.last_of_month()
+/// What a reconciliation should say about the Charges Report it drew on.
+///
+/// The third of the three notes types, beside [`SessionNotes`](crate::session::SessionNotes) and
+/// [`MeterNotes`](crate::green_button::MeterNotes), and kept apart from them for the same reason
+/// they are kept apart from each other: a session anomaly is looked up in a session report by row,
+/// a meter anomaly in an export by hour, and one of these in a Charges Report by row and column.
+///
+/// Nothing here stops a reconciliation. What stops one is an unreadable file, a cell that will not
+/// parse, or a row whose span leaves the month — all errors, raised before this is built. These
+/// are the findings that leave the figures standing and still want a reader.
+#[derive(Debug, Clone, Default)]
+pub struct ChargesNotes {
+    /// The report the figures came from. `None` only for a default-constructed value.
+    pub source: Option<PathBuf>,
+    /// Every distinct `Bill_Status` seen, and how many rows carried it. Copied from
+    /// [`ChargesReport::statuses`].
+    pub statuses: BTreeMap<String, usize>,
+    /// Spans that lie inside the month but do not cover the whole of it, and the rows carrying
+    /// each.
+    ///
+    /// A breaker billed for part of the month only. Under the subscription reading of the two date
+    /// columns this is what a mid-month join or leave looks like, and it is ordinary; under the
+    /// other reading it should never occur. Reported either way, because the two readings are not
+    /// yet told apart — see `docs/Questions_for_Evolute.md`.
+    pub partial_spans: Vec<((Date, Date), Vec<usize>)>,
+}
+
+impl ChargesNotes {
+    /// Whether there is nothing worth a reader's attention.
+    ///
+    /// A tally of nothing but `Issued` is not a finding: it is what every report seen so far says,
+    /// and printing it as a warning would train the reader to skip the section that matters.
+    pub fn is_clean(&self) -> bool {
+        self.partial_spans.is_empty() && self.unfamiliar_statuses().next().is_none()
+    }
+
+    /// The statuses that are not `Issued`, with their counts.
+    ///
+    /// `Issued` is the only value ever seen. Anything else is a value this software has no rule
+    /// for and still counted towards the totals, which is exactly what a reader needs to be told.
+    pub fn unfamiliar_statuses(&self) -> impl Iterator<Item = (&String, &usize)> {
+        self.statuses.iter().filter(|(name, _)| *name != "Issued")
+    }
+
+    /// One line per finding, for the run log.
+    ///
+    /// Shared with [`Self::to_markdown`] so the log and the report cannot say different things
+    /// about one file. The full tally goes in whenever anything else does: a reader looking at an
+    /// unfamiliar status wants to know how many rows carried the familiar one.
+    fn findings(&self) -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        for ((from, to), rows) in &self.partial_spans {
+            out.push(format!(
+                "{} row(s) are billed for {from} to {to} rather than the whole month: {}. Their \
+                 kWh and dollars are counted in the totals in full.",
+                rows.len(),
+                row_list(rows)
+            ));
+        }
+        for (status, count) in self.unfamiliar_statuses() {
+            out.push(format!(
+                "{count} row(s) carry Bill_Status `{status}`, which this software has no rule for. \
+                 They are counted towards the totals like any other row, because dropping them \
+                 would be a guess that quietly changes a figure."
+            ));
+        }
+        if !out.is_empty() {
+            out.push(format!("Bill_Status tally: {}.", self.status_tally()));
+        }
+        out
+    }
+
+    /// `Issued 44, Void 3`, in the order [`BTreeMap`] holds them.
+    fn status_tally(&self) -> String {
+        self.statuses
+            .iter()
+            .map(|(name, count)| format!("{name} {count}"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+
+    /// The run log for the report these figures came from, unwritten.
+    ///
+    /// `None` when there is no file to sit beside, which only a default-constructed value has.
+    ///
+    /// Unlike the session and meter logs, this one has no per-row anomalies to carry: the Charges
+    /// Report is read all-or-nothing, and everything that can go wrong with a row stops the
+    /// reconciliation instead. What it records is the handful of findings that leave the figures
+    /// standing.
+    pub fn log(&self) -> Option<SourceLog> {
+        let source = self.source.clone()?;
+        let mut log = RunLog::new();
+        for line in self.findings() {
+            log.note(line);
+        }
+        Some(SourceLog {
+            source,
+            suffix: "charges.csv.read",
+            operation: "Read Charges Report",
+            log,
+        })
+    }
+
+    /// Writes the run log beside the report, returning where it went.
+    ///
+    /// For a binary, as [`SessionNotes::write_logs`](crate::session::SessionNotes::write_logs) and
+    /// [`MeterNotes::write_log`](crate::green_button::MeterNotes::write_log) are.
+    ///
+    /// # Errors
+    ///
+    /// Whatever the write failed with, returned rather than swallowed.
+    pub fn write_log(&self) -> Result<Option<PathBuf>, Box<dyn Error>> {
+        self.log().map(|log| log.write()).transpose()
+    }
+
+    /// Renders the Charges Report side as markdown that also reads as plain text.
+    ///
+    /// Empty when there is nothing to say and no file to name, matching
+    /// [`MeterNotes::to_markdown`](crate::green_button::MeterNotes::to_markdown).
+    pub fn to_markdown(&self) -> String {
+        if self.source.is_none() && self.is_clean() {
+            return String::new();
+        }
+        let mut out: Vec<String> = Vec::new();
+        out.push(h2("Charges Report"));
+        out.push(String::new());
+        match &self.source {
+            Some(path) => out.push(format!("- {}", path.display())),
+            None => out.push("- (figures not read from a file)".to_owned()),
+        }
+        out.push(String::new());
+
+        if self.is_clean() {
+            out.push(format!("Bill_Status tally: {}.", self.status_tally()));
+            out.push(String::new());
+            return out.join("\n");
+        }
+        for line in self.findings() {
+            out.push(wrap(&format!("- {line}"), "  "));
+        }
+        out.push(String::new());
+        out.join("\n")
+    }
+}
+
+/// `rows 2, 3 and 4`, or `rows 2, 3, 4 and 5 more` past the fourth.
+///
+/// Capped for the reason the Green Button log caps its hours: a subscription change touches one
+/// breaker, but a misread date column touches every row, and forty row numbers on one line is a
+/// line nobody reads.
+///
+/// Shared with `ReimbursementError::ChargesReportRowsOutsideMonth`, which lists the same rows in
+/// the refusal, so the note and the refusal cannot cap differently.
+pub(crate) fn row_list(rows: &[usize]) -> String {
+    const SHOWN: usize = 4;
+    let shown: Vec<String> = rows.iter().take(SHOWN).map(usize::to_string).collect();
+    match rows.len().saturating_sub(shown.len()) {
+        0 => format!("rows {}", shown.join(", ")),
+        more => format!("rows {}, and {more} more", shown.join(", ")),
     }
 }
 
@@ -87,16 +266,6 @@ pub enum ChargesReportError {
         value: String,
         cause: String,
     },
-
-    /// The rows do not all cover the same span.
-    ///
-    /// One report is one period. Rows disagreeing about which means the file is two reports
-    /// concatenated, and no single month can be read off it.
-    MixedPeriods {
-        path: PathBuf,
-        first: (Date, Date),
-        row: usize,
-    },
 }
 
 impl ChargesReportError {
@@ -107,18 +276,20 @@ impl ChargesReportError {
             Self::Unreadable { path, .. }
             | Self::MissingColumn { path, .. }
             | Self::NoRows { path }
-            | Self::BadValue { path, .. }
-            | Self::MixedPeriods { path, .. } => path,
+            | Self::BadValue { path, .. } => path,
         }
     }
 }
 
 impl fmt::Display for ChargesReportError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // Every arm names the file, from the variant's own `path` field. The `csv` crate's errors
-        // do not carry it and a per-row failure knows only its row, so without this a caller is
-        // told what went wrong and left to guess where.
-        write!(f, "{}: ", self.path().display())?;
+        // Every arm names the kind of document expected and then the file, from the variant's own
+        // `path` field. The `csv` crate's errors do not carry the path and a per-row failure knows
+        // only its row, so without this a caller is told what went wrong and left to guess where.
+        // The kind is there because the path alone does not say which input slot rejected the
+        // file: a session report picked for this slot fails on a missing column, and so does a
+        // Charges Report picked for the session report slot. See `SessionCsvError`'s counterpart.
+        write!(f, "Charges Report {}: ", self.path().display())?;
         match self {
             Self::Unreadable { cause, .. } => write!(f, "{cause}"),
             Self::MissingColumn { name, .. } => {
@@ -138,15 +309,6 @@ impl fmt::Display for ChargesReportError {
             } => write!(
                 f,
                 "row {row}, column `{column}`: cannot read {value:?}: {cause}"
-            ),
-            Self::MixedPeriods {
-                first: (from, to),
-                row,
-                ..
-            } => write!(
-                f,
-                "row {row} covers a different period from the first row ({from} to {to}); one \
-                 Charges Report covers one period"
             ),
         }
     }
@@ -204,7 +366,7 @@ pub fn charges_report(path: &Path) -> Result<ChargesReport, ChargesReportError> 
             .to_owned()
     };
 
-    let mut span: Option<(Date, Date)> = None;
+    let mut spans: BTreeMap<(Date, Date), Vec<usize>> = BTreeMap::new();
     let mut total_kwh = 0.0;
     let mut total_amount = 0.0;
     let mut statuses: BTreeMap<String, usize> = BTreeMap::new();
@@ -217,17 +379,10 @@ pub fn charges_report(path: &Path) -> Result<ChargesReport, ChargesReportError> 
 
         let from = parse_date(&field(&record, "Start_Date"), path, row, "Start_Date")?;
         let to = parse_date(&field(&record, "End_Date"), path, row, "End_Date")?;
-        match span {
-            None => span = Some((from, to)),
-            Some(first) if first != (from, to) => {
-                return Err(ChargesReportError::MixedPeriods {
-                    path: path.to_path_buf(),
-                    first,
-                    row,
-                });
-            }
-            Some(_) => {}
-        }
+        // Recorded, not judged. Rows differing from each other is not a fault here; a row whose
+        // span leaves the month being reconciled is, and only the caller knows which month that
+        // is. See the field's own note on `ChargesReport::spans`.
+        spans.entry((from, to)).or_default().push(row);
 
         total_kwh += number(&field(&record, "kWh"), path, row, "kWh")?;
         total_amount += money(&field(&record, "Cost"), path, row, "Cost")?;
@@ -235,16 +390,26 @@ pub fn charges_report(path: &Path) -> Result<ChargesReport, ChargesReportError> 
         rows += 1;
     }
 
-    let Some((from, to)) = span else {
+    if spans.is_empty() {
         return Err(ChargesReportError::NoRows {
             path: path.to_path_buf(),
         });
-    };
+    }
+    // The envelope of the rows, not a span the file declares. `spans` is keyed on `(from, to)` and
+    // ordered by it, so the earliest start is the first key; the latest end has to be searched
+    // for, since a row starting later may end earlier.
+    let from = spans.keys().next().expect("a non-empty map").0;
+    let to = spans
+        .keys()
+        .map(|(_, to)| *to)
+        .max()
+        .expect("a non-empty map");
 
     Ok(ChargesReport {
         path: path.to_path_buf(),
         from,
         to,
+        spans,
         total_kwh,
         total_amount,
         rows,
@@ -303,6 +468,7 @@ fn money(
 mod test {
     use super::*;
     use jiff::civil::date;
+    use std::{env, fs, process};
 
     #[test]
     fn a_dollar_amount_is_read_whatever_dressing_it_arrives_in() {
@@ -325,6 +491,22 @@ mod test {
     /// so the error they raise can name it.
     fn fake_path() -> PathBuf {
         PathBuf::from("Charges_Report_June.csv")
+    }
+
+    /// The message opens with the kind of document expected, ahead of the path. Picking a session
+    /// report for this slot fails on a missing column, and so does picking a Charges Report for
+    /// the session report slot; the path alone leaves the two indistinguishable. The paired test
+    /// is `session::csv::test::a_message_opens_with_the_kind_of_document_expected`.
+    #[test]
+    fn a_message_opens_with_the_kind_of_document_expected() {
+        let err = ChargesReportError::MissingColumn {
+            path: PathBuf::from("Session_Report_June.csv"),
+            name: "kWh",
+        };
+        assert_eq!(
+            err.to_string(),
+            "Charges Report Session_Report_June.csv: missing required column `kWh`"
+        );
     }
 
     #[test]
@@ -355,24 +537,65 @@ mod test {
         date(2026, 6, day)
     }
 
+    /// Rows carrying different spans are read, not refused. Which spans are acceptable is settled
+    /// against the month being reconciled, which this reader does not know — see
+    /// `api::pure::charges_notes`.
     #[test]
-    fn a_report_covers_a_month_only_when_it_spans_the_whole_of_it() {
-        let report = ChargesReport {
-            path: PathBuf::from("charges.csv"),
-            from: june(1),
-            to: june(30),
-            total_kwh: 0.0,
-            total_amount: 0.0,
-            rows: 1,
-            statuses: BTreeMap::new(),
-        };
-        assert!(report.covers_month(june(1)));
-        assert!(!report.covers_month(date(2026, 5, 1)));
+    fn rows_that_disagree_about_their_span_are_all_read() {
+        const CSV: &str = "\
+Start_Date,End_Date,Bill_Status,kWh,Cost
+01-Jun-26,30-Jun-26,Issued,10,$1.00
+01-Jun-26,30-Jun-26,Issued,20,$2.00
+15-Jun-26,30-Jun-26,Issued,5,$0.50
+";
+        let dir = temp_dir("mixed_spans");
+        let path = dir.join("charges.csv");
+        fs::write(&path, CSV).unwrap();
 
-        let short = ChargesReport {
-            to: june(29),
-            ..report
-        };
-        assert!(!short.covers_month(june(1)));
+        let report = charges_report(&path).unwrap();
+        assert_eq!(report.rows, 3);
+        assert_eq!(report.total_kwh, 35.0);
+
+        // Two distinct spans, each naming the rows that carried it. Rows are numbered as a
+        // spreadsheet numbers them, so the first record is row 2.
+        assert_eq!(report.spans.len(), 2);
+        assert_eq!(report.spans[&(june(1), june(30))], vec![2, 3]);
+        assert_eq!(report.spans[&(june(15), june(30))], vec![4]);
+
+        // The envelope of the rows, not a span any single row states.
+        assert_eq!(report.from, june(1));
+        assert_eq!(report.to, june(30));
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    /// The envelope takes the latest end, which need not belong to the row with the latest start.
+    #[test]
+    fn the_envelope_takes_the_widest_pair_not_the_last_row() {
+        const CSV: &str = "\
+Start_Date,End_Date,Bill_Status,kWh,Cost
+10-Jun-26,30-Jun-26,Issued,1,$0.10
+01-Jun-26,20-Jun-26,Issued,1,$0.10
+";
+        let dir = temp_dir("envelope");
+        let path = dir.join("charges.csv");
+        fs::write(&path, CSV).unwrap();
+
+        let report = charges_report(&path).unwrap();
+        assert_eq!(
+            report.from,
+            june(1),
+            "the earliest start, from the later row"
+        );
+        assert_eq!(report.to, june(30), "the latest end, from the earlier row");
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    /// A scratch directory of its own per test, since these run in parallel within one process.
+    fn temp_dir(tag: &str) -> PathBuf {
+        let dir = env::temp_dir().join(format!("ev_charges_{}_{tag}", process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        dir
     }
 }

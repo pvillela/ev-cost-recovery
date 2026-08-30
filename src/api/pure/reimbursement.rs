@@ -16,6 +16,7 @@
 //! only thing that states it — see [`report_coverage`].
 
 use crate::{
+    charges_report::row_list,
     markdown::{Left, Right, amounts, field, h1, h2, rounding_note, table, wrap},
     session::{AnomalyKind, SessionNotes, TouKwh, report_coverage, tou_kwh},
     time::{Interval, local_midnight},
@@ -26,7 +27,9 @@ use std::{error::Error, fmt, path::PathBuf};
 // Re-exported for the same reason `recovery` re-exports what it takes: a caller should not have to
 // know which module a type comes from in order to spell the call.
 pub use crate::{
-    api::pure::recovery::CostRecoveryRates, charges_report::ChargesReport, session::Sessions,
+    api::pure::recovery::CostRecoveryRates,
+    charges_report::{ChargesNotes, ChargesReport},
+    session::Sessions,
 };
 
 /// Why a month's reimbursement cannot be reconciled.
@@ -51,15 +54,33 @@ pub enum ReimbursementError {
     /// nothing, and looks exactly like Evolute having underpaid.
     NotACalendarMonth { path: PathBuf, from: Date, to: Date },
 
-    /// The Charges Report covers a different span from the month the session report names.
+    /// No row of the Charges Report touches the month the session report names.
     ///
     /// Two documents for two different months, reconciled against each other, produce a variance
     /// that means nothing and looks exactly like Evolute having underpaid. Both are chosen by
-    /// hand, so picking last month's is an ordinary slip.
+    /// hand, so picking last month's is an ordinary slip — and it is what this almost always is.
     ChargesReportIsForAnotherMonth {
         charges_path: PathBuf,
         charges_from: Date,
         charges_to: Date,
+        month_start: Date,
+        month_end: Date,
+    },
+
+    /// Some rows touch the month and others reach outside it.
+    ///
+    /// Distinct from [`Self::ChargesReportIsForAnotherMonth`], which is the wrong file altogether.
+    /// Here the file is plausibly the right one and something in it is not understood, so the
+    /// message names the offending rows rather than advising a different file.
+    ///
+    /// A refusal rather than a note, because the kWh and dollars of a row reaching outside the
+    /// month would be reconciled against a month's worth of sessions. Whether such a row can occur
+    /// at all is the open question in `docs/Questions_for_Evolute.md`; until it is answered, a
+    /// figure nobody can account for is worse than a month that will not reconcile.
+    ChargesReportRowsOutsideMonth {
+        charges_path: PathBuf,
+        /// Each offending span and the rows carrying it, in span order.
+        spans: Vec<((Date, Date), Vec<usize>)>,
         month_start: Date,
         month_end: Date,
     },
@@ -110,10 +131,28 @@ impl fmt::Display for ReimbursementError {
                 month_end,
             } => write!(
                 f,
-                "{}: the Charges Report covers {charges_from} to {charges_to}, but the session \
-                 report is for {month_start} to {month_end}",
+                "{}: no row of the Charges Report falls in {month_start} to {month_end}, which is \
+                 the month the session report is for; its rows cover {charges_from} to \
+                 {charges_to}. This is usually the wrong file.",
                 charges_path.display()
             ),
+            Self::ChargesReportRowsOutsideMonth {
+                charges_path,
+                spans,
+                month_start,
+                month_end,
+            } => {
+                write!(
+                    f,
+                    "{}: the session report is for {month_start} to {month_end}, but these rows \
+                     of the Charges Report are billed for dates outside it",
+                    charges_path.display()
+                )?;
+                for ((from, to), rows) in spans {
+                    write!(f, "\n  {from} to {to}: {}", row_list(rows))?;
+                }
+                Ok(())
+            }
             Self::RatesNotYetInEffect {
                 month_start,
                 effective_date,
@@ -181,6 +220,25 @@ pub struct ReimbursementReconciliation {
     pub remittance_variance: f64,
     /// What these figures were drawn from, and what needed a judgement call along the way.
     pub notes: SessionNotes,
+    /// The same, for the Charges Report. Kept apart from [`Self::notes`] for the reason
+    /// [`ChargesNotes`] gives: the two are checked against different documents.
+    ///
+    /// Default when the figures were given rather than read: see
+    /// [`Self::with_charges_notes`].
+    pub charges: ChargesNotes,
+}
+
+impl ReimbursementReconciliation {
+    /// The same reconciliation, recorded as having drawn its Charges Report figures from `notes`.
+    ///
+    /// Set here rather than by [`reconcile_evolute_reimbursement`], which is handed two totals and
+    /// never sees the file behind them. Whoever opened one is the only party that knows — the same
+    /// division [`Readings::from_source`](crate::green_button) makes on the meter side.
+    #[must_use]
+    pub fn with_charges_notes(mut self, notes: ChargesNotes) -> Self {
+        self.charges = notes;
+        self
+    }
 }
 
 /// The calendar month a set of sessions is for, read off the one report's file name.
@@ -211,31 +269,80 @@ fn month_of(sessions: &Sessions) -> Result<(Date, Date), ReimbursementError> {
     Ok((from, to))
 }
 
-/// Checks that a Charges Report is for the same month as the session report.
+/// Checks a Charges Report against the month the session report names, and collects what it should
+/// say about it.
 ///
 /// Separate from [`reconcile_evolute_reimbursement`], which is handed the report's figures and
 /// never sees the report itself. Both documents are chosen by hand, and picking last month's
 /// Charges Report is an ordinary slip that would otherwise show up as a plausible-looking
 /// underpayment.
 ///
+/// **The month comes from the session report and from nowhere else.** The Charges Report's own
+/// dates are checked against it, never consulted to establish it: they are per row, and a row is
+/// not the document.
+///
+/// Rows are **not** required to agree with each other. What each row's two date columns mean is an
+/// open question with Evolute — see `docs/Questions_for_Evolute.md` — and under the reading that
+/// they state a breaker's subscription span, a mid-month join produces a row differing from its
+/// neighbours in a perfectly correct file. A span inside the month is therefore accepted and
+/// reported; only a span that leaves the month is refused.
+///
 /// # Errors
 ///
-/// [`ReimbursementError::ChargesReportIsForAnotherMonth`] when the spans differ, and whatever
-/// [`reconcile_evolute_reimbursement`] would raise about the session report's own name.
-pub fn check_charges_report_covers_month(
+/// [`ReimbursementError::ChargesReportIsForAnotherMonth`] when no row's span touches the month at
+/// all, which is what picking the wrong file looks like.
+/// [`ReimbursementError::ChargesReportRowsOutsideMonth`] when some rows do touch it and others
+/// reach beyond it — a different fault, and one the first message would describe wrongly. Plus
+/// whatever [`reconcile_evolute_reimbursement`] would raise about the session report's own name.
+pub fn charges_notes(
     sessions: &Sessions,
     charges: &ChargesReport,
-) -> Result<(), ReimbursementError> {
+) -> Result<ChargesNotes, ReimbursementError> {
     let (month_start, month_end) = month_of(sessions)?;
-    if charges.covers_month(month_start) {
-        return Ok(());
+
+    // Touching the month at all is a weaker test than lying within it, and the two failures are
+    // told apart by which of them nothing passes. A file where nothing touches is the wrong file;
+    // a file where something touches and something overhangs is the right file read wrongly, or a
+    // report whose dates mean something other than we think.
+    let touches = |&(from, to): &(Date, Date)| from <= month_end && to >= month_start;
+    if !charges.spans.keys().any(touches) {
+        return Err(ReimbursementError::ChargesReportIsForAnotherMonth {
+            charges_path: charges.path.clone(),
+            charges_from: charges.from,
+            charges_to: charges.to,
+            month_start,
+            month_end,
+        });
     }
-    Err(ReimbursementError::ChargesReportIsForAnotherMonth {
-        charges_path: charges.path.clone(),
-        charges_from: charges.from,
-        charges_to: charges.to,
-        month_start,
-        month_end,
+
+    let outside: Vec<((Date, Date), Vec<usize>)> = charges
+        .spans
+        .iter()
+        .filter(|((from, to), _)| *from < month_start || *to > month_end)
+        .map(|(span, rows)| (*span, rows.clone()))
+        .collect();
+    if !outside.is_empty() {
+        return Err(ReimbursementError::ChargesReportRowsOutsideMonth {
+            charges_path: charges.path.clone(),
+            spans: outside,
+            month_start,
+            month_end,
+        });
+    }
+
+    // Everything left lies within the month. A span shorter than the whole of it is the one thing
+    // worth saying, and it does not stop anything.
+    let partial_spans = charges
+        .spans
+        .iter()
+        .filter(|((from, to), _)| *from != month_start || *to != month_end)
+        .map(|(span, rows)| (*span, rows.clone()))
+        .collect();
+
+    Ok(ChargesNotes {
+        source: Some(charges.path.clone()),
+        statuses: charges.statuses.clone(),
+        partial_spans,
     })
 }
 
@@ -326,6 +433,10 @@ pub fn reconcile_evolute_reimbursement(
         dollar_variance: reimbursed - cost_recovery_amount,
         remittance_variance: reimbursed - charges_report_amount,
         notes: sessions.notes(AnomalyKind::bears_on_energy),
+        // Default: this function is handed two figures and never sees the report they came from,
+        // so it has nothing to say about it. Whoever opened the file fills this in, the way
+        // `Readings::from_source` is filled in.
+        charges: ChargesNotes::default(),
     })
 }
 
@@ -493,7 +604,16 @@ impl fmt::Display for ReimbursementReconciliation {
             )
         )?;
 
-        write!(f, "{}", self.notes.to_markdown())
+        write!(f, "{}", self.notes.to_markdown())?;
+        // After the session notes, in the order the two documents are read. The Charges Report
+        // section always names its file and states the Bill_Status tally, even when there is
+        // nothing wrong: the tally is the evidence that every row was counted, and a reader
+        // checking a total against Evolute's own document wants to see it.
+        let charges = self.charges.to_markdown();
+        if !charges.is_empty() {
+            write!(f, "\n{charges}")?;
+        }
+        Ok(())
     }
 }
 
@@ -506,6 +626,7 @@ mod test {
         session::test_support::session,
     };
     use jiff::civil::date;
+    use std::{collections::BTreeMap, path::Path};
 
     const JUNE: &str = "data/Session_Report_June_1_2026-June_30_2026.csv";
 
@@ -712,5 +833,181 @@ mod test {
         assert!(verdict(-0.001).contains("reimbursed what"));
         assert!(verdict(0.01).contains("more than"));
         assert!(verdict(-0.01).contains("less than"));
+    }
+
+    /// A June session report, which is what fixes the month every check below runs against.
+    fn june_report() -> Sessions {
+        as_report(vec![session(
+            JUNE,
+            2,
+            "S1",
+            "2026-06-10T06:00:00Z",
+            60,
+            10.0,
+        )])
+    }
+
+    /// A Charges Report built from the spans given, with every row `Issued` unless said otherwise.
+    fn charges(spans: &[((Date, Date), Vec<usize>)], statuses: &[(&str, usize)]) -> ChargesReport {
+        let spans: BTreeMap<(Date, Date), Vec<usize>> = spans.iter().cloned().collect();
+        let rows = spans.values().map(Vec::len).sum();
+        ChargesReport {
+            path: PathBuf::from("charges.csv"),
+            from: spans.keys().next().expect("at least one span").0,
+            to: spans.keys().map(|(_, to)| *to).max().expect("at least one"),
+            spans,
+            total_kwh: 0.0,
+            total_amount: 0.0,
+            rows,
+            statuses: statuses
+                .iter()
+                .map(|(name, n)| ((*name).to_owned(), *n))
+                .collect(),
+        }
+    }
+
+    fn june(day: i8) -> Date {
+        date(2026, 6, day)
+    }
+
+    /// The whole month on every row is the ordinary case, and says nothing beyond the tally.
+    #[test]
+    fn a_report_covering_the_whole_month_on_every_row_is_clean() {
+        let notes = charges_notes(
+            &june_report(),
+            &charges(&[((june(1), june(30)), vec![2, 3])], &[("Issued", 2)]),
+        )
+        .unwrap();
+        assert!(notes.is_clean(), "{notes:?}");
+        assert_eq!(notes.source.as_deref(), Some(Path::new("charges.csv")));
+    }
+
+    /// A row billed for part of the month is accepted and reported. Refusing it would refuse a
+    /// correct file, if the dates mean what a subscription span would mean.
+    #[test]
+    fn a_row_billed_for_part_of_the_month_is_reported_not_refused() {
+        let notes = charges_notes(
+            &june_report(),
+            &charges(
+                &[
+                    ((june(1), june(30)), vec![2, 3]),
+                    ((june(15), june(30)), vec![4]),
+                ],
+                &[("Issued", 3)],
+            ),
+        )
+        .unwrap();
+        assert!(!notes.is_clean());
+        assert_eq!(notes.partial_spans, vec![((june(15), june(30)), vec![4])]);
+    }
+
+    /// A row reaching outside the month stops the reconciliation, and the message names it.
+    #[test]
+    fn a_row_reaching_outside_the_month_is_refused_naming_the_rows() {
+        let err = charges_notes(
+            &june_report(),
+            &charges(
+                &[
+                    ((june(1), june(30)), vec![2, 3]),
+                    ((date(2026, 5, 20), june(30)), vec![4]),
+                ],
+                &[("Issued", 3)],
+            ),
+        )
+        .unwrap_err();
+        assert!(matches!(
+            err,
+            ReimbursementError::ChargesReportRowsOutsideMonth { .. }
+        ));
+        let message = err.to_string();
+        assert!(message.contains("2026-05-20"), "{message}");
+        assert!(message.contains("rows 4"), "{message}");
+    }
+
+    /// Nothing touching the month at all is the wrong file, and gets the message that says so
+    /// rather than the one that lists rows.
+    #[test]
+    fn a_report_for_another_month_entirely_is_called_the_wrong_file() {
+        let err = charges_notes(
+            &june_report(),
+            &charges(
+                &[((date(2026, 5, 1), date(2026, 5, 31)), vec![2])],
+                &[("Issued", 1)],
+            ),
+        )
+        .unwrap_err();
+        assert!(matches!(
+            err,
+            ReimbursementError::ChargesReportIsForAnotherMonth { .. }
+        ));
+        assert!(err.to_string().contains("wrong file"), "{err}");
+    }
+
+    /// The report gains a Charges Report section naming the file and the tally. The GUI splits the
+    /// report on its headings, so a section here is a panel there — which is what puts these
+    /// findings on screen as well as in the log.
+    #[test]
+    fn the_report_carries_a_charges_report_section() {
+        let notes = charges_notes(
+            &june_report(),
+            &charges(
+                &[((june(1), june(30)), vec![2, 3, 4])],
+                &[("Issued", 2), ("Void", 1)],
+            ),
+        )
+        .unwrap();
+        let text = reconcile_evolute_reimbursement(
+            &june_report(),
+            0.0,
+            0.0,
+            0.0,
+            rates(june(1), 0.11, 0.09, 0.07),
+        )
+        .unwrap()
+        .with_charges_notes(notes)
+        .to_string();
+
+        // Setext-style, as `markdown::h2` writes every other section heading.
+        assert!(text.contains("Charges Report\n--------------"), "{text}");
+        assert!(text.contains("charges.csv"), "{text}");
+        assert!(text.contains("`Void`"), "{text}");
+        assert!(text.contains("Issued 2, Void 1"), "{text}");
+    }
+
+    /// Figures given rather than read carry no Charges Report section: there is no file to name
+    /// and nothing was inspected.
+    #[test]
+    fn a_reconciliation_from_bare_figures_carries_no_charges_section() {
+        let text = reconcile_evolute_reimbursement(
+            &june_report(),
+            0.0,
+            0.0,
+            0.0,
+            rates(june(1), 0.11, 0.09, 0.07),
+        )
+        .unwrap()
+        .to_string();
+        assert!(!text.contains("Charges Report\n--------------"), "{text}");
+    }
+
+    /// A status this software has no rule for is a finding, and the row still counts.
+    #[test]
+    fn an_unfamiliar_bill_status_is_reported() {
+        let notes = charges_notes(
+            &june_report(),
+            &charges(
+                &[((june(1), june(30)), vec![2, 3, 4])],
+                &[("Issued", 2), ("Void", 1)],
+            ),
+        )
+        .unwrap();
+        assert!(!notes.is_clean());
+
+        let log = notes.log().expect("notes read from a file");
+        let text = log.render();
+        assert!(text.contains("Read Charges Report"), "{text}");
+        assert!(text.contains("`Void`"), "{text}");
+        assert!(text.contains("Issued 2, Void 1"), "the tally:\n{text}");
+        assert_eq!(log.path(), PathBuf::from("charges.charges.csv.read.log"));
     }
 }
