@@ -1,4 +1,4 @@
-# Time
+# `time` module
 
 The `time` module: everything about dates, times and zones that more than one part of this software
 needs. Module-specific date arithmetic stays in its own module.
