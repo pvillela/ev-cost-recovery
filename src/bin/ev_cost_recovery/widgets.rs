@@ -159,15 +159,19 @@ pub fn schedule(ui: &mut egui::Ui, form: &mut RatesForm, salt: &str) -> bool {
 
 /// One amount in a headline table.
 ///
-/// `answer` sets it in bold and colours it by its own sign. That is for the single figure the
-/// screen exists to state — a surplus, a variance — and not for the figures it is made of, whose
-/// signs are only bookkeeping.
+/// `answer` colours it by its own sign. That is for the single figure the screen exists to state —
+/// a surplus, a variance — and not for the figures it is made of, whose signs are only bookkeeping.
 pub fn amount_label(ui: &mut egui::Ui, amount: f64, answer: bool) {
+    // Colour, and nothing else. The amounts are aligned by padding them to twelve columns, which
+    // holds only while every row is drawn in the same face, and `theme::Bold` swaps the family for
+    // the bold one — which is the proportional list. A bold answer was therefore not monospace, and
+    // its digits did not stand under the digits above it. There is no bold monospace face to reach
+    // for, so the answer is set apart by colour alone.
     let mut text = egui::RichText::new(format!("{amount:>12.2}"))
         .monospace()
         .size(18.0);
     if answer {
-        text = text.bold().color(if amount < 0.0 {
+        text = text.color(if amount < 0.0 {
             ui.visuals().error_fg_color
         } else {
             theme::accent(ui)
