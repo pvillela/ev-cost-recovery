@@ -16,7 +16,7 @@
   - They always state the report's own month, identically on every row, whatever the breaker's history.
   - They state the span the breaker was actually subscribed for, which happens to be the whole month whenever nobody joined or left.
 
-  If the second is right: for a breaker whose subscription started or ended part-way through the month, is the span clipped to the month the report covers, or does it carry the subscription's own dates — which for a long-standing subscriber would be a start date years in the past? And can rows within one report differ from each other?
+  If the second is right: for a breaker whose subscription started or ended part-way through the month, is the span clipped to the month the report covers, or does it carry the subscription's own dates — which for a long-standing subscriber could be a start date years in the past? And can rows within one report differ from each other?
 - What values can `Bill_Status` take? We have only ever seen `Issued`. For each of the others, does the row's `kWh` and `Cost` represent an amount actually billed to the building? We currently count every row towards the month's totals whatever its status, since dropping one on a status we have not met would quietly change a figure.
 
 

@@ -46,10 +46,11 @@ carries `S37487` twice, per the code's own docs) where one of them is inverted. 
 crashes in `Interval::from_start_end` (`time/base.rs`).
 
 **Fix:** filter `InconsistentDuration` sessions out of the report-anomaly chain in
-`collect_session_anomalies`, or call `Session::lenient_intersects` there — the method the doc at
-`common.rs:222-235` says exists precisely for the report's "excluded session" case.
+`collect_session_anomalies`~~, or call `Session::lenient_intersects` there — the method the doc at
+`common.rs:222-235` says exists precisely for the report's "excluded session" case~~.
 
 **Stale comments caused by this bug** (fixing the bug restores them):
+
 - `peak.rs:35` — "Sessions excluded outright are *not* here" is false: an excluded session can
   arrive via its `DuplicateId` anomaly.
 - `common.rs:205-206` — "so it never reaches the estimating logic at all" — same reason.
@@ -151,7 +152,7 @@ fragment count is still 7 but the period sits elsewhere), the `expect` panics on
 than returning a layout error. The 7-fragment count *is* validated (`bill_pdf.rs:422-428`), but the
 matched-fragment-at-index-1 assumption is not.
 
-**Fix:** re-check `reading_period(&period.text).is_some()` and return `shape(...)` otherwise, or
+**Fix:** ~~re-check `reading_period(&period.text).is_some()` and return `shape(...)` otherwise, or~~
 match by label rather than position.
 
 ### 9. LOW — `parse_duration` can overflow on absurd hour fields
@@ -161,7 +162,7 @@ match by label rather than position.
 `h*3600 + m*60 + sec` is computed on unbounded `u64` hours. Overflow panics in debug builds and
 wraps silently in release for an absurd `Conn_Duration` hour value.
 
-**Fix:** checked arithmetic, or an early bound on the hour field.
+**Fix:** checked arithmetic~~, or an early bound on the hour field~~.
 
 ### 10. LOW — duplicate CSV headers resolve last-wins, the workbook reader first-wins
 
@@ -170,7 +171,7 @@ wraps silently in release for an absurd `Conn_Duration` hour value.
 The CSV header map is built with `collect`, so a repeated header silently keeps the last column. The
 workbook reader (`excel.rs:792-793`) documents first-wins. The two paths should agree.
 
-**Fix:** reject duplicate headers, or match the workbook reader's first-wins behaviour.
+**Fix:** reject duplicate headers~~, or match the workbook reader's first-wins behaviour~~.
 
 ### 11. LOW — Charges Report money parser does not handle parentheses for negatives
 
@@ -179,6 +180,8 @@ workbook reader (`excel.rs:792-793`) documents first-wins. The two paths should 
 `money()` strips `$` and `,` but not parentheses. The doc asserts the sign is outside the `$`
 (`-$1.00`), which holds for the data seen — but a single cell exported with accounting-style
 `(1.00)` rejects the month's file. Defensive; not seen in the wild.
+
+**Fix:** None.
 
 ### 12. LOW — PDF CMap `bfrange` list form does not verify list length
 
@@ -202,7 +205,7 @@ negative `avg_kw`, which scales negative into `load_over_panels` (`common.rs:698
 yields a negative panel count and produces a negative `energy_based_kw`. NaN energy is silently
 substituted as `BREAKER_RATING_KW`, and the `ExcessiveAvgKw` check never fires (`NaN > x == false`).
 
-**Fix:** reject non-finite/negative energy at parse, and/or assert non-negative scaling in
+**Fix:** reject non-finite/negative energy at parse, and~~/or~~ assert non-negative scaling in
 `load_over_panels`.
 
 ---
@@ -229,76 +232,147 @@ Comments that are unclear, over-verbose, or drifted from the code. Suggested rep
 each.
 
 1. **`src/error.rs:20-26`** — the `ConversionError` doc repeats the module doc's "who raises it"
-   and "`ReadError` went back" reasoning nearly verbatim. Trim to:
+   and "`ReadError` went back" reasoning, which the module doc already covers. Keep only the summary:
    > A workbook could not be produced from the file it was to be converted from.
-   > Lives here rather than in `api::error` for the reason the module states: it is raised by the
-   > two workbook writers, which do not depend on the API.
 
 2. **`src/time/tou.rs:190-194`** — `is_off_peak`'s doc says it answers "entirely outside Toronto
-   Hydro's `[07:00, 19:00)` demand window", but on weekends/holidays the whole day is off-peak, so
-   hours inside 07:00-19:00 still return `true`. The replacement must describe off-peak itself, not
-   name the `_nop` columns (which live in `green_button::peaks`, not here). Replace with:
-   > Whether `interval` lies entirely in the off-peak period: weekdays 19:00-07:00, and weekends
-   > and holidays all day.
-   
-3. **`src/green_button/peaks.rs:39-40`** — `max_kw_nop`'s `None` trigger is understated ("only for
-   a period truncated to a weekend"). The real condition is any period with no interval outside
-   off-peak. Replace "which happens only for a period truncated to a weekend" with "e.g. a period
-   truncated to a weekend".
+   Hydro's `[07:00, 19:00)` demand window", which is false on weekends and holidays (off-peak all
+   day). Replace with:
+   > Whether `interval` lies entirely in the off-peak period: weekdays 19:00-07:00, and weekends and
+   > holidays all day.
+
+3. **`src/green_button/peaks.rs:37-43`** — the four peak fields document `None` inconsistently:
+   `max_kw`'s doc says nothing about it, `max_kva` and `max_kva_nop` have no doc at all, and
+   `max_kw_nop`'s names only "a period truncated to a weekend". A peak field is `None` when its
+   series carries no reading for the period; a `_nop` field is additionally `None` when the data
+   contains no non-off-peak hour. Proposed docs:
+   > /// Highest kW over every interval in the period. `None` when the period has no kW reading.
+   > /// Highest kW within Toronto Hydro's 7-7 demand window. `None` when the period has no kW
+   > /// reading, or the data contains no non-off-peak hour.
+   > /// Highest kVA over every interval in the period. `None` when the period has no kVA reading.
+   > /// Highest kVA within Toronto Hydro's 7-7 demand window. `None` when the period has no kVA
+   > /// reading, or the data contains no non-off-peak hour.
 
 4. **`src/green_button/read_xml.rs:152-154`** — three sentences belabour one point. Replace with:
-   > // `period_values` already computes the period's peaks and anomaly counts; picking the row is
+   > // `period_values` already computes each period's peaks and anomaly counts; picking the row is
    > // the whole of the work.
 
 5. **`src/bin/ev_cost_recovery/theme.rs:3`** — "Kept identical" is false: `ev_peak_gui/theme.rs`
-   added a `ceiling` accent this file lacks. Replace with "Kept close so the two apps look alike,
-   though each carries accents the other does not (e.g. `ev_peak_gui`'s `ceiling`)."
+   has a `ceiling` accent this file lacks. Replace "Kept identical" with "Kept close".
 
-6. **`src/api/pure/peak_power.rs:269-271`** — "Not merged: which records describe one session is
-   decided here" is stale; merging happens in `Sessions::merge` (called by `api::io`), and
-   `peak_power` takes an already-merged `&Sessions`. Replace with "already merged and bucketed into
-   `Sessions`; see 'Sessions the reports share' below."
+6. **`src/api/pure/peak_power.rs:269-271`** — "Not merged: … decided here" is stale; the argument
+   is an already-merged `&Sessions`. Replace with:
+   > - `sessions` - every session from every report covering the period, already merged (see
+   >   "Sessions the reports share" below).
 
 7. **`src/session/mod.rs:21-25`** — "Its one entry point, `csv_sessions`, is called from … `excel`"
-   is wrong: `excel` calls `csv_session_rows`, not `csv_sessions`. Both readers return
-   `SessionCsvError`. Reword to name the two entry points and their callers.
+   is wrong: `excel` calls `csv_session_rows`; there are two readers. Correct that clause:
+   > // Crate-private. Its two readers -- `csv_sessions` (from `api::io` and the `#[cfg(test)]`
+   > // modules below) and `csv_session_rows` (from `excel`) -- are why those tests live in `src/`
+   > // rather than `tests/`. Nothing outside the crate calls either: the API takes paths and hands
+   > // back figures, never a `Sessions`. Keeping the module private keeps `SessionCsvError` -- the
+   > // type both return -- off the public surface too.
 
 8. **`src/api/pure/reimbursement.rs:448`** — "Half a cent, for the reason `verdict` uses the same
-   threshold" is circular. Replace with: "Half a cent, where the printed figure stops; see `verdict`
-   below."
+   threshold" is circular. Replace with:
+   > // Half a cent, where the printed figure stops.
 
-9. **`src/api/pure/energy.rs:279-283`** — repeats the function doc and the `$0.006000`/`$0.006177`
-   reference-bill figures (also in the test doc). Replace with:
-   > // Levied over `adjusted_kwh_used` -- the base the bill's three TOU consumption lines sum to --
-   > // so the EV share is the EV adjusted kWh, not the metered figure.
+9. **`src/api/pure/energy.rs:279-283`** — repeats the function doc and the reference-bill figures.
+   Replace with:
+   > // Levied over `adjusted_kwh_used`, not the metered `kwh_used`, so the EV share is the EV
+   > // adjusted kWh.
 
 10. **`src/bin/ev_cost_recovery/state.rs:826-829`** — "which is how every report looked to this
-    function before top-level titles were recognised" is change-history. Drop it.
+    function before top-level titles were recognised" is change-history. Delete the parenthetical.
 
-11. **`src/session/common.rs:464`** — "Instantiate `Self``." (with a stray backtick) is content-free.
-    Replace with: "A bracket from `min` and `max`; panics unless `min <= max`."
+11. **`src/session/common.rs:464`** — "Instantiate `Self``." (stray backtick) is content-free.
+    Replace with:
+    > A bracket from `min` and `max`; panics unless `min <= max`.
 
-12. **`src/session/common.rs:271`** — `avg_kw`'s doc omits the spike-substitution contract that
-    `peak.rs` relies on. Append: "For a spike (zero charge time) the division is not real; it
-    substitutes `0.0` for zero energy and `BREAKER_RATING_KW` otherwise, so a spike can still be
-    listed."
+12. **`src/session/common.rs:271`** — `avg_kw`'s doc omits the spike fallback that `peak.rs` relies
+    on. Append:
+    > Non-finite results (a spike) are substituted: `0.0` for zero energy,
+    > [`BREAKER_RATING_KW`] otherwise.
 
-13. **`src/session/excel.rs:578-580`** — "A `<stem>.session.xlsx.read.log` is written beside the
-    workbook" is false: the reader returns it unwritten on `Sessions::logs`; only a binary writes
-    it. Replace "is written beside the workbook" with "is returned, unwritten, on `Sessions::logs`".
+13. **`src/session/excel.rs:578-580`** — "is written beside the workbook" is false: the reader
+    returns the log unwritten on `Sessions::logs`; only a binary writes it. Replace that phrase with
+    "is returned, unwritten, on `Sessions::logs`".
 
-14. **`src/session/excel.rs:588`** — "treated as trailing blanks" is misleading: the reader skips
-    any row with an empty id, at any position. Replace with "Rows with no `Charge_Session_ID` at
-    all are ignored."
+14. **`src/session/excel.rs:588`** — "treated as trailing blanks" is misleading: rows with an empty
+    id are skipped at any position. Replace with:
+    > Rows with no `Charge_Session_ID` at all are ignored.
 
-15. **Run-log rationale repeated at ~11 sites** (`cost_recovery_cli.rs`, `cost_recovery_surplus_cli.rs`,
-    `energy_cli.rs`, `energy_cost_cli.rs`, `peak_power_cli.rs`, `peak_power_cost_cli.rs`,
-    `ev_csv_to_xlsx.rs`, `gb_peak_values.rs`, `ev_cost_recovery/state.rs` ×4, `ev_peak_gui/state.rs`)
-    — the same "the library returns logs unwritten; a binary is where they land" rationale is
-    restated near-verbatim. Keep the full rationale once and shorten the repeats to a pointer.
+15. **Run-log rationale repeated at 13 sites** — the same point ("the library returns its run log
+    unwritten; the binary/app writes it") is restated at 13 call sites in three phrasings: the
+    two-line CLI comment in `cost_recovery_cli.rs`, `cost_recovery_surplus_cli.rs`, `energy_cli.rs`,
+    `energy_cost_cli.rs`, `peak_power_cli.rs`, `peak_power_cost_cli.rs`; a variant in
+    `ev_csv_to_xlsx.rs` and `gb_peak_values.rs`; and the "app is the end of the line" wording in
+    `ev_cost_recovery/state.rs` (×4) and `ev_peak_gui/state.rs`. The rationale already lives on
+    `Sessions::logs`/`SessionNotes::write_logs`; shorten the call sites to a pointer.
 
-16. **`src/session/common.rs:104-110` vs `732-735`** — the same three-check consistency derivation
-    is stated twice. Keep one copy and defer the other to it.
+16. **`src/session/common.rs:101-120` vs `724-747`** — `AnomalyKind::InconsistentDuration` re-lists
+    the three consistency checks and re-derives the window/check-1 rationale, all already carried by
+    `duration_is_consistent`'s doc. In the `InconsistentDuration` doc, replace the re-listing and
+    re-derivation with: "The test is `duration_is_consistent`, which carries the three checks and
+    their derivation."
+
+17. **`src/session/csv.rs:719`** — "see `parse_datetime`" names no such function; the reader's
+    parser is `parse_local`. Replace `parse_datetime` with `parse_local`.
+
+18. **`src/hydro_bill/bill_pdf.rs:216`** — "`from_pdf` attaches one on the way out" names no such
+    function; it is `hydro_bill_from_pdf`. Replace `from_pdf` with `hydro_bill_from_pdf`.
+
+19. **`src/api/pure/peak_power.rs:131`** — typo: "Onario Electricity Rebate" → "Ontario Electricity
+    Rebate".
+
+20. **`src/session/peak.rs:321`** — "an `end` that is not names a geometry" is missing "on the
+    grid". Replace with "an `end` that is not on the grid names a geometry".
+
+21. **`src/session/common.rs:455`** — calls `TIME_GRID_STEP` "crate-private", but it is `pub`
+    (`common.rs:50`). Drop "crate-private".
+
+22. **`src/green_button/excel.rs:11`** — `tests/fixtures/billed_period.xlsx` is wrong; the fixture
+    is at `tests/fixtures/green_button/billed_period.xlsx`.
+
+23. **`src/green_button/excel.rs:8`** — `docs/reference/Green_Button_Peak_Values-python-2026-07-16.xlsx`
+    is wrong; the file is at `data/reference/green_button/Green_Button_Peak_Values-python-2026-07-16.xlsx`.
+
+24. **`src/hydro_bill/bill_pdf.rs:433-434`** — "The first two columns are the maximum … and the
+    second is that figure prorated" is self-contradictory; only the first column is the maximum.
+    Replace with: "The first column is the maximum within the 07:00-19:00 demand window; the second
+    is that figure prorated to 30 days."
+
+25. **Redundant — `session`** (each restates a sibling doc that already carries the point):
+    - `common.rs:208-211` repeats `duration_is_consistent`'s one-minute-inversion example
+      (`common.rs:115-120`).
+    - `common.rs:601-607` repeats the Vec-vs-`BTreeSet`/id-reuse note at `common.rs:351-355`.
+    - `common.rs:788-798` repeats `duplicate_id_anomalies`'s "symmetric, can't distinguish a reused
+      id" note.
+    - `common.rs:1103-1104` repeats the `sources` field doc (`common.rs:1016-1019`).
+    - `common.rs:1237-1243` repeats `Sessions::write_logs`'s `# Errors` clause.
+    - `peak.rs:150-160` and `peak.rs:374-379` restate `SEGMENT_DURATION`'s rounding argument and
+      the 20-minute tiling example.
+    - `site_model.rs:34-38` restates the module note.
+    - `csv.rs:391-393` restates the numbered parse steps below it.
+    - `report.rs:437-438` repeats the module note's "session ids" bullet.
+
+26. **Redundant — `green_button`, `hydro_bill`, `lib.rs`**:
+    - `green_button/peaks.rs:454-456` and `green_button/read_xml.rs:230-232` test docs repeat the
+      field/`Display` docs.
+    - `hydro_bill/billing_period.rs:68` — the `BILL_END_DAY` doc's "was in three places before it
+      was here" repeats the module note's "three places" history (`billing_period.rs:38-41`).
+    - `hydro_bill/mod.rs:40-42` repeats the module doc ("reading a PDF is a job in its own right",
+      "read better with it named") verbatim.
+    - `lib.rs:4-7` restates the `error.rs`/`api::io` placement rationale.
+
+27. **Redundant — `api`**:
+    - `io.rs`: the run-log rationale appears in 7 doc comments (extends issue 15) and the
+      coverage-check sentence in 6.
+    - `io.rs`: a "read the bill first" inline comment is duplicated.
+    - `energy.rs`: the `ontario_electricity_rebate` field doc is tautological (restates the name).
+    - `energy.rs`: a doc paragraph is misplaced onto the `bill()` fixture doc.
+    - `peak_power.rs`: `check_period_covered`'s doc repeats the `PeriodNotFullyCovered` variant doc;
+      a bill-total comment duplicates `energy.rs`.
 
 ---
 
