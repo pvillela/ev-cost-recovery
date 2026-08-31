@@ -41,8 +41,8 @@ echo "Installing oh-my-pi ..."
 # bun install -g @oh-my-pi/pi-coding-agent
 curl -fsSL https://omp.sh/install | sh
 
-echo "Installing Gemini CLI ..."
-(source ${NVM_DIR}/nvm.sh && npm install -g @google/gemini-cli)
+# echo "Installing Gemini CLI ..."
+# (source ${NVM_DIR}/nvm.sh && npm install -g @google/gemini-cli)
 
 echo "Installing herdr ..."
 curl curl -fsSL https://herdr.dev/install.sh | sh
