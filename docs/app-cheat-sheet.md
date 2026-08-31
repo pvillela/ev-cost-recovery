@@ -31,10 +31,14 @@ EV delivery cost     -91.52
 Surplus             -159.45          (red, and "fell short" in the report)
 ```
 
-The report below runs to 130 lines. May's file is a mock built by `scripts/make-may-mock.py`; only
+The report below runs to 142 lines. May's file is a mock built by `scripts/make-may-mock.py`; only
 June's is based on real anonymized data.
 
 ## What to look at
+
+The tab bar holds four: **Cost recovery**, **Peak power detail**, **Evolute reimbursement** and
+**Convert to workbook**. The first two are the run above; the last two are separate jobs with their
+own inputs, and have their own sections below.
 
 **Cost recovery tab.** The four headline amounts are the report's own summary table — check they
 agree. Collapse and expand the sections. *Session data* should name both CSVs. *Sessions needing a
@@ -60,7 +64,7 @@ peaked, from the sessions — for the kVA section, `19:45`. The demand charge is
 | Rates `0.20` / `0.20` / `0.20` | Surplus **-5.14** — near break-even, so you can watch the sign flip either way |
 | Tick *rates changed*, leave `0.1100/0.0900/0.0700` from 1 May, add `0.30` flat from `2026-06-01` | Cost recovery **359.95**, surplus **+82.41**; the recovery report gains a second stretches table |
 | Change any picker after a run | Figures vanish, and the detail tab greys out and drops you back |
-| Clear one the mid-peak rate (delete it, don't set it to zero) and run | `the mid-peak rate is blank` — refused, not read as zero |
+| Clear the mid-peak rate (delete it, don't set it to zero) and run | `the mid-peak rate is blank` — refused, not read as zero |
 | Type `eleven cents` into the mid-peak rate | `cannot read "eleven cents" as the mid-peak rate: …` |
 
 ## Errors worth provoking
@@ -103,9 +107,85 @@ cp data/Session_Report_June_1_2026-June_30_2026.csv data/sessions.csv
 Picking `data/sessions.csv` is refused at the picker, before anything is read, and
 **Work out the surplus** stays disabled until you replace it. Delete the copy afterwards.
 
+## The Evolute reimbursement tab
+
+A separate run, and a separate question: whether Evolute paid what our rates earned over a
+**calendar month**. That is not the billing period the surplus covers, so the two figures are not
+two views of one number.
+
+| Field | Value |
+|:---|:---|
+| Evolute Session Report | `data/Session_Report_June_1_2026-June_30_2026.csv` |
+| Evolute Charges Report | `data/XX-XX_charges_2026-06-01T00_00_00-04_00.csv` |
+| Reimbursement | `246.26` |
+| Rates | **Effective from** `2026-06-01`, and `0.1100` / `0.0900` / `0.0700` |
+
+Only June works. It is the one month with both a real session report and a Charges Report.
+
+Press **Reconcile the month**. Expect:
+
+```
+June 2026
+
+Reimbursement received   246.26 $
+Charges Report total    -246.26 $
+Remittance variance        0.00 $
+
+Reimbursement received   246.26 $
+Cost recovery earned    -114.67 $
+Dollar variance          131.59 $
+```
+
+Two subtractions, not one. The first asks whether the money that arrived matches Evolute's own
+Charges Report; the second asks whether it matches what our rates earned. The report says
+"sent exactly what its own Charges Report comes to" and "reimbursed more than the cost-recovery
+rates come to".
+
+Below the headline, in the sections:
+
+| Section | What to check |
+|:---|:---|
+| *Energy variance* | `1330.30` kWh on the Charges Report against `1315.73` priced, a variance of `14.57` — the two come from different documents and are not expected to agree exactly |
+| *Sessions needing a look* | Two rows, both `DuplicateId`, both session `S37487` |
+| *Charges Report* | `Bill_Status tally: Issued 38.` |
+
+Worth trying:
+
+| Do this | Expect |
+|:---|:---|
+| Type `0` into **Reimbursement** | Both variances negative — `-246.26` and `-114.67` — and "sent less than its own Charges Report" |
+| Clear **Reimbursement** and run | `the reimbursement amount is blank` — a blank field is refused, because zero is a real answer and has to be meant |
+| Pick the **May** session report against the same Charges Report | `no row of the Charges Report falls in 2026-05-01 to 2026-05-31, which is the month the session report is for; its rows cover 2026-06-01 to 2026-06-30. This is usually the wrong file.` |
+
+## The Convert to workbook tab
+
+Turns one source file into an Excel workbook beside it, for reading by eye. Nothing else in the app
+depends on the result — the other tabs read the source files themselves.
+
+**Convert** *Session report* or *Green Button export* chooses which; each keeps its own file and its
+own last result, so switching between them loses nothing.
+
+| Do this | Expect |
+|:---|:---|
+| Convert `data/Session_Report_June_1_2026-June_30_2026.csv` | A **Replace existing workbook?** modal, because `data/` already holds that workbook. **Cancel** leaves it alone; **Replace** overwrites it and anything written into it by hand |
+| Convert the Green Button export | The same prompt, and a pause while a multi-year export is parsed. The workbook has two sheets: `Peak_values`, one row per billing period, and `Interval_values`, every hour |
+
+An existing workbook is never overwritten silently, in
+either conversion.
+
 ## What it writes
 
-A run rewrites a log beside each Session Report and Green Button file it reads. Both timestamps should move on every run, whether or not you save anything.
+A run rewrites a log beside each file it reads, named after the file with the kind of read appended:
 
-Nothing else is written unless you press **Save…**, and each tab saves its own document.
+| Tab | Logs written |
+|:---|:---|
+| Cost recovery | `*.session.csv.read.log` beside each of the two session reports, and `*.meter.xml.read.log` beside the Green Button export |
+| Evolute reimbursement | `*.session.csv.read.log` beside the session report, and `*.charges.csv.read.log` beside the Charges Report |
+| Convert to workbook | The workbook itself, and `*.session.convert.log` or `*.meter.convert.log` beside the source |
+
+Every one of those timestamps should move on the run that reads the file, whether or not you save
+anything.
+
+Nothing else is written unless you press **Save…**, and each tab saves its own document. The
+Convert tab is the exception: converting *is* the write, and there is nothing to save afterwards.
 
