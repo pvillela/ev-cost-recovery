@@ -434,8 +434,7 @@ impl IntervalEstimates {
             } else {
                 ids.join(", ")
             };
-            // Wrapped rather than put in a table cell: a markdown row is one line, so a segment of
-            // twelve sessions could not be broken across lines inside one.
+            // Wrapped so a long segment can break across lines.
             out.push(wrap(&format!("- {} - {body}", hm(seg.start())), "  "));
         }
 

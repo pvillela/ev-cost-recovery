@@ -18,12 +18,6 @@ use std::{
 use umya_spreadsheet::XlsxError;
 
 /// A workbook could not be produced from the file it was to be converted from.
-///
-/// Here rather than in `api::error` because the modules that *raise* it are here: both
-/// [`session::session_csv_to_xlsx`](crate::session::session_csv_to_xlsx) and
-/// [`write_gb_workbook`](crate::green_button::write_gb_workbook) return it, and neither depends on
-/// the API. `ReadError`, which travelled with it once, went back to `api::error`: nothing outside
-/// `api::io` ever raised that one.
 #[derive(Debug)]
 pub enum ConversionError {
     /// The workbook's name would be the input's own, so the conversion would read and write one

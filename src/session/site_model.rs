@@ -31,11 +31,9 @@ pub const BREAKER_RATING_A: f64 = 40.0;
 /// Sets the J1772 pilot current the vehicle is permitted to draw.
 pub const CONTINUOUS_DUTY_DERATE: f64 = 0.80;
 
-/// Number of installed panels, each on a transformer of its own.
-///
-/// Every figure this module produces is for one panel and its transformer. A site of several is
-/// that figure taken several times, which holds only while each panel is fed the way the one
-/// modelled here is.
+/// Number of installed panels, each on a transformer of its own. A site of several is that
+/// figure taken several times, which holds only while each panel is fed the way the one modelled
+/// here is.
 pub const PANEL_COUNT: u8 = 1;
 
 /// Number of EVSE breakers in one panel. Bounds how many vehicles that panel can charge.

@@ -233,7 +233,7 @@ impl ReimbursementReconciliation {
     ///
     /// Set here rather than by [`reconcile_evolute_reimbursement`], which is handed two totals and
     /// never sees the file behind them. Whoever opened one is the only party that knows — the same
-    /// division [`Readings::from_source`](crate::green_button) makes on the meter side.
+    /// division [`Readings::with_source`](crate::green_button) makes on the meter side.
     #[must_use]
     pub fn with_charges_notes(mut self, notes: ChargesNotes) -> Self {
         self.charges = notes;
@@ -435,7 +435,7 @@ pub fn reconcile_evolute_reimbursement(
         notes: sessions.notes(AnomalyKind::bears_on_energy),
         // Default: this function is handed two figures and never sees the report they came from,
         // so it has nothing to say about it. Whoever opened the file fills this in, the way
-        // `Readings::from_source` is filled in.
+        // `Readings::with_source` is filled in.
         charges: ChargesNotes::default(),
     })
 }
@@ -445,7 +445,7 @@ pub fn reconcile_evolute_reimbursement(
 /// A narrower claim than [`verdict`]'s, and worth keeping apart from it: this one says only
 /// whether Evolute sent what its own Charges Report came to. Our rates are not in it.
 fn remittance_verdict(variance: f64) -> &'static str {
-    // Half a cent, for the reason `verdict` uses the same threshold.
+    // Half a cent, where the printed figure stops.
     if variance.abs() < 0.005 {
         "Evolute sent exactly what its own Charges Report comes to for this month."
     } else if variance > 0.0 {

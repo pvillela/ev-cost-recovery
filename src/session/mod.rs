@@ -18,11 +18,11 @@ use common::*;
 
 mod energy;
 
-// Crate-private. Its one entry point, `csv_sessions`, is called from `api::io`, from `excel`, and
-// from the three `#[cfg(test)]` modules below -- which is why those live in `src/` rather than in
-// `tests/`. Nothing outside the crate calls it: the API takes paths and hands back figures, never
-// a `Sessions`. Keeping the module private keeps `SessionCsvError` -- the type that call returns --
-// off the public surface too, which is where it belongs while nothing outside matches on it.
+// Crate-private. Its two readers -- `csv_sessions` (from `api::io` and the `#[cfg(test)]`
+// modules below) and `csv_session_rows` (from `excel`) -- are why those tests live in `src/`
+// rather than `tests/`. Nothing outside the crate calls either: the API takes paths and hands
+// back figures, never a `Sessions`. Keeping the module private keeps `SessionCsvError` -- the
+// type both return -- off the public surface too.
 mod csv;
 
 mod file_name;

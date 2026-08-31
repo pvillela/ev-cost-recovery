@@ -71,7 +71,6 @@ fn run(
         meter,
     } = peak_power(billing_period_ending, gb_xml, session_csv1, session_csv2)?;
 
-    // The library hands its run logs back rather than writing them; a binary is where they land.
     // Written before the reports are printed, so a failure to write one is not buried under them.
     notes.write_logs()?;
 

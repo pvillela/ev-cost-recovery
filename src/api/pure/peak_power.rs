@@ -128,7 +128,7 @@ pub struct DeliveryCost {
 
     /// HST on delivery charges attributable to EV sessions, before OER.
     pub hst: f64,
-    /// Onario Electricity Rebate
+    /// Ontario Electricity Rebate attributable to EV sessions.
     pub ontario_electricity_rebate: f64,
 
     /// Total delivery cost attributable to EV sessions, net of HST and OER.
@@ -266,9 +266,8 @@ impl Error for PeakPowerError {
 /// - `billing_period_ending` - the billing period, named by the date it closes on. Must be
 ///   [`BILL_END_DAY`](crate::hydro_bill::BILL_END_DAY) of its month.
 /// - `gb_period_values` - that period's figures, read from the meter export.
-/// - `sessions` - every session from every report covering the period, as read, in the order the
-///   reports were read. Not merged: which records describe one session is decided here, since that
-///   is a question about the records rather than about the files they came from.
+/// - `sessions` - every session from every report covering the period, already merged (see
+///   "Sessions the reports share" below).
 ///
 /// # Sessions the reports share
 ///
@@ -482,8 +481,7 @@ pub fn peak_power_cost(
         transmission_network_charge,
         hst,
         ontario_electricity_rebate,
-        // The bill states its own total the same way -- see `HydroBill::bill_total_amount`. The
-        // rebate is held as a positive amount and subtracted, though the bill prints it as a
+        // The rebate is held as a positive amount and subtracted, though the bill prints it as a
         // credit.
         delivery_cost: charges + hst - ontario_electricity_rebate,
         notes,
@@ -673,12 +671,8 @@ fn energy_based(
 /// caller's judgement. This is that judgement, for both entry points: nothing here can be estimated
 /// from a partial period.
 ///
-/// Every figure either function produces is a maximum over the billing period — the interval the
-/// site peaked in, and the EV share of that interval. A gap in the feed does not make the maximum
-/// smaller but still true; it makes it a maximum over some other set of intervals, and the real
-/// peak may be in
-/// the gap. Nothing downstream could detect that, because the estimate is drawn from the sessions
-/// and the sessions are complete.
+/// Nothing downstream could detect a gap, since the estimate is drawn from the sessions; why a
+/// partial maximum is wrong is [`PeakPowerError::PeriodNotFullyCovered`]'s rationale.
 fn check_period_covered(
     billing_period_ending: Date,
     gb_period_values: &PeriodValues,

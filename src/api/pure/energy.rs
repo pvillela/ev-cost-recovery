@@ -81,7 +81,7 @@ pub struct EnergyCost {
 
     /// HST on energy charges attributable to EV sessions, before OER.
     pub hst: f64,
-    /// Ontario Electricity Rebate
+    /// Ontario Electricity Rebate attributable to EV sessions.
     pub ontario_electricity_rebate: f64,
 
     /// Total energy cost attributable to EV sessions, net of HST and OER.
@@ -276,11 +276,8 @@ pub fn energy_cost(bill: &HydroBill, sessions: &Sessions) -> Result<EnergyCost, 
     let mid_peak_cost = adjusted_kwh.mid_peak * th_mid_peak_rate;
     let off_peak_cost = adjusted_kwh.off_peak * th_off_peak_rate;
 
-    // Over `adjusted_kwh_used`, the same base the three band rates are per: the bill's three
-    // time-of-use consumption lines sum to it, not to `kwh_used`. On the reference bill that
-    // quotient is $0.006000/kWh exactly, the published rate; over `kwh_used` it would be
-    // $0.006177, which is no rate anyone charges. So the charge is levied on adjusted kWh and the
-    // EV share of it is the EV adjusted kWh, not the metered figure.
+    // Levied over `adjusted_kwh_used`, not the metered `kwh_used`, so the EV share is the EV
+    // adjusted kWh.
     let th_wholesale_mkt_svc_rate =
         bill.wholesale_market_svc_charge / bill.divisor("Adj. kWh Used", bill.adjusted_kwh_used)?;
     let wholesale_mkt_svc_charge = adjusted_kwh.total_kwh() * th_wholesale_mkt_svc_rate;
@@ -594,15 +591,6 @@ mod test {
         assert!(err.to_string().contains("2026-06-30"), "{err}");
     }
 
-    /// A bill for the fixture period, with figures chosen so that every rate the cost derives comes
-    /// out whole and can be checked by eye.
-    ///
-    /// The three time-of-use consumption lines sum to `adjusted_kwh_used` and not to `kwh_used`,
-    /// which is how a real bill states them, so a rate derived from them is per adjusted kWh. They
-    /// divide into rates of 0.20, 0.15 and 0.10, and HST and the rebate into 13% and 10% of the
-    /// total charges.
-    ///
-    /// The loss factor is 1.05 rather than 1, so a figure priced without it is a different number.
     ///
     /// The lines the cost does not read carry figures too, so a test cannot pass by reading one of
     /// them: nothing here is zero.
@@ -626,6 +614,15 @@ mod test {
         assert!(matches!(err, EnergyError::NoRate { .. }), "{err}");
     }
 
+    /// A bill for the fixture period, with figures chosen so that every rate the cost derives comes
+    /// out whole and can be checked by eye.
+    ///
+    /// The three time-of-use consumption lines sum to `adjusted_kwh_used` and not to `kwh_used`,
+    /// which is how a real bill states them, so a rate derived from them is per adjusted kWh. They
+    /// divide into rates of 0.20, 0.15 and 0.10, and HST and the rebate into 13% and 10% of the
+    /// total charges.
+    ///
+    /// The loss factor is 1.05 rather than 1, so a figure priced without it is a different number.
     fn bill() -> HydroBill {
         HydroBill {
             statement_date: date(2026, 6, 28),

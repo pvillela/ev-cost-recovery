@@ -106,7 +106,6 @@ fn run(
         recovery_rates_at_end,
     )?;
 
-    // The library hands its run logs back rather than writing them; a binary is where they land.
     // Written before the report is printed, so a failure to write one is not buried under it.
     surplus.notes.write_logs()?;
 

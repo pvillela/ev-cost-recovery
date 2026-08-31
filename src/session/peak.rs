@@ -1,4 +1,4 @@
-use super::{Anomaly, Bracket, RSegment, RSession, SEGMENT_DURATION, Segment, Sessions};
+use super::{Anomaly, AnomalyKind, Bracket, RSegment, RSession, SEGMENT_DURATION, Segment, Sessions};
 use crate::{log::SourceLog, time::Interval};
 use std::{error::Error, path::PathBuf, rc::Rc};
 
@@ -147,17 +147,10 @@ pub(crate) fn estimates_from_sessions(
 /// If `ioi`'s duration is not a whole number of [`SEGMENT_DURATION`]s, or is zero. That is the
 /// precondition [`SEGMENT_DURATION`] states, and it is checked rather than accommodated.
 ///
-/// Rounding the segment count up would make the segments overrun the interval — a 20-minute
-/// interval would tile to 20:00–20:15 and 20:15–20:30 — so a session charging only in the overrun
-/// would be counted into the estimates despite falling outside the interval of interest entirely,
-/// and could be reported as its peak. Rounding down would silently leave part of the interval
-/// unestimated. Neither is a defensible answer to a question that should not have been asked, and
-/// both are wrong in a way no figure in the report would reveal.
-///
-/// The legal interval lengths are 15 minutes and an hour, so nothing coming through
-/// `ioi::checked_interval` can reach this. The core stays permissive about *when* an interval
-/// starts, which is what exploratory callers and tests rely on; it was never permissive about how
-/// long one may be.
+/// The panic is the precondition [`SEGMENT_DURATION`] states; its doc carries the rounding
+/// argument. The legal interval lengths are 15 minutes and an hour, so nothing coming through
+/// `ioi::checked_interval` can trip it. The core stays permissive about *when* an interval
+/// starts — which exploratory callers and tests rely on — but never about how long one may be.
 fn segments_for_ioi(ioi: Interval, sessions: &[RSession]) -> Vec<RSegment> {
     let (ioi_secs, seg_secs) = (ioi.duration.as_secs(), SEGMENT_DURATION.as_secs());
     assert!(
@@ -249,8 +242,11 @@ fn collect_session_anomalies(
         // the interval on the same test as the rest, so this table stays a statement about the
         // interval of interest and not about the whole file.
         .chain(
+            // An excluded (inverted) session can still carry a `DuplicateId` anomaly, and
+            // `intersects` panics on an inverted span -- so those are dropped here.
             report_anomalies
                 .iter()
+                .filter(|a| !a.session.anomalies.contains(&AnomalyKind::InconsistentDuration))
                 .filter(|a| a.session.intersects(interval))
                 .cloned(),
         )
@@ -318,7 +314,7 @@ mod test {
     /// The check is not ceremony. This helper used to subtract one [`TIME_GRID_STEP`] and stop
     /// there, inverting a formula `adj_conn_end` no longer has, and so quietly built sessions
     /// ending before the `end` named here for every `end` off the grid. An adjusted end is always
-    /// on the grid -- that is what truncation means -- so an `end` that is not names a geometry the
+    /// on the grid -- that is what truncation means -- so an `end` that is not on the grid names a geometry the
     /// software cannot produce, and a test asking for one is asking about a session that cannot
     /// exist.
     ///
@@ -371,12 +367,8 @@ mod test {
         assert_eq!(segments[3].end(), hour().end());
     }
 
-    /// An interval that is not a whole number of segments is refused rather than tiled.
-    ///
-    /// Rounding up would put the last segment past the interval's end — 20 minutes would tile to
-    /// 20:00–20:15 and 20:15–20:30 — and a session charging only in that overrun would be counted
-    /// into an interval it falls outside of, possibly as the reported peak. Nothing in the output
-    /// would show it.
+    /// An interval that is not a whole number of segments is refused rather than tiled; rounding
+    /// either way is a silent error — see `SEGMENT_DURATION`.
     #[test]
     #[should_panic(expected = "not a positive whole number")]
     fn an_interval_that_is_not_whole_segments_is_refused() {

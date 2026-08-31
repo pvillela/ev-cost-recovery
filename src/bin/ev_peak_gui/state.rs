@@ -119,8 +119,7 @@ impl ConvertState {
                 anomalies,
                 log,
             }) => {
-                // The app is the end of the line, so the log is written here. The library returns
-                // what it found and writes nothing; see `Sessions::logs`.
+                // See `Sessions::logs`.
                 if let Err(e) = log.write() {
                     self.error = Some(format!("{}: {e}", log.path().display()));
                     return;

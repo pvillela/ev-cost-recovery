@@ -205,10 +205,8 @@ impl Session {
     /// [`AnomalyKind::InconsistentDuration`] on conversion, and is sorted into
     /// [`Sessions::excluded`] — so it never reaches the estimating logic at all.
     ///
-    /// What establishes that is check 1 of [`duration_is_consistent`], `conn_start <= conn_end`,
-    /// which is there for this reason. It is not implied by the other two: a one-minute inversion
-    /// with a near-zero duration satisfies both of them, and before check 1 existed such a record
-    /// reached here and panicked.
+    /// What establishes that is check 1 of [`duration_is_consistent`], `conn_start <= conn_end`; see
+    /// its doc for why the other two checks cannot stand in for it.
     ///
     /// Panicking here is therefore the honest behaviour. Reaching it means an excluded session got
     /// somewhere it should not have, and that is worth a crash rather than a plausible answer. The
@@ -269,6 +267,9 @@ impl Session {
     }
 
     /// Average power draw in kW: [`Self::energy_use`] / ([`Self::charge_time`] in hours).
+    ///
+    /// Non-finite results (a spike) are substituted: `0.0` for zero energy,
+    /// [`BREAKER_RATING_KW`] otherwise.
     pub fn avg_kw(&self) -> f64 {
         let kw = self.energy_use / self.charge_time.as_secs_f64() * 3600.0;
         match kw.is_finite() {
@@ -452,7 +453,7 @@ fn duplicate_id_anomalies(sessions: &[RSession]) -> Vec<Anomaly> {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Copy)]
-/// Value subject to uncertainty due to the crate-private `TIME_GRID_STEP`.
+/// Value subject to uncertainty due to `TIME_GRID_STEP`.
 pub struct Bracket<T: Clone> {
     /// Minimum value.
     pub min: T,
@@ -461,7 +462,7 @@ pub struct Bracket<T: Clone> {
 }
 
 impl<T: Clone> Bracket<T> {
-    /// Instantiate `Self``.
+    /// A bracket from `min` and `max`; panics unless `min <= max`.
     pub fn new(min: T, max: T) -> Self
     where
         T: Debug + PartialOrd,
@@ -599,12 +600,6 @@ pub type RSegment = Rc<Segment>;
 pub struct Segment {
     pub interval: Interval,
     /// The sessions intersecting this segment, in the order the report states them.
-    ///
-    /// A `Vec` rather than a set. A set would need [`Session`] to answer whether two sessions are
-    /// the same, and the only answer available was `id`, which Evolute reuses — so the set was
-    /// quietly making segment membership depend on a uniqueness that does not hold. It was never
-    /// doing the work either: `segments_for_ioi` offers each session to each segment once, so
-    /// there is nothing to deduplicate.
     pub sessions: Vec<RSession>,
 }
 
@@ -725,22 +720,7 @@ pub enum AnomalyKind {
     /// one `TIME_GRID_STEP` or more, in one direction or the other, so the reported
     /// start, end and duration are mutually inconsistent.
     ///
-    /// The test is `duration_is_consistent`, which carries the derivation. Three checks, and any
-    /// failure raises this:
-    ///
-    /// ```text
-    /// 1.  rep_start <= rep_end
-    /// 2.  rep_start + conn_duration  <  rep_end + TIME_GRID_STEP + 1s
-    /// 3.  rep_end - TIME_GRID_STEP   <  rep_start + conn_duration
-    /// ```
-    ///
-    /// The window checks 2 and 3 draw is not chosen — it is forced, being exactly what truncation
-    /// to `TIME_GRID_STEP` accounts for and nothing more. It is asymmetric: one second wider on
-    /// the late side, because the reported end is not only truncated but also of unknown last-
-    /// second convention. Every bound is strict.
-    ///
-    /// Check 1 is not redundant. A record whose end precedes its start by one minute, with a
-    /// duration near zero, satisfies both of the others.
+    /// The test is `duration_is_consistent`, which carries the three checks and their derivation.
     ///
     /// Every direction is a fault, and all of them exclude the session from the estimates: if a
     /// record's own fields disagree by more than the reporting can explain, neither its duration
@@ -791,11 +771,6 @@ pub enum AnomalyKind {
     /// `S37487` on two sessions a week apart. Informational only — every session so flagged takes
     /// part in the estimates exactly as it would otherwise, since two records sharing an id are
     /// two sessions until something says otherwise.
-    ///
-    /// Raised symmetrically, on every member of a colliding group. It cannot distinguish a reused
-    /// id from two overlapping reports disagreeing about one session: both are records sharing an
-    /// id and differing in their figures, which is all the merge can see. Both are worth a
-    /// reader's eye.
     DuplicateId,
 
     /// The reported start or end does not land on a whole `TIME_GRID_STEP`.
@@ -1100,8 +1075,7 @@ impl Sessions {
     /// concatenated: they are re-derived from the combined records, which finds every duplicate
     /// the separate reads found and the cross-file ones besides.
     ///
-    /// `sources` and `logs` are concatenated in the order given, so a file that contributed no
-    /// session is still named by the report it is part of.
+    /// `sources` and `logs` are concatenated in the order given.
     pub fn merge(reports: Vec<Self>) -> Self {
         let mut session_lists = Vec::with_capacity(reports.len());
         let mut sources = Vec::new();
@@ -1237,10 +1211,6 @@ impl SessionNotes {
     /// Writes each source's log beside it, returning where they went.
     ///
     /// For a binary. See [`Sessions::write_logs`], which this is the result-side counterpart of.
-    ///
-    /// # Errors
-    ///
-    /// The first write that fails, with none of the later ones attempted.
     pub fn write_logs(&self) -> Result<Vec<PathBuf>, Box<dyn Error>> {
         self.logs.iter().map(SourceLog::write).collect()
     }

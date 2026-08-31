@@ -88,9 +88,8 @@ fn run(input: &Path) -> Result<(), Box<dyn Error>> {
 
     let report = write_gb_workbook(&output, &feed, BILL_END_DAY)?;
     println!("{}", output.display());
-    // The library returns its log rather than writing it, so this is where it lands. A binary is
-    // the end of the line: there is nowhere left to return a finding to. Reported rather than
-    // fatal — the workbook is already on disk, and failing here would claim it was not.
+    // Reported rather than fatal — the workbook is already on disk, and failing here would claim it
+    // was not.
     if let Err(e) = report.log.write() {
         eprintln!("{}: {e}", report.log.path().display());
     }

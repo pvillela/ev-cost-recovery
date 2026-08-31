@@ -1,6 +1,6 @@
 //! Visuals for both themes.
 //!
-//! Copied from `ev_peak_gui`; see `widgets.rs` for why. Kept identical so the two apps look alike.
+//! Copied from `ev_peak_gui`; see `widgets.rs` for why. Kept close so the two apps look alike.
 //!
 //! egui's defaults are deliberately low-contrast: in the dark theme ordinary text is `gray(140)`
 //! against a `gray(27)` panel, buttons carry no outline at all, and secondary text is dimmed to 60%

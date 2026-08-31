@@ -438,7 +438,9 @@ fn number(
     row: usize,
     column: &'static str,
 ) -> Result<f64, ChargesReportError> {
-    s.parse().map_err(
+    // Thousands separators are stripped, since a busy month's kWh easily reaches four figures.
+    let cleaned: String = s.chars().filter(|c| *c != ',').collect();
+    cleaned.parse().map_err(
         |e: std::num::ParseFloatError| ChargesReportError::BadValue {
             path: path.to_path_buf(),
             row,
@@ -452,14 +454,14 @@ fn number(
 /// A dollar amount as the report writes it: `$70.62`, or `-$1.00` for a credit.
 ///
 /// The sign is outside the `$` in every negative figure seen, which is how spreadsheets export
-/// currency. Thousands separators are stripped too, since a busy month could reach four figures.
+/// currency. Thousands separators are handled by `number`.
 fn money(
     s: &str,
     path: &Path,
     row: usize,
     column: &'static str,
 ) -> Result<f64, ChargesReportError> {
-    let cleaned: String = s.chars().filter(|c| *c != '$' && *c != ',').collect();
+    let cleaned: String = s.chars().filter(|c| *c != '$').collect();
     number(&cleaned, path, row, column)
 }
 

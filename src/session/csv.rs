@@ -388,9 +388,8 @@ fn field<'a>(headers: &Headers, record: &'a ::csv::StringRecord, name: &str) -> 
         .trim()
 }
 
-/// Local time as `YYYY-MM-DD HH:MM`; currently, the report carries no seconds, which is what makes
-/// `adj_conn_end` necessary in the first place. However, if seconds are added in the future,
-/// we want to be able to handle that.
+/// Local time as `YYYY-MM-DD HH:MM`, or with seconds appended so a finer-grained report still
+/// parses.
 fn parse_local(
     s: &str,
     path: &Path,
@@ -716,7 +715,7 @@ mod test {
     use crate::{session::test_support::timing_anomalies, time::serial_of_civil};
     use std::{env, fs, path::PathBuf, process};
 
-    /// Both forms the reader itself accepts, in the same order — see `parse_datetime`. A helper
+    /// Both forms the reader itself accepts, in the same order — see `parse_local`. A helper
     /// that took only whole minutes could not express a report that has moved to seconds, which is
     /// the case [`AnomalyKind::OffGridTimes`] exists for.
     fn dt(s: &str) -> civil::DateTime {

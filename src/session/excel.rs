@@ -14,7 +14,7 @@
 //! what removes a session from the estimates. See [`AnomalyKind`].
 
 use super::{
-    Anomaly, AnomalyKind,
+    Anomaly, AnomalyKind, duration_is_consistent,
     csv::{SessionRows, csv_session_rows},
 };
 use crate::{
@@ -575,9 +575,10 @@ pub mod historic {
     /// holds a formula whose cached value this crate never writes. For a spike that leaves it infinite
     /// or `NaN`, which is the honest reading; the estimating logic substitutes a finite value.
     ///
-    /// A `<stem>.session.xlsx.read.log` is written beside the workbook, listing any stored column that
-    /// disagreed with the recomputed value. That channel has no counterpart in the private `csv::csv_sessions`,
-    /// which reads the source and so has nothing to compare against.
+    /// A `<stem>.session.xlsx.read.log` is returned, unwritten, on `Sessions::logs`, listing any
+    /// stored column that disagreed with the recomputed value. That channel has no counterpart in
+    /// the private `csv::csv_sessions`, which reads the source and so has nothing to compare
+    /// against.
     ///
     /// # Errors
     ///
@@ -585,7 +586,7 @@ pub mod historic {
     /// that has a `Charge_Session_ID` does not hold the number it should, or the `anomalies` column
     /// holds a token that is not an [`AnomalyKind`] variant name. A workbook that cannot be read in
     /// full is one whose peak numbers cannot be trusted, so no row is skipped quietly.
-    /// Rows with no `Charge_Session_ID` at all are treated as trailing blanks and ignored.
+    /// Rows with no `Charge_Session_ID` at all are ignored.
     pub fn xlsx_to_sessions(path: &Path) -> Result<Sessions, Box<dyn Error>> {
         // The path, once, for every way this can fail. See `csv::csv_sessions` for why it is done
         // here rather than at each site.
@@ -616,14 +617,24 @@ pub mod historic {
             let energy_use = number(sheet, &headers, "Energy_Use", row)?;
             let charge_time =
                 duration_of_serial(number(sheet, &headers, "Active_Charge_Time", row)?);
-            let anomalies = anomaly_kinds(sheet, &headers, row)?;
+            let mut anomalies = anomaly_kinds(sheet, &headers, row)?;
+            let conn_start = instant_of_serial(number(sheet, &headers, "conn_start_utc", row)?)?;
+            let conn_end = instant_of_serial(number(sheet, &headers, "conn_end_utc", row)?)?;
+            let conn_duration = duration_of_serial(number(sheet, &headers, "Conn_Duration", row)?);
+            // Re-derived rather than trusted to the stored cell, so an edited workbook cannot put
+            // an inverted record in front of the estimating logic; the CSV reader does the same.
+            if !duration_is_consistent(conn_start, conn_end, conn_duration)
+                && !anomalies.contains(&AnomalyKind::InconsistentDuration)
+            {
+                anomalies.push(AnomalyKind::InconsistentDuration);
+            }
             let session = Rc::new(Session {
                 path: source.clone(),
                 row: row as usize,
                 id,
-                conn_start: instant_of_serial(number(sheet, &headers, "conn_start_utc", row)?)?,
-                conn_end: instant_of_serial(number(sheet, &headers, "conn_end_utc", row)?)?,
-                conn_duration: duration_of_serial(number(sheet, &headers, "Conn_Duration", row)?),
+                conn_start,
+                conn_end,
+                conn_duration,
                 charge_time,
                 energy_use,
                 anomalies,

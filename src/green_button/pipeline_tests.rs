@@ -44,8 +44,8 @@ fn the_packaged_call_matches_the_long_hand_pipeline() {
     assert!(actual.is_complete());
     assert_eq!(actual.interval_count, 744, "31 days, no clock change");
 
-    // The long-hand form above never called `Readings::from_source`, so only the packaged call
-    // knows which file the figures came from. That asymmetry is the point of `from_source`.
+    // The long-hand form above never called `Readings::with_source`, so only the packaged call
+    // knows which file the figures came from. That asymmetry is the point of `with_source`.
     assert_eq!(actual.source.as_deref(), Some(path.as_path()));
     assert_eq!(expected.source, None);
 }

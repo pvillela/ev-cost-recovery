@@ -37,9 +37,8 @@ mod billing_period;
 
 mod bill;
 
-// A module rather than a set of re-exports, and the only one here. Reading a PDF is a job in its
-// own right, and `hydro_bill_dump` and `tests/hydro_bill/all_bills` both write `pdf_text::` --
-// `Line` and `Fragment` read better with the module naming them.
+// A module rather than a set of re-exports, and the only one here. `hydro_bill_dump` and
+// `tests/hydro_bill/all_bills` both write `pdf_text::`.
 pub mod pdf_text;
 
 // --- Named outside the crate -------------------------------------------------------------------

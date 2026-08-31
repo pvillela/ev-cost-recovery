@@ -147,11 +147,10 @@ pub fn read_gb_for_billing_period(
 ) -> Result<PeriodValues, GbReadError> {
     check_calendar(period_ending, bill_end_day)?;
     let feed = read_gb_feed(xml_path)?;
-    let readings = feed.readings().from_source(xml_path);
+    let readings = feed.readings().with_source(xml_path);
 
-    // `period_values` already scopes each period's anomaly counts to that period, so picking the
-    // row out of its result is the whole of the work. Nothing is recomputed here, and no second
-    // anomaly channel is built beside the counts it carries.
+    // `period_values` already computes each period's peaks and anomaly counts; picking the row is
+    // the whole of the work.
     period_values(&readings, bill_end_day)
         .into_iter()
         .find(|p| p.period.ending == period_ending)

@@ -64,9 +64,7 @@ use std::{error::Error, fmt};
 /// The bill states its own period as `MAY 23 2026 TO JUN 23 2026`, so this is read off every
 /// invoice rather than chosen.
 ///
-/// Changing it moves every billing period boundary in the crate. Nothing suggests Toronto Hydro
-/// will, but the number was in three places before it was here, and three places is how a change
-/// like that goes half-applied.
+/// Changing it moves every billing period boundary in the crate.
 pub const BILL_END_DAY: i8 = 23;
 
 /// The largest day of the month a billing period may close on.

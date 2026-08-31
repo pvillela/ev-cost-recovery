@@ -213,7 +213,7 @@ impl Error for BillError {
 
 /// A [`BillError`] before it knows which file it came from.
 ///
-/// The parse works over lines rather than over a file, and so has no path to name. `from_pdf`
+/// The parse works over lines rather than over a file, and so has no path to name. `hydro_bill_from_pdf`
 /// attaches one on the way out. Keeping the two types apart is what stops the parse from having to
 /// thread a `&Path` through every helper for the sake of an error that is usually not raised.
 #[derive(Debug)]
@@ -430,8 +430,8 @@ impl Usage {
 
         // Peak kW 7-7, Adj. Peak kW 7-7, Demand kW, Demand kVA, Metering Adj., Adj. kW, Adj. kVA.
         // The heading spans three lines of its own; the figures are the first row of seven
-        // numbers below it. The first two columns are the maximum within the 07:00-19:00 demand
-        // window and the second is that figure prorated to 30 days -- not the unrestricted maximum,
+        // numbers below it. The first column is the maximum within the 07:00-19:00 demand window;
+        // the second is that figure prorated to 30 days -- not the unrestricted maximum,
         // which is `Demand kW`, two columns further right. `every_bill_parses_and_its_figures_agree_with_each_other`
         // holds the seven to the relations that distinguish them, so a swap here is caught.
         //

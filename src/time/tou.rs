@@ -187,11 +187,8 @@ pub fn tou_of(interval: Interval) -> Option<Tou> {
     }
 }
 
-/// Whether `interval` lies entirely outside Toronto Hydro's `[07:00, 19:00)` demand window.
-///
-/// Defined in terms of [`Tou::OffPeak`] rather than as its own hour comparison, so the demand
-/// window and the pricing periods cannot drift apart and there is only one holiday calendar to get
-/// right. The two are independent concepts that happen to coincide exactly; see the module note.
+/// Whether `interval` lies entirely in the off-peak period: weekdays 19:00-07:00, and weekends and
+/// holidays all day.
 pub fn is_off_peak(interval: Interval) -> bool {
     tou_partition(interval)
         .iter()

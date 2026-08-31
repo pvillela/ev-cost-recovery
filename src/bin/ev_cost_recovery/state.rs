@@ -329,9 +329,7 @@ impl SurplusState {
 
         match cost_recovery_surplus(&bill, &meter, &csv1, &csv2, start, end) {
             Ok(surplus) => {
-                // The app is the end of the line, so the run logs are written here. The library
-                // returns what it found and writes nothing; see `SessionNotes::write_logs`. Written
-                // before the report is shown, so a failure to write one is not buried under it.
+                // Written before the report is shown, so a failure to write one is not buried under it.
                 if let Err(e) = surplus.notes.write_logs() {
                     self.error = Some(format!("cannot write the run log: {e}"));
                     return;
@@ -531,8 +529,7 @@ impl ReimbursementState {
 
         match reconcile_evolute_reimbursement(&csv, &charges, reimbursed, rates) {
             Ok(reconciliation) => {
-                // The app is the end of the line, so the run logs are written here, as they are
-                // for a surplus. See `SessionNotes::write_logs`.
+                // As for a surplus. See `SessionNotes::write_logs`.
                 if let Err(e) = reconciliation.notes.write_logs() {
                     self.error = Some(format!("cannot write the run log: {e}"));
                     return;
@@ -622,8 +619,7 @@ impl Conversion for SessionConversion {
         // `SessionCsvError` that names the CSV from a field of its own. Adding it here printed it
         // twice.
         let report = session_csv_to_xlsx(input, on_existing).map_err(|e| e.to_string())?;
-        // The app is the end of the line, so the run log is written here. The library returns what
-        // it found and writes nothing; see `Sessions::logs`.
+        // See `Sessions::logs`.
         let log_failure = report.log.write().err().map(|e| {
             format!(
                 "The workbook was written, but its run log was not.\n{}: {e}",
@@ -664,8 +660,7 @@ impl Conversion for GbConversion {
         // No path prefix, for the reason `SessionConversion::run` gives: a read failure here is a
         // `GbReadError`, which names the export itself.
         let report = gb_xml_to_xlsx(input, on_existing).map_err(|e| e.to_string())?;
-        // The app is the end of the line, so the run log is written here, as it is for a session
-        // report. The library returns what it found and writes nothing.
+        // As for a session report.
         let log_failure = report.log.write().err().map(|e| {
             format!(
                 "The workbook was written, but its run log was not.\n{}: {e}",
@@ -824,9 +819,8 @@ pub fn report_sections(text: &str) -> Vec<Section> {
         };
 
         // A nested title belongs to the section above it, and only where there is one to belong
-        // to. A report of nested titles alone -- which is how every report looked to this function
-        // before top-level titles were recognised -- yields them all as sections, rather than
-        // burying each one in the one before it.
+        // to. A report of nested titles alone yields them all as sections, rather than burying
+        // each one in the one before it.
         if depth == 2 && root_depths.last() == Some(&1) {
             roots
                 .last_mut()

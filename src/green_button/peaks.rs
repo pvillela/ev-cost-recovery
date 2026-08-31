@@ -34,12 +34,15 @@ pub struct PeriodValues {
     /// a feed with a hole reports fewer intervals than the period should contain and gets flagged.
     pub interval_count: i64,
     pub kwh_total: i64,
-    /// Highest kW over every interval in the period.
+    /// Highest kW over every interval in the period. `None` when the period has no kW reading.
     pub max_kw: Option<Peak>,
-    /// Highest kW within Toronto Hydro's 7-7 demand window. `None` when the period contains no
-    /// such interval at all, which happens only for a period truncated to a weekend.
+    /// Highest kW within Toronto Hydro's 7-7 demand window. `None` when the period has no kW
+    /// reading, or the data contains no non-off-peak hour.
     pub max_kw_nop: Option<Peak>,
+    /// Highest kVA over every interval in the period. `None` when the period has no kVA reading.
     pub max_kva: Option<Peak>,
+    /// Highest kVA within Toronto Hydro's 7-7 demand window. `None` when the period has no kVA
+    /// reading, or the data contains no non-off-peak hour.
     pub max_kva_nop: Option<Peak>,
     pub anomaly_counts: BTreeMap<Anomaly, usize>,
 
@@ -450,10 +453,6 @@ mod test {
 
     /// Each period keeps its own anomalies hour by hour, not merely tallied, and takes none from
     /// the period next door.
-    ///
-    /// The count answers "how much of this feed is suspect". Only the hours answer "does any of it
-    /// bear on the figure in front of me", which is what a reader checking a demand charge against
-    /// the hour it was levied on is asking.
     #[test]
     fn each_period_keeps_the_hours_its_anomalies_fell_in() {
         let start = local_hour(date(2026, 6, 23), 22);

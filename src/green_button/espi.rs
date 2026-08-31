@@ -104,7 +104,7 @@ impl Readings {
     /// Set here rather than by [`Feed::readings`], which is handed a parsed feed and never sees a
     /// file. Whoever opened one is the only party that knows.
     #[must_use]
-    pub fn from_source(mut self, path: &Path) -> Self {
+    pub fn with_source(mut self, path: &Path) -> Self {
         self.source = Some(path.to_path_buf());
         self
     }
@@ -333,7 +333,7 @@ impl Feed {
             rows,
             anomalies,
             // A `Feed` is parsed from a string and has no file behind it. Whoever opened one says
-            // so, through `Readings::from_source`.
+            // so, through `Readings::with_source`.
             source: None,
         }
     }
