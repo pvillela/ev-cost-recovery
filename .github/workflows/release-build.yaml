@@ -34,7 +34,7 @@ jobs:
 
     steps:
       - uses: actions/checkout@v5
-      # The stamp every download carries: `v0_1_0_rc-1a2b3c` from tag `v0.1.0-rc` at that commit.
+      # The stamp every download carries: `v0_1_0_rc-1a2b3c4` from tag `v0.1.0-rc` at that commit.
       # It comes from the tag rather than the manifest because the tag is what names the release,
       # and the two are compared here so a tag pushed against a stale `version =` fails the build
       # instead of shipping a binary whose name and contents disagree. `shell: bash` on Windows
@@ -48,7 +48,7 @@ jobs:
             echo "Tag $GITHUB_REF_NAME does not match Cargo.toml version $manifest" >&2
             exit 1
           fi
-          echo "stamp=${GITHUB_REF_NAME//[.-]/_}-${GITHUB_SHA::6}" >> "$GITHUB_OUTPUT"
+          echo "stamp=${GITHUB_REF_NAME//[.-]/_}-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
           # A hyphen in the tag is a pre-release suffix — `v0.1.0-rc` — because the version it was
           # checked against is a Cargo version, where that is the only thing a hyphen can mean.
           # The release page then labels it, instead of offering it as the current download.
