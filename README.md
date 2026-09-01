@@ -159,6 +159,7 @@ Much, but not all, of this documentation pertains to software structure or elect
 - [docs/green_button/Notes_on_Green_Button_data.md](docs/green_button/Notes_on_Green_Button_data.md) -- Brief notes about Green Button data.
 - [docs/green_button/Toronto_Hydro_Object_Model.md](docs/green_button/Toronto_Hydro_Object_Model.md) -- The conceptual domain model for the Green Button ESPI XML feed.
 - [docs/time/README.md](docs/time/README.md) -- Date-time-related functions and constants, the time grid, the DST fold and how it is resolved.
+- [docs/Development_Approach_and_Roles.md](docs/Development_Approach_and_Roles.md) -- How the software was developed.
 
 ## Appendix
 
