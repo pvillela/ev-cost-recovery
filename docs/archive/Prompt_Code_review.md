@@ -1,0 +1,1 @@
+ Review and understand the code and comments. Identify code errors and gaps, propose fixes. Identify comments that are unclear or too verbose and propose changes to make them clear and appropriately concise. Produce a report and make no changes to any existing file.
