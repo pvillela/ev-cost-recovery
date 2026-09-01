@@ -15,8 +15,8 @@ SPIKES; those are worth reviewing for their effect on the building's demand char
 reported start, end and duration contradict each other is listed under EXCLUDED and takes no part
 in any estimate.
 
-A .xlsx.read.log is written beside the workbook, listing any column whose stored value disagreed with
-the recomputed one. The recomputed value is always the one used.";
+Nothing is written. A column whose stored value disagrees with the recomputed one is noted in the
+read's log, which this example does not write out; the recomputed value is always the one used.";
 
 /// Printed above the spike listing, because the figure in that listing is the one thing about a
 /// spike that cannot be read at face value.

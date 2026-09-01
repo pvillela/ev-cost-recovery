@@ -200,7 +200,7 @@ impl Session {
     ///
     /// # Panics
     ///
-    /// If `adj_conn_end` precedes `conn_start`. That is a precondition, not a defensive check: a
+    /// If `adj_conn_end` precedes `adj_conn_start`. That is a precondition, not a defensive check: a
     /// session whose span is inverted has fields that contradict each other, is flagged
     /// [`AnomalyKind::InconsistentDuration`] on conversion, and is sorted into
     /// [`Sessions::excluded`] — so it never reaches the estimating logic at all.
@@ -381,18 +381,33 @@ struct MergedSessions {
     /// Anomalies that are not properties of any single record and so are not on
     /// [`Session::anomalies`]. Currently [`AnomalyKind::DuplicateId`] only.
     anomalies: Vec<Anomaly>,
+    /// Records dropped as identical copies of one already kept, for the log.
+    collapsed: Vec<Collapse>,
+}
+
+/// One record dropped because another already kept says the same thing.
+///
+/// Logged rather than flagged. A collapse is not a fault in either record — it is what a session
+/// reported in two overlapping files looks like, and the surviving row is the whole of the answer
+/// — so there is no session left to hang an [`AnomalyKind`] on. It is still worth a line: a
+/// reader counting rows in the source files and rows in the estimate needs to know where the
+/// difference went.
+struct Collapse {
+    dropped: RSession,
+    kept: RSession,
 }
 
 impl MergedSessions {
-    /// Flattens session lists, collapsing records that appear identically in more than one, and
-    /// flags every surviving session whose `id` another one shares.
+    /// Flattens session lists, collapsing records that say the same thing, and flags every
+    /// surviving session whose `id` another one shares.
     ///
     /// Two rules, and the distinction between them is the whole of this function:
     ///
     /// - Same `id` and every compared field equal — see [`Session::is_inconsistent_duplicate`] —
-    ///   is one session reported in two overlapping files. One copy is kept. Counting both would
-    ///   inflate every figure derived from it, which is why a billing period spanning two monthly
-    ///   reports cannot simply concatenate them.
+    ///   is one session reported twice. One copy is kept, and the drop is noted on the log of the
+    ///   file the dropped copy came from. Counting both would inflate every figure derived from
+    ///   it, which is why a billing period spanning two monthly reports cannot simply concatenate
+    ///   them.
     /// - Same `id` with any field differing is *not* one session. `Charge_Session_ID` is not unique
     ///   in Evolute's reports — the June 2026 report carries `S37487` on two sessions a week apart
     ///   — so such records are kept and estimated from, and flagged
@@ -400,20 +415,27 @@ impl MergedSessions {
     ///   distinguish a reused id from two files genuinely disagreeing about one session; both look
     ///   the same from here, and both are worth seeing.
     ///
-    /// One list in means there is nothing to collapse across files, and this is detection alone.
-    /// That is how a single-file read gets the same flagging: it comes through here too.
+    /// Which list a record arrived in makes no difference to either rule. Two identical rows in one
+    /// file collapse exactly as two identical rows in two files do, and are logged the same way:
+    /// the comparison never looks at where a record came from, so a single-file read and a
+    /// two-file one are one code path rather than two.
     fn merge_sessions(session_lists: Vec<Vec<RSession>>) -> Self {
         let mut sessions: Vec<RSession> = Vec::new();
+        let mut collapsed = Vec::new();
         for list in session_lists {
             for session in list {
                 // Linear against what is already kept. The comparison is on the compared fields,
                 // not on the id, so no map keyed by id would serve: an id may legitimately name
                 // several distinct sessions, which is the case that produced this function.
-                let already_kept = sessions
-                    .iter()
-                    .any(|kept| kept.id == session.id && !kept.is_inconsistent_duplicate(&session));
-                if !already_kept {
-                    sessions.push(session);
+                let already_kept = sessions.iter().find(|kept| {
+                    kept.id == session.id && !kept.is_inconsistent_duplicate(&session)
+                });
+                match already_kept {
+                    Some(kept) => collapsed.push(Collapse {
+                        dropped: session,
+                        kept: kept.clone(),
+                    }),
+                    None => sessions.push(session),
                 }
             }
         }
@@ -422,6 +444,7 @@ impl MergedSessions {
         Self {
             sessions,
             anomalies,
+            collapsed,
         }
     }
 }
@@ -716,9 +739,10 @@ impl Segment {
 pub enum AnomalyKind {
     /// `Active_Charge_Time` is zero so its `avg_kw` cell shows `#DIV/0!`.
     ZeroActiveChargeTime,
-    /// `Conn_start + Conn_Duration` misses the reported `Conn_DateTime_End` by a full
-    /// one `TIME_GRID_STEP` or more, in one direction or the other, so the reported
-    /// start, end and duration are mutually inconsistent.
+    /// `Conn_start + Conn_Duration` misses the reported `Conn_DateTime_End` by more than
+    /// truncation to `TIME_GRID_STEP` can account for, early or late, so the reported start, end
+    /// and duration are mutually inconsistent. The two sides of the window are not the same width;
+    /// `duration_is_consistent` states each exactly.
     ///
     /// The test is `duration_is_consistent`, which carries the three checks and their derivation.
     ///
@@ -731,18 +755,22 @@ pub enum AnomalyKind {
     /// The start fell in the DST fold and both offsets reproduce the reported end,
     /// so the record was duplicated. See docs/time/README.md, "Time zone".
     DstAmbiguousDuplicated,
-    /// The start fell in the DST gap, i.e. a wall time that never occurred.
+    /// The reported start or end fell in the DST gap, i.e. a wall time that never occurred.
     /// Resolved forward to the instant just after the gap.
-    DstGapShifted,
+    ///
+    /// The session is excluded from every estimate. The shift is the only reading available, and
+    /// it is a guess: a wall time that never occurred says the record's clock and the calendar
+    /// disagree, so neither the instant it names nor the span built from it can be relied on.
+    FellInDstGap,
     /// `Conn_DateTime_Start` falls in the DST fold, and for neither the EDT nor the EST reading
     /// does `Conn_start + Conn_Duration` land within a minute of the reported `Conn_DateTime_End`.
     ///
     /// The test is a tolerance rather than an equality, and that is what makes failing it mean
     /// something. The reported timestamps are truncated to the whole minute while `Conn_Duration`
     /// carries seconds, so even for a sound record the implied end misses the reported one — by up
-    /// to but never reaching one `TIME_GRID_STEP`, in either direction. Missing it
-    /// is therefore normal; missing it by *a minute
-    /// or more under both readings* is not, especially as the two readings sit a full hour apart,
+    /// to but never reaching one `TIME_GRID_STEP`, in either direction. Missing it is therefore
+    /// normal; missing it by *a minute or more under both readings* is not, especially as the two
+    /// readings sit a full hour apart,
     /// so one of them is ordinarily well inside the tolerance. When neither is, the record's own
     /// fields disagree by more than truncation can account for: whatever `Conn_Duration` measures
     /// on this row, it is not the elapsed time the inference assumes it to be.
@@ -762,8 +790,8 @@ pub enum AnomalyKind {
     /// `Energy_Use` and `Active_Charge_Time` is wrong.
     ///
     /// Informational only: the session still takes part in every estimate, since nothing about the
-    /// figure says *which* of the two is wrong, or whether either is.
-    /// [`AnomalyKind::InconsistentDuration`] remains the only kind that excludes a session.
+    /// figure says *which* of the two is wrong, or whether either is. The kinds that exclude a
+    /// session are [`AnomalyKind::InconsistentDuration`] and [`AnomalyKind::FellInDstGap`].
     ExcessiveAvgKw,
     /// Another session in the same list carries the same `Charge_Session_ID`.
     ///
@@ -801,6 +829,11 @@ pub enum AnomalyKind {
     ///
     /// Says only that a column disagreed. Which one, what it held and what was recomputed are not
     /// carried: an [`AnomalyKind`] is a bare token, and `Anomaly` is a session and a kind.
+    ///
+    /// Which is why a discrepancy is logged and never changes a figure. Every other kind here
+    /// describes the reported data and one of them removes the session from every estimate; if a
+    /// stale cell could do the same, editing a workbook would silently change which sessions feed
+    /// an estimate, and the estimate would still look clean.
     WorkbookDiscrepancy,
 }
 
@@ -812,23 +845,41 @@ impl AnomalyKind {
     /// connected and cuts the result at the period's boundaries; only three kinds bear on that:
     ///
     /// - [`Self::InconsistentDuration`] — the session is left out of the sum entirely.
+    /// - [`Self::FellInDstGap`] — left out of the sum entirely, for the same reason: a wall time
+    ///   that never occurred leaves the span it bounds a guess.
     /// - [`Self::DuplicateId`] — two records may be one session counted twice, or one id on two
     ///   sessions; the energy differs by a whole session either way.
     /// - [`Self::DstUnresolvable`] — the timestamps may be an hour out, which moves energy between
     ///   time-of-use bands and can move it across the period's own boundary.
     ///
     /// The rest do not. [`Self::ZeroActiveChargeTime`] and [`Self::ExcessiveAvgKw`] are about
-    /// power, which is not what is summed; [`Self::DstAmbiguousDuplicated`] and
-    /// [`Self::DstGapShifted`] are folds and gaps already resolved; [`Self::OffGridTimes`] and
-    /// [`Self::WorkbookDiscrepancy`] are facts about the file rather than the session.
+    /// power, which is not what is summed; [`Self::DstAmbiguousDuplicated`] is a fold already
+    /// resolved; [`Self::OffGridTimes`] and [`Self::WorkbookDiscrepancy`] are facts about the file
+    /// rather than the session.
     ///
     /// The demand side reports every kind instead, since an estimate over a single hour turns on
     /// each session's power and on exactly which records touch that hour.
     pub fn bears_on_energy(&self) -> bool {
         matches!(
             self,
-            Self::InconsistentDuration | Self::DuplicateId | Self::DstUnresolvable
+            Self::InconsistentDuration
+                | Self::FellInDstGap
+                | Self::DuplicateId
+                | Self::DstUnresolvable
         )
+    }
+
+    /// Whether this kind removes the session from every estimate.
+    ///
+    /// Two kinds do, and both for the same reason: the record's own timestamps cannot be placed on
+    /// a timeline. [`Self::InconsistentDuration`] means start, end and duration contradict each
+    /// other; [`Self::FellInDstGap`] means one of the reported wall times never occurred, so the
+    /// instant it was resolved to is a guess rather than a reading.
+    ///
+    /// This is what [`Sessions::from_session_lists`] sorts on, so a kind added here excludes
+    /// sessions from both readers at once.
+    pub fn excludes_session(&self) -> bool {
+        matches!(self, Self::InconsistentDuration | Self::FellInDstGap)
     }
 
     /// The variant name, as written to the workbook's `anomalies` column. Deliberately distinct
@@ -839,7 +890,7 @@ impl AnomalyKind {
             Self::ZeroActiveChargeTime => "ZeroActiveChargeTime",
             Self::InconsistentDuration => "InconsistentDuration",
             Self::DstAmbiguousDuplicated => "DstAmbiguousDuplicated",
-            Self::DstGapShifted => "DstGapShifted",
+            Self::FellInDstGap => "FellInDstGap",
             Self::DstUnresolvable => "DstUnresolvable",
             Self::ExcessiveAvgKw => "ExcessiveAvgKw",
             Self::DuplicateId => "DuplicateId",
@@ -854,7 +905,7 @@ impl AnomalyKind {
             "ZeroActiveChargeTime" => Self::ZeroActiveChargeTime,
             "InconsistentDuration" => Self::InconsistentDuration,
             "DstAmbiguousDuplicated" => Self::DstAmbiguousDuplicated,
-            "DstGapShifted" => Self::DstGapShifted,
+            "FellInDstGap" => Self::FellInDstGap,
             "DstUnresolvable" => Self::DstUnresolvable,
             "ExcessiveAvgKw" => Self::ExcessiveAvgKw,
             "DuplicateId" => Self::DuplicateId,
@@ -893,7 +944,10 @@ impl fmt::Display for AnomalyKind {
                  to the minute can explain; the session is excluded from every estimate"
             }
             Self::DstAmbiguousDuplicated => "ambiguous DST fold; record duplicated as EDT and EST",
-            Self::DstGapShifted => "local time falls in the DST gap; resolved forward",
+            Self::FellInDstGap => {
+                "reported start or end is a local time that never occurred, in the DST gap; \
+                 resolved forward, and the session is excluded from every estimate"
+            }
             Self::DstUnresolvable => {
                 "DST fold: neither EDT nor EST reproduces the reported end, so the record is \
                  inconsistent; assumed EDT, timestamps may be an hour early"
@@ -975,12 +1029,16 @@ pub struct Sessions {
     /// `Questions_for_Evolute.md`, "Answers received". [`Session::avg_kw`] substitutes a finite
     /// figure so the row can still be listed. See docs/session/README.md, "Other".
     pub spikes: Vec<RSession>,
-    /// Sessions flagged [`AnomalyKind::InconsistentDuration`]: their reported start, end and
-    /// duration contradict each other, so they cannot be placed on a timeline at all. Excluded
-    /// from the estimates and returned only for review. See docs/session/README.md, "Other".
+    /// Sessions that cannot be placed on a timeline, flagged
+    /// [`AnomalyKind::InconsistentDuration`] — their reported start, end and duration contradict
+    /// each other — or [`AnomalyKind::FellInDstGap`], where one of the reported wall times never
+    /// occurred. Excluded from the estimates and returned only for review. See
+    /// docs/session/README.md, "Other".
     pub excluded: Vec<RSession>,
     /// Anomalies that are not properties of any single record, and so are not reachable through
-    /// [`Session::anomalies`]. Currently [`AnomalyKind::DuplicateId`] only.
+    /// [`Session::anomalies`]. Currently [`AnomalyKind::DuplicateId`], plus
+    /// [`AnomalyKind::WorkbookDiscrepancy`] when the `historic` workbook reader produced this
+    /// value.
     ///
     /// Separate from the sessions because such an anomaly is a relation between records rather than
     /// a fault in one: an id is a duplicate only relative to another session, and which of the two
@@ -1012,14 +1070,16 @@ impl Sessions {
     /// One call rather than two because every caller wants both and neither step is useful without
     /// the other. Merging decides which records are the same session — and is also where a shared
     /// `Charge_Session_ID` is noticed — while bucketing decides what each surviving session is fit
-    /// for. A caller passing one list has nothing to merge across files and gets the flagging
-    /// alone, which is how a single-file read is the same code path as a two-file one.
+    /// for. A caller passing one list still gets the merge; one file can repeat a record as
+    /// readily as two files can, which is how a single-file read is the same code path as a
+    /// two-file one.
     ///
     /// Bucketing is kept here, and out of both readers, so that a session read from a CSV and the
     /// same session read back from the workbook written from it cannot land in different buckets.
     /// The tests are applied in this order, strongest first:
     ///
-    /// 1. Flagged [`AnomalyKind::InconsistentDuration`] — [`Sessions::excluded`]. Such a
+    /// 1. Flagged [`AnomalyKind::InconsistentDuration`] or [`AnomalyKind::FellInDstGap`] —
+    ///    [`Sessions::excluded`]. Such a
     ///    session takes no part in the estimates whatever its charge time, and letting one through
     ///    would put an inverted session in front of the segmenting logic, whose endpoints would
     ///    then arrive out of order.
@@ -1038,6 +1098,7 @@ impl Sessions {
         let MergedSessions {
             sessions,
             anomalies,
+            collapsed,
         } = MergedSessions::merge_sessions(session_lists);
         let mut report = Self {
             sessions: Vec::new(),
@@ -1047,11 +1108,9 @@ impl Sessions {
             sources,
             logs,
         };
+        report.note_collapsed(&collapsed);
         for session in sessions {
-            if session
-                .anomalies
-                .contains(&AnomalyKind::InconsistentDuration)
-            {
+            if session.anomalies.iter().any(AnomalyKind::excludes_session) {
                 report.excluded.push(session);
             } else if session.charge_time.is_zero() {
                 report.spikes.push(session);
@@ -1060,6 +1119,38 @@ impl Sessions {
             }
         }
         report
+    }
+
+    /// Writes one line per collapsed record onto the log of the file that record came from.
+    ///
+    /// That file rather than the one holding the surviving copy: a reader who opens a log has the
+    /// matching source file in front of them, and the row named in the line has to be a row of it.
+    /// A collapse whose file has no log among `logs` is not recorded — the caller that supplied no
+    /// log for a file it read has nowhere to put it.
+    ///
+    /// The wording says the fields are equal, because the other kind of repeated id says the
+    /// opposite: records sharing a `Charge_Session_ID` that differ anywhere are all kept, and are
+    /// flagged [`AnomalyKind::DuplicateId`] instead of collapsed.
+    fn note_collapsed(&mut self, collapsed: &[Collapse]) {
+        for Collapse { dropped, kept } in collapsed {
+            let Some(log) = self
+                .logs
+                .iter_mut()
+                .find(|log| log.source.as_path() == dropped.path.as_path())
+            else {
+                continue;
+            };
+            log.log.note(format!(
+                "row {}: session {} repeats {} row {}, with every compared field equal; this copy \
+                 was dropped so the session is counted once. Records sharing an id that differ \
+                 are kept and flagged {} instead.",
+                dropped.row,
+                dropped.id,
+                kept.path.display(),
+                kept.row,
+                AnomalyKind::DuplicateId.as_str(),
+            ));
+        }
     }
 
     /// One report from several, each read from its own file.
@@ -1072,8 +1163,13 @@ impl Sessions {
     /// The sessions go back through [`Self::from_session_lists`] as one list per file, which is
     /// the shape the merge needs to tell "one session in two files" from "one id on two sessions".
     /// Each report's own `anomalies` are therefore dropped rather than
-    /// concatenated: they are re-derived from the combined records, which finds every duplicate
-    /// the separate reads found and the cross-file ones besides.
+    /// concatenated: [`AnomalyKind::DuplicateId`] is re-derived from the combined records, which
+    /// finds every duplicate the separate reads found and the cross-file ones besides.
+    ///
+    /// Re-derivation recovers that kind and no other. [`AnomalyKind::WorkbookDiscrepancy`], which
+    /// the `historic` workbook reader also puts on [`Self::anomalies`], does not survive a merge.
+    /// No caller merges workbook-sourced reports today; a caller that did would have to carry
+    /// those anomalies across itself.
     ///
     /// `sources` and `logs` are concatenated in the order given.
     pub fn merge(reports: Vec<Self>) -> Self {
@@ -1220,6 +1316,7 @@ impl SessionNotes {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::log::RunLog;
 
     fn session(path: &str, row: usize, id: &str, start: &str, energy_use: f64) -> RSession {
         let conn_start: Timestamp = start.parse().expect("an RFC 3339 timestamp");
@@ -1235,6 +1332,16 @@ mod test {
             energy_use,
             anomalies: Vec::new(),
         })
+    }
+
+    /// An empty log for one source file, as a reader would hand one back.
+    fn source_log(path: &str) -> SourceLog {
+        SourceLog {
+            source: PathBuf::from(path),
+            suffix: "session.csv.read",
+            operation: "Read Session Report",
+            log: RunLog::new(),
+        }
     }
 
     fn ids(sessions: &[RSession]) -> Vec<&str> {
@@ -1310,8 +1417,59 @@ mod test {
         assert_eq!(flagged(&merged.anomalies), [("S1", 2), ("S1", 9)]);
     }
 
-    /// A single list has nothing to collapse across files, so merging one is detection alone. That
-    /// is how both readers get the flagging without a second code path.
+    /// The same rule inside one file: a report that states a record twice, identically, states one
+    /// session. Nothing here looks at which list a record arrived in, and this pins that.
+    #[test]
+    fn a_record_repeated_identically_within_one_file_is_kept_once() {
+        let june = vec![
+            session("June.csv", 2, "S1", "2026-06-01T12:00:00Z", 4.0),
+            session("June.csv", 3, "S1", "2026-06-01T12:00:00Z", 4.0),
+            session("June.csv", 4, "S2", "2026-06-02T12:00:00Z", 5.0),
+        ];
+
+        let merged = MergedSessions::merge_sessions(vec![june]);
+        assert_eq!(ids(&merged.sessions), ["S1", "S2"]);
+        // The first copy is the one kept, exactly as across two files.
+        assert_eq!(merged.sessions[0].row, 2);
+        assert!(
+            merged.anomalies.is_empty(),
+            "one session stated twice is not a duplicate id"
+        );
+        assert_eq!(merged.collapsed.len(), 1);
+        assert_eq!(merged.collapsed[0].dropped.row, 3);
+        assert_eq!(merged.collapsed[0].kept.row, 2);
+    }
+
+    /// A collapse is not silent. The line goes on the log of the file the dropped copy came from,
+    /// and says the fields were equal — which is what tells it from the reused-id flag.
+    #[test]
+    fn a_collapsed_record_is_logged_against_its_own_file() {
+        let may = vec![session("May.csv", 2, "S1", "2026-05-30T12:00:00Z", 4.0)];
+        let june = vec![session("June.csv", 7, "S1", "2026-05-30T12:00:00Z", 4.0)];
+        let logs = vec![source_log("May.csv"), source_log("June.csv")];
+
+        let report = Sessions::from_session_lists(
+            vec![may, june],
+            vec![PathBuf::from("May.csv"), PathBuf::from("June.csv")],
+            logs,
+        );
+
+        assert!(
+            report.logs[0].log.is_empty(),
+            "the kept copy's file is quiet"
+        );
+        let text = report.logs[1]
+            .log
+            .render(report.logs[1].operation, &report.logs[1].source);
+        assert!(text.contains("row 7"), "{text}");
+        assert!(text.contains("May.csv row 2"), "{text}");
+        assert!(text.contains("every compared field equal"), "{text}");
+        assert!(text.contains("DuplicateId"), "{text}");
+    }
+
+    /// A single list is merged like any other -- see
+    /// `a_record_repeated_identically_within_one_file_is_kept_once`. With nothing repeated in it,
+    /// nothing is dropped and nothing is flagged.
     #[test]
     fn merging_one_list_leaves_it_alone() {
         let sessions = vec![

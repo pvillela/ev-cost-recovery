@@ -591,9 +591,6 @@ mod test {
         assert!(err.to_string().contains("2026-06-30"), "{err}");
     }
 
-    ///
-    /// The lines the cost does not read carry figures too, so a test cannot pass by reading one of
-    /// them: nothing here is zero.
     /// The energy cost divides by the bill's total charges to take HST and the rebate in the bill's
     /// own proportions. Zero is refused rather than divided by.
     #[test]

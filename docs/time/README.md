@@ -129,11 +129,14 @@ derived in step 2.
    - *Neither candidate matches* — the record is internally inconsistent. The earlier (EDT) offset
      is assumed and the row is reported.
 3. If it falls in the **gap** — the 02:00:00-02:59:59 hour skipped when DST begins, a wall time that
-   never occurred — the instant is resolved forward to just after the gap, and the row is reported.
-   Such a timestamp indicates a fault upstream; it is surfaced rather than silently accepted.
+   never occurred — the instant is resolved forward to just after the gap, the row is flagged
+   `FellInDstGap`, and the session is excluded from every estimate. Such a timestamp indicates a
+   fault upstream: the shift is the only reading available and it is a guess, so the span built
+   from it cannot be relied on any more than an inconsistent duration can.
 
 `Conn_DateTime_End` is resolved the same way, except that a fold is settled by taking whichever
-candidate is nearer to `conn_start_utc + Conn_Duration`, which is by then already known.
+candidate is nearer to `conn_start_utc + Conn_Duration`, which is by then already known. A gap at
+either end raises the same `FellInDstGap`, once for the session.
 
 **Duplicated records** are given distinct ids — `<id>-EDT` and `<id>-EST` — because the peak power
 contribution logic keys `Session` on its id alone and holds sessions in a `BTreeSet`. With identical

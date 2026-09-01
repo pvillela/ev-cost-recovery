@@ -11,13 +11,12 @@ use std::{sync::LazyLock, time::Duration};
 
 /// Time zone the session report's timestamps are stated in. See docs/time/README.md, "Time zone".
 ///
-/// Public because both binaries and several doc comments name it, and a reader who finds
-/// "in local time" in a message needs somewhere to learn which zone that is.
+/// Referenced by `session::ioi` and several doc comments; a reader who finds "in local time" in a
+/// message needs somewhere to learn which zone that is. Not exported from the crate.
 pub const TIME_ZONE_NAME: &str = "America/Toronto";
 
 /// The offsets the crate-private `TIME_ZONE_NAME` uses, under the names a reader of a Toronto
-/// Hydro bill will
-/// recognise. Naming one resolves a wall time that occurs twice.
+/// Hydro bill will recognise. Naming one resolves a wall time that occurs twice.
 ///
 /// Here rather than in `session` because it is a property of the zone, and the zone is shared.
 pub const TZ_OFFSETS: [(&str, i8); 2] = [("EST", -5), ("EDT", -4)];
@@ -366,6 +365,11 @@ impl Interval {
         self.duration == Duration::ZERO
     }
 
+    /// The overlap of the two intervals, empty when they do not meet.
+    ///
+    /// Only [`Self::is_empty`] is meaningful about an empty result: `start` is then the later of
+    /// the two starts, which is a point in neither overlap nor either interval. Ask whether the
+    /// result is empty before reading anything else off it.
     pub fn intersection(&self, other: &Interval) -> Self {
         let start = self.start.max(other.start);
         let end = self.end().min(other.end());

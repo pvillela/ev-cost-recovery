@@ -32,8 +32,8 @@ const REQUIRED_HEADERS: &[&str] = &["Start_Date", "End_Date", "Bill_Status", "kW
 
 /// How the report writes a date: `01-Jun-26`.
 ///
-/// A two-digit year, which `%y` reads as 20xx. Nothing older than 2000 is going to appear in a
-/// report about EV chargers.
+/// A two-digit year. jiff reads 00-68 as 20xx and 69-99 as 19xx; every year that appears in a
+/// report about EV chargers lands in the first range.
 const DATE_FORMAT: &str = "%d-%b-%y";
 
 /// One month's Charges Report, summed.
@@ -225,7 +225,7 @@ impl ChargesNotes {
     }
 }
 
-/// `rows 2, 3 and 4`, or `rows 2, 3, 4 and 5 more` past the fourth.
+/// `rows 2, 3, 4`, or `rows 2, 3, 4, 5, and 12 more` past the fourth.
 ///
 /// Capped for the reason the Green Button log caps its hours: a subscription change touches one
 /// breaker, but a misread date column touches every row, and forty row numbers on one line is a
@@ -438,17 +438,50 @@ fn number(
     row: usize,
     column: &'static str,
 ) -> Result<f64, ChargesReportError> {
-    // Thousands separators are stripped, since a busy month's kWh easily reaches four figures.
+    let bad_value = |cause: String| ChargesReportError::BadValue {
+        path: path.to_path_buf(),
+        row,
+        column,
+        value: s.to_owned(),
+        cause,
+    };
+    // Thousands separators are stripped, since a busy month's kWh easily reaches four figures --
+    // but only where they group digits in threes. Stripping every comma reads `1,2` as 12, which
+    // turns a malformed cell into a plausible figure in a reader whose posture is an error rather
+    // than a partial sum.
+    if !commas_group_thousands(s.trim()) {
+        return Err(bad_value(
+            "a comma here does not separate thousands".to_owned(),
+        ));
+    }
     let cleaned: String = s.chars().filter(|c| *c != ',').collect();
-    cleaned.parse().map_err(
-        |e: std::num::ParseFloatError| ChargesReportError::BadValue {
-            path: path.to_path_buf(),
-            row,
-            column,
-            value: s.to_owned(),
-            cause: e.to_string(),
-        },
-    )
+    cleaned
+        .parse()
+        .map_err(|e: std::num::ParseFloatError| bad_value(e.to_string()))
+}
+
+/// Whether every comma in `text` separates a group of three digits.
+///
+/// `1,234.5` and `12,345,678` pass; `1,2`, `,123` and `1,2345` do not, and neither does a comma
+/// after the decimal point. A number with no comma in it passes untouched.
+///
+/// The same rule is written out in `hydro_bill::bill_pdf::money`, over the same question about a
+/// different document. Change one and change the other.
+fn commas_group_thousands(text: &str) -> bool {
+    if !text.contains(',') {
+        return true;
+    }
+    let (integer, fraction) = text.split_once('.').unwrap_or((text, ""));
+    if fraction.contains(',') {
+        return false;
+    }
+    let digits = integer
+        .strip_prefix('-')
+        .or_else(|| integer.strip_prefix('+'))
+        .unwrap_or(integer);
+    let mut groups = digits.split(',');
+    let leading = groups.next().unwrap_or("");
+    (1..=3).contains(&leading.len()) && groups.all(|g| g.len() == 3)
 }
 
 /// A dollar amount as the report writes it: `$70.62`, or `-$1.00` for a credit.

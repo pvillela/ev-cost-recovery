@@ -30,7 +30,14 @@ pub fn ui(ui: &mut egui::Ui, state: &mut SurplusState, working: &mut WorkingDir)
     let intervals = &outcome.surplus.delivery.priced_intervals;
     let text = document(intervals);
     let default_name = state.default_detail_save_name();
-    export_row(ui, working, &text, &default_name);
+    export_row(ui, working, &text, &default_name, &mut state.error);
+    // Held on the state and drawn every frame, as the other tabs draw theirs. Drawing it inside
+    // the `clicked()` branch instead showed a failed save for the click frame alone, which in
+    // immediate mode is no message at all.
+    if let Some(message) = &state.error {
+        ui.add_space(8.0);
+        widgets::error_block(ui, message);
+    }
     ui.add_space(12.0);
 
     // Plain text and open to begin with, which is how `widgets::section_ui` draws the other tabs'
@@ -77,7 +84,14 @@ fn document(intervals: &[PricedInterval; 3]) -> String {
     out
 }
 
-fn export_row(ui: &mut egui::Ui, working: &mut WorkingDir, text: &str, default_name: &str) {
+/// The Copy and Save row. `error` is where a failed save is left, for the caller to draw.
+fn export_row(
+    ui: &mut egui::Ui,
+    working: &mut WorkingDir,
+    text: &str,
+    default_name: &str,
+    error: &mut Option<String>,
+) {
     ui.horizontal(|ui| {
         if ui.button("Copy").clicked() {
             ui.ctx().copy_text(text.to_owned());
@@ -90,7 +104,7 @@ fn export_row(ui: &mut egui::Ui, working: &mut WorkingDir, text: &str, default_n
         {
             working.remember(&path);
             if let Err(e) = fs::write(&path, text) {
-                widgets::error_block(ui, &format!("{}: {e}", path.display()));
+                *error = Some(format!("{}: {e}", path.display()));
             }
         }
         widgets::note(ui, "All three intervals, as one document.");

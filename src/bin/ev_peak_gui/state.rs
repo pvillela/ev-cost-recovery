@@ -209,8 +209,6 @@ impl Default for EstimateState {
 }
 
 impl EstimateState {
-    /// Reads the workbook once, to learn what it covers and to start the picker on a day it has
-    /// something to say about. A workbook is last month's; today would be wrong nearly every time.
     /// Takes up the workbook a conversion just wrote. The same as choosing it here, except that
     /// the tab will say where it came from.
     pub fn adopt_workbook(&mut self, path: PathBuf) {
@@ -218,6 +216,8 @@ impl EstimateState {
         self.carried_over = self.workbook.is_some();
     }
 
+    /// Reads the workbook once, to learn what it covers and to start the picker on a day it has
+    /// something to say about. A workbook is last month's; today would be wrong nearly every time.
     pub fn select_workbook(&mut self, path: PathBuf) {
         self.clear_results();
         self.carried_over = false;

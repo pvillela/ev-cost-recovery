@@ -25,11 +25,11 @@ pub(crate) fn session(
     row: usize,
     id: &str,
     conn_start: &str,
-    minutes: i64,
+    minutes: u64,
     energy_use: f64,
 ) -> RSession {
     let conn_start: Timestamp = conn_start.parse().expect("an RFC 3339 timestamp");
-    let elapsed = Duration::from_secs(minutes as u64 * 60);
+    let elapsed = Duration::from_secs(minutes * 60);
     Rc::new(Session {
         path: Rc::new(PathBuf::from(path)),
         row,
@@ -88,7 +88,7 @@ pub(crate) fn spike_session(
     row: usize,
     id: &str,
     conn_start: &str,
-    minutes: i64,
+    minutes: u64,
     energy_use: f64,
 ) -> RSession {
     let sound = session(path, row, id, conn_start, minutes, energy_use);

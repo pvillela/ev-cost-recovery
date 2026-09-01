@@ -1,30 +1,18 @@
 //! Plain-text run logs written beside each output file.
 //!
-//! One per operation, overwritten each run: `<stem>.session.convert.log` for CSV to Excel,
-//! `<stem>.session.csv.read.log` for CSV straight to sessions, and
-//! `<stem>.session.xlsx.read.log` for Excel back to sessions. A log always says one of two
-//! things — that everything was fine, or what was found — so an empty-looking run is
-//! distinguishable from one that was never made.
+//! One per operation, named `<stem>.<suffix>.log` and overwritten each run. Each reader declares
+//! its own suffix on the [`SourceLog`] it hands back, so this module fixes the scheme and not the
+//! list; the readers of sessions, meter exports and charges reports each name their own. A log
+//! always says one of two things — that everything was fine, or what was found — so an
+//! empty-looking run is distinguishable from one that was never made.
 //!
 //! # What a suffix is made of
 //!
-//! The kind of document, then the format read, then the operation. The kind comes first because a
-//! log names its subject the way an error message does: the reader has several kinds of file in
-//! one folder, and `June.csv` alone does not say which of them this log is about. The format has
-//! to stay because the three logs of one session report share a stem — the CSV and the workbook it
-//! converts to — so dropping it would have each run overwrite the last.
-//!
-//! # Why discrepancies are not anomalies
-//!
-//! [`AnomalyKind`](crate::session::AnomalyKind) describes the *session*: something about the reported data
-//! needs a judgement call, and one kind, `InconsistentDuration`, removes the session from every
-//! estimate. A discrepancy describes the *workbook*: a stored column disagrees with what the
-//! `Session` methods recompute, which means the sheet is stale or was edited, and says nothing
-//! about the session itself.
-//!
-//! Keeping them apart is the point. If a stale cell could raise an anomaly, editing a workbook
-//! could silently change which sessions feed an estimate — and the estimate would still look
-//! clean. The recomputed value always wins; the disagreement is logged and nothing else changes.
+//! The kind of document, then the format read, then the operation, as in `session.csv.read`. The
+//! kind comes first because a log names its subject the way an error message does: the reader has
+//! several kinds of file in one folder, and `June.csv` alone does not say which of them this log is
+//! about. The format has to stay because the several logs of one document share a stem — a CSV and
+//! the workbook it converts to — so dropping it would have each run overwrite the last.
 
 use std::{
     error::Error,
@@ -146,10 +134,13 @@ impl SourceLog {
 
 /// `<stem>.<suffix>.log` beside `output`.
 fn log_path(output: &Path, suffix: &str) -> PathBuf {
+    // The fallback is unreachable: `output` is a file this crate has just written or is about to,
+    // so it has a name. It is here because `file_stem` returns an `Option`, and a stem that names
+    // no kind of document is the one that cannot mislead a reader if it ever does appear.
     let stem = output
         .file_stem()
         .map(|s| s.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "session_report".to_owned());
+        .unwrap_or_else(|| "unreachable".to_owned());
     output.with_file_name(format!("{stem}.{suffix}.log"))
 }
 

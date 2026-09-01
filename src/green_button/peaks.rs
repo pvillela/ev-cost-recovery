@@ -73,8 +73,8 @@ impl PeriodValues {
 
     /// What a figure drawn from these meter readings should say about them.
     ///
-    /// Taken rather than borrowed: [`PeriodValues`] is consumed by the functions that price a
-    /// period, and this is what survives them.
+    /// Owning clones rather than borrows: [`PeriodValues`] is consumed by the functions that price
+    /// a period, and the notes are what survives them.
     pub fn notes(&self) -> MeterNotes {
         MeterNotes {
             source: self.source.clone(),

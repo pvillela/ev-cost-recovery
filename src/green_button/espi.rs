@@ -61,6 +61,12 @@ pub struct Series {
     pub values: BTreeMap<Timestamp, i64>,
     pub power_of_ten: i32,
     /// Interval starts that appeared more than once within this series.
+    ///
+    /// The **last** value read for such a start is the one in `values`, and so the one that
+    /// reaches every total and every peak. That is the order the feed happens to state them in
+    /// rather than a rule about which reading is right: nothing in the export says which of two
+    /// readings for one interval supersedes the other. The duplication itself is what gets
+    /// reported, so a reader can go and look.
     pub duplicates: BTreeSet<Timestamp>,
 }
 

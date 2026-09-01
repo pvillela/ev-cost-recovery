@@ -126,6 +126,14 @@ pub struct CostRecovery {
     pub notes: SessionNotes,
 }
 
+// No per-band recovery for the whole period. A band's kilowatt-hours were charged at one rate in
+// each stretch and at a different rate in the next, so their sum is money recovered under two
+// schedules at once -- a figure no table here shows and no invoice would state. The bands are
+// reported per stretch, on `CostRecoveryStretch`, where each has a single rate behind it.
+//
+// `CostRecovery::kwh` and `CostRecovery::cost_recovery` are summable in the same way and are kept,
+// because both are figures the report itself states.
+
 /// The EV cost recovery for the billing period, the hydro delivery and energy costs attributable
 /// to EV charging sessions during the period, and their net financial impact.
 ///
@@ -168,14 +176,6 @@ pub struct CostRecoverySurplus {
     /// the three parts that reads one.
     pub meter: MeterNotes,
 }
-
-// No per-band recovery for the whole period. A band's kilowatt-hours were charged at one rate in
-// each stretch and at a different rate in the next, so their sum is money recovered under two
-// schedules at once -- a figure no table here shows and no invoice would state. The bands are
-// reported per stretch, on [`CostRecoveryStretch`], where each has a single rate behind it.
-//
-// [`Self::kwh`] and [`Self::cost_recovery`] are summable in the same way and are kept, because
-// both are figures the report itself states.
 
 /// Why a billing period's sessions cannot be turned into a cost recovery.
 ///

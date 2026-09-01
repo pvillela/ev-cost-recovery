@@ -31,7 +31,7 @@ use crate::{
     time::{Interval, time_zone},
 };
 use jiff::{Timestamp, Zoned};
-use std::{collections::BTreeMap, fmt};
+use std::{collections::BTreeMap, fmt, path::PathBuf};
 
 fn local(ts: Timestamp) -> Zoned {
     Zoned::new(ts, time_zone())
@@ -214,7 +214,11 @@ impl SessionNotes {
 /// wrong in it renders neither section at all -- and a single table lines its columns up across
 /// files, which several tables of two rows each would not.
 fn by_source_table(rows: impl IntoIterator<Item = (RSession, Option<AnomalyKind>)>) -> String {
-    let mut by_file: BTreeMap<String, Vec<Vec<String>>> = BTreeMap::new();
+    // Keyed by the whole path as the reader was given it, not by the file's name: two reports of
+    // the same name in different directories are two files, and grouping them together would put
+    // rows from both under one heading with nothing to tell them apart. The `File` column still
+    // shows the name alone -- see `file_name`.
+    let mut by_file: BTreeMap<PathBuf, Vec<Vec<String>>> = BTreeMap::new();
     for (session, kind) in rows {
         let flags = match kind {
             Some(kind) => kind.as_str().to_owned(),
@@ -226,12 +230,15 @@ fn by_source_table(rows: impl IntoIterator<Item = (RSession, Option<AnomalyKind>
                 .collect::<Vec<_>>()
                 .join(", "),
         };
-        by_file.entry(file_name(&session)).or_default().push(vec![
-            file_name(&session),
-            session.row.to_string(),
-            session.id.clone(),
-            flags,
-        ]);
+        by_file
+            .entry(session.path.as_ref().clone())
+            .or_default()
+            .push(vec![
+                file_name(&session),
+                session.row.to_string(),
+                session.id.clone(),
+                flags,
+            ]);
     }
     let rows: Vec<Vec<String>> = by_file.into_values().flatten().collect();
     table(

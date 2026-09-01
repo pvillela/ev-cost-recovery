@@ -1,4 +1,4 @@
-use ev_cost_recovery::session::session_csv_to_xlsx;
+use ev_cost_recovery::api::{OnExistingWorkbook, session_csv_to_xlsx};
 use std::{env, path::PathBuf, process::ExitCode};
 
 const USAGE: &str = "\
@@ -6,7 +6,10 @@ Converts a charging session report from CSV to .xlsx.
 
 Usage: ev_csv_to_xlsx <SESSION_REPORT.csv>...
 
-Each workbook is written beside its input with the extension replaced. Rows needing a judgement
+Each workbook is written beside its input with the extension replaced. A file already standing
+where the workbook would go is refused, not overwritten: move or delete it first.
+
+Rows needing a judgement
 call — an ambiguous DST fold, a wall time in the DST gap, a session with no charge time, one whose
 reported duration runs past its reported end — are reported on stderr and recorded in the
 workbook's Anomalies column; they do not stop the conversion. Row numbers are rows of the CSV, so a
@@ -29,7 +32,10 @@ fn main() -> ExitCode {
 
     let mut failed = false;
     for path in &args {
-        match session_csv_to_xlsx(path) {
+        // Through the API rather than `session::session_csv_to_xlsx`, which takes no policy and
+        // writes unconditionally. This is where the refusal to overwrite an existing workbook
+        // lives, and it is the same one the desktop app gets.
+        match session_csv_to_xlsx(path, OnExistingWorkbook::Refuse) {
             Ok(report) => {
                 println!("{}", report.output_path.display());
                 // A binary is the end of the line: there is nowhere left to return a finding to.

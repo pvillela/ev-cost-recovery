@@ -195,9 +195,8 @@ fn read_sessions(path: &Path) -> Result<Sessions, SessionCsvError> {
         operation: "Read Session Report",
         log: rows.log,
     };
-    // One list, so there is nothing to collapse across files -- but it still goes through the
-    // merge, because that is where a shared `Charge_Session_ID` is noticed, and one file can carry
-    // one as readily as two can.
+    // One list, and it still goes through the merge: a file can state a record twice as readily as
+    // two files can, and the merge is also where a shared `Charge_Session_ID` is noticed.
     let sessions: Vec<RSession> = rows.rows.into_iter().map(|row| row.session).collect();
     Ok(Sessions::from_session_lists(
         vec![sessions],
@@ -597,8 +596,9 @@ impl CsvSession {
             }
             AmbiguousOffset::Gap { .. } => {
                 // A wall time that never occurred. `compatible` moves to just after the gap; the
-                // row is still written, but the shift is reported rather than silently applied.
-                common.push(AnomalyKind::DstGapShifted);
+                // row is still written, but the shift is reported rather than silently applied,
+                // and the flag excludes the session from the estimates.
+                common.push(AnomalyKind::FellInDstGap);
                 vec![(ambiguous.compatible().map_err(unresolvable)?, None)]
             }
             AmbiguousOffset::Fold { .. } => {
@@ -632,8 +632,14 @@ impl CsvSession {
         starts
             .into_iter()
             .map(|(start_utc, suffix)| {
-                let end_utc = self.resolve_end(tz, start_utc).map_err(unresolvable)?;
+                let (end_utc, end_in_gap) =
+                    self.resolve_end(tz, start_utc).map_err(unresolvable)?;
                 let mut anomalies = common.clone();
+                // The start may already have carried the flag in from `common`; one per session is
+                // what a reader needs, and the kind does not say which end it came from.
+                if end_in_gap && !anomalies.contains(&AnomalyKind::FellInDstGap) {
+                    anomalies.push(AnomalyKind::FellInDstGap);
+                }
                 if !duration_is_consistent(start_utc, end_utc, self.conn_duration) {
                     anomalies.push(AnomalyKind::InconsistentDuration);
                 }
@@ -686,23 +692,33 @@ impl CsvSession {
         SLACK_EARLY < offset && offset < SLACK_LATE
     }
 
-    /// Resolves the reported end to UTC. When the end itself falls in the fold, the candidate
-    /// nearest to `start + Conn_Duration` is the one consistent with this session.
-    fn resolve_end(&self, tz: &TimeZone, start_utc: Timestamp) -> Result<Timestamp, jiff::Error> {
+    /// Resolves the reported end to UTC, and says whether it fell in the DST gap. When the end
+    /// itself falls in the fold, the candidate nearest to `start + Conn_Duration` is the one
+    /// consistent with this session.
+    ///
+    /// The gap is reported back rather than resolved quietly. A wall time that never occurred is
+    /// the same fault at either end of the session, and the caller is where an
+    /// [`AnomalyKind`] is attached.
+    fn resolve_end(
+        &self,
+        tz: &TimeZone,
+        start_utc: Timestamp,
+    ) -> Result<(Timestamp, bool), jiff::Error> {
         let ambiguous = tz.to_ambiguous_timestamp(self.end_local);
         Ok(match ambiguous.offset() {
-            AmbiguousOffset::Unambiguous { .. } => ambiguous.unambiguous()?,
-            AmbiguousOffset::Gap { .. } => ambiguous.compatible()?,
+            AmbiguousOffset::Unambiguous { .. } => (ambiguous.unambiguous()?, false),
+            AmbiguousOffset::Gap { .. } => (ambiguous.compatible()?, true),
             AmbiguousOffset::Fold { .. } => {
                 let reference = start_utc + self.conn_duration;
                 let earlier = tz.to_ambiguous_timestamp(self.end_local).earlier()?;
                 let later = tz.to_ambiguous_timestamp(self.end_local).later()?;
                 let d = |t: Timestamp| (t.as_second() - reference.as_second()).abs();
-                if d(earlier) <= d(later) {
+                let nearest = if d(earlier) <= d(later) {
                     earlier
                 } else {
                     later
-                }
+                };
+                (nearest, false)
             }
         })
     }
@@ -1013,7 +1029,35 @@ mod test {
         assert_eq!(local_of(rows[0].session.conn_start), dt("2026-03-08 03:30"));
         assert_eq!(
             timing_anomalies(&rows[0].session.anomalies),
-            vec![AnomalyKind::DstGapShifted]
+            vec![AnomalyKind::FellInDstGap]
+        );
+    }
+
+    /// The same fault on the *end* column. It was resolved silently until the reader was made to
+    /// report it: the row passed every consistency check and reached the estimates unflagged.
+    #[test]
+    fn a_session_ending_in_the_dst_gap_is_flagged() {
+        let rows = session("2026-03-08 01:30", "2026-03-08 02:30", "1:00:00")
+            .resolve(&time_zone(), &test_source(), 2)
+            .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(local_of(rows[0].session.conn_end), dt("2026-03-08 03:30"));
+        assert_eq!(
+            timing_anomalies(&rows[0].session.anomalies),
+            vec![AnomalyKind::FellInDstGap]
+        );
+    }
+
+    /// One flag for a session whose reported start and end both fall in the gap, not two.
+    #[test]
+    fn a_gap_at_both_ends_is_flagged_once() {
+        let rows = session("2026-03-08 02:10", "2026-03-08 02:40", "0:30:00")
+            .resolve(&time_zone(), &test_source(), 2)
+            .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(
+            timing_anomalies(&rows[0].session.anomalies),
+            vec![AnomalyKind::FellInDstGap]
         );
     }
 

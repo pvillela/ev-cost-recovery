@@ -85,10 +85,9 @@ pub use crate::{
 /// their file names before anything is read. Which is given first makes no difference; the names
 /// say what each holds.
 ///
-/// Nothing here writes. Each report read returns its `session.csv.read` log unwritten on the result's
-/// `notes` -- see the private `session::csv::csv_sessions` -- and
-/// [`SessionNotes::write_logs`](crate::session::SessionNotes::write_logs) is what a binary calls
-/// to put one beside its input.
+/// Nothing here writes, as the module docs state: each read's log comes back unwritten on the
+/// result's `notes`, for
+/// [`SessionNotes::write_logs`](crate::session::SessionNotes::write_logs) to put beside its input.
 ///
 /// # Errors
 ///
@@ -138,10 +137,9 @@ pub fn peak_power(
 /// The two reports must cover the billing period completely between them, checked from their file
 /// names. Which is given first makes no difference; the names say what each holds.
 ///
-/// Nothing here writes. Each report read returns its `session.csv.read` log unwritten on the result's
-/// `notes` -- see the private `session::csv::csv_sessions` -- and
-/// [`SessionNotes::write_logs`](crate::session::SessionNotes::write_logs) is what a binary calls
-/// to put one beside its input.
+/// Nothing here writes, as the module docs state: each read's log comes back unwritten on the
+/// result's `notes`, for
+/// [`SessionNotes::write_logs`](crate::session::SessionNotes::write_logs) to put beside its input.
 ///
 /// # Errors
 ///
@@ -194,10 +192,9 @@ pub fn peak_power_cost(
 /// [`pure::energy`](fn@super::pure::energy) sums whatever it is given, so a month's report missing
 /// from the call yields a total that is simply too low, with nothing in the figures to say so.
 ///
-/// Nothing here writes. Each report read returns its `session.csv.read` log unwritten on the result's
-/// `notes` -- see the private `session::csv::csv_sessions` -- and
-/// [`SessionNotes::write_logs`](crate::session::SessionNotes::write_logs) is what a binary calls
-/// to put one beside its input.
+/// Nothing here writes, as the module docs state: each read's log comes back unwritten on the
+/// result's `notes`, for
+/// [`SessionNotes::write_logs`](crate::session::SessionNotes::write_logs) to put beside its input.
 ///
 /// # Errors
 ///
@@ -236,10 +233,9 @@ pub fn energy(
 /// The two reports must cover the billing period completely between them, checked from their file
 /// names. Which is given first makes no difference; the names say what each holds.
 ///
-/// Nothing here writes. Each report read returns its `session.csv.read` log unwritten on the result's
-/// `notes` -- see the private `session::csv::csv_sessions` -- and
-/// [`SessionNotes::write_logs`](crate::session::SessionNotes::write_logs) is what a binary calls
-/// to put one beside its input.
+/// Nothing here writes, as the module docs state: each read's log comes back unwritten on the
+/// result's `notes`, for
+/// [`SessionNotes::write_logs`](crate::session::SessionNotes::write_logs) to put beside its input.
 ///
 /// # Errors
 ///
@@ -289,10 +285,9 @@ pub fn energy_cost(
 /// [`energy`]: the recovery is a sum over whatever it is given, so a month's report missing from
 /// the call yields a figure that is simply too low, with nothing in it to say so.
 ///
-/// Nothing here writes. Each report read returns its `session.csv.read` log unwritten on the result's
-/// `notes` -- see the private `session::csv::csv_sessions` -- and
-/// [`SessionNotes::write_logs`](crate::session::SessionNotes::write_logs) is what a binary calls
-/// to put one beside its input.
+/// Nothing here writes, as the module docs state: each read's log comes back unwritten on the
+/// result's `notes`, for
+/// [`SessionNotes::write_logs`](crate::session::SessionNotes::write_logs) to put beside its input.
 ///
 /// # Errors
 ///
@@ -339,10 +334,9 @@ pub fn cost_recovery(
 /// The two reports must cover the billing period completely between them, checked from their file
 /// names. Which is given first makes no difference; the names say what each holds.
 ///
-/// Nothing here writes. Each report read returns its `session.csv.read` log unwritten on the result's
-/// `notes` -- see the private `session::csv::csv_sessions` -- and
-/// [`SessionNotes::write_logs`](crate::session::SessionNotes::write_logs) is what a binary calls
-/// to put one beside its input.
+/// Nothing here writes, as the module docs state: each read's log comes back unwritten on the
+/// result's `notes`, for
+/// [`SessionNotes::write_logs`](crate::session::SessionNotes::write_logs) to put beside its input.
 ///
 /// # Errors
 ///
@@ -610,12 +604,16 @@ fn bill_source(cause: &EnergyError, bill_pdf: Option<&Path>) -> Option<PathBuf> 
 ///
 /// [`OnExistingWorkbook::Replace`] waives only the second refusal. An input that is its own output
 /// is refused either way: there is no reading a file that the writer has already truncated.
+///
+/// The first refusal tests the input's extension rather than comparing the two paths. `Book.XLSX`
+/// and the `Book.xlsx` derived from it differ as bytes and are the same file on Windows and macOS,
+/// both of which are shipped targets, so a comparison lets the conversion truncate its own input.
 fn checked_workbook_path(
     input: &Path,
     output: PathBuf,
     on_existing: OnExistingWorkbook,
 ) -> Result<PathBuf, ConversionError> {
-    if output == input {
+    if is_xlsx(input) {
         return Err(ConversionError::OutputWouldBeInput {
             path: input.to_path_buf(),
         });
@@ -624,6 +622,12 @@ fn checked_workbook_path(
         return Err(ConversionError::OutputExists { path: output });
     }
     Ok(output)
+}
+
+/// Whether a path already names a workbook, whatever case the extension is written in.
+fn is_xlsx(path: &Path) -> bool {
+    path.extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("xlsx"))
 }
 
 /// The Green Button reader's error, as the API's.
@@ -703,6 +707,39 @@ mod test {
             1,
             "session conversion: {conversion}"
         );
+
+        // The bill and the charges report reach `ReadError` by the same two-part route, so the
+        // same double-naming is available to them. Both are read before anything else their call
+        // touches, which is what lets a missing file stand in for an unreadable one here.
+        let missing_pdf = Path::new("/nonexistent/no_such_file.pdf");
+        let bill = peak_power_cost(missing_pdf, missing, missing_csv, missing_csv)
+            .unwrap_err()
+            .to_string();
+        assert_eq!(
+            bill.matches("no_such_file.pdf").count(),
+            1,
+            "hydro bill: {bill}"
+        );
+
+        let missing_charges = Path::new("/nonexistent/no_such_charges.csv");
+        let charges = reconcile_evolute_reimbursement(
+            missing_csv,
+            missing_charges,
+            0.0,
+            CostRecoveryRates {
+                effective_date: date(2026, 5, 1),
+                on_peak: 0.11,
+                mid_peak: 0.09,
+                off_peak: 0.07,
+            },
+        )
+        .unwrap_err()
+        .to_string();
+        assert_eq!(
+            charges.matches("no_such_charges.csv").count(),
+            1,
+            "charges report: {charges}"
+        );
     }
 
     /// The two refusals a conversion makes before opening anything, and the case that passes.
@@ -718,6 +755,19 @@ mod test {
                 xlsx,
                 xlsx.with_extension("xlsx"),
                 OnExistingWorkbook::Refuse
+            ),
+            Err(ConversionError::OutputWouldBeInput { .. })
+        ));
+
+        // The same input written in another case. The derived output differs from it as bytes and
+        // names the same file on Windows and macOS, so comparing the two paths would let the
+        // conversion truncate its own input there.
+        let shouty = Path::new("Book.XLSX");
+        assert!(matches!(
+            checked_workbook_path(
+                shouty,
+                shouty.with_extension("xlsx"),
+                OnExistingWorkbook::Replace
             ),
             Err(ConversionError::OutputWouldBeInput { .. })
         ));
@@ -783,8 +833,7 @@ mod test {
             Path::new("Session_Report_May_1_2026-May_31_2026.csv"),
             Path::new("Session_Report_June_1_2026-June_30_2026.csv"),
         )
-        .err()
-        .expect("30 June does not label a billing period");
+        .expect_err("30 June does not label a billing period");
         assert!(
             matches!(
                 err,
@@ -804,8 +853,7 @@ mod test {
             Path::new("Session_Report_April_1_2026-April_30_2026.csv"),
             Path::new("Session_Report_June_1_2026-June_30_2026.csv"),
         )
-        .err()
-        .expect("April and June do not cover a period starting 24 May");
+        .expect_err("April and June do not cover a period starting 24 May");
         assert!(
             matches!(
                 err,

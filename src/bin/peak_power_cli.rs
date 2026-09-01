@@ -73,6 +73,10 @@ fn run(
 
     // Written before the reports are printed, so a failure to write one is not buried under them.
     notes.write_logs()?;
+    // The meter export's own log, beside the session ones. Without it a command-line run leaves
+    // fewer artifacts than the same inputs run through the app, and records no meter-side anomaly
+    // for the period priced.
+    meter.write_log()?;
 
     // Each report carries its own heading, so the label above it says only which of the two it is.
     println!("Billing period ending {billing_period_ending} -- interval maximizing kW\n");

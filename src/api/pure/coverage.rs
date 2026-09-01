@@ -29,14 +29,13 @@ pub use crate::session::SessionReportCoverage;
 /// Every variant is settled from the file *names*. Nothing here has opened anything.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CoverageError {
+    /// See [`NotABillingPeriodEnding`].
     NotABillingPeriodEnding(NotABillingPeriodEnding),
 
     /// A session report's file name does not state the dates it covers, so it cannot be checked
     /// against the billing period. See
     /// [`report_coverage`](crate::session::report_coverage).
-    UndatedSessionReport {
-        path: PathBuf,
-    },
+    UndatedSessionReport { path: PathBuf },
 
     /// The session reports given do not cover the whole billing period between them.
     ///

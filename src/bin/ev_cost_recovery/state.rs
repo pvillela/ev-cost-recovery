@@ -172,8 +172,9 @@ impl RatesForm {
     ///
     /// # Errors
     ///
-    /// The first band that is not a number, named. A rate is refused rather than defaulted: a blank
-    /// field read as zero would price that band's energy at nothing and still produce a report.
+    /// The first band that is not a number, or not a rate a band can be priced at, named. A rate
+    /// is refused rather than defaulted: a blank field read as zero would price that band's energy
+    /// at nothing and still produce a report.
     pub fn parse(&self) -> Result<CostRecoveryRates, String> {
         let mut rates = [0.0; 3];
         for (i, (band, text)) in self.bands().into_iter().enumerate() {
@@ -181,9 +182,10 @@ impl RatesForm {
             if text.is_empty() {
                 return Err(format!("the {band} rate is blank"));
             }
-            rates[i] = text
+            let rate: f64 = text
                 .parse()
                 .map_err(|e| format!("cannot read \"{text}\" as the {band} rate: {e}"))?;
+            rates[i] = checked_figure(rate, &format!("{band} rate"), text)?;
         }
         Ok(CostRecoveryRates {
             effective_date: self.effective_date,
@@ -192,6 +194,24 @@ impl RatesForm {
             off_peak: rates[2],
         })
     }
+}
+
+/// A figure the user typed, refused unless a rate or a sum of money could take it.
+///
+/// `"nan"`, `"inf"` and `"-inf"` all parse as `f64`, so parsing alone lets them through: NaN then
+/// spreads into every total it touches and the report still renders, while a negative band rate
+/// prices that band's energy at less than nothing. The field is named here because a message from
+/// deeper in cannot name it.
+fn checked_figure(value: f64, what: &str, text: &str) -> Result<f64, String> {
+    if !value.is_finite() {
+        return Err(format!(
+            "cannot read \"{text}\" as the {what}: it is not a finite number"
+        ));
+    }
+    if value < 0.0 {
+        return Err(format!("the {what} cannot be negative: \"{text}\""));
+    }
+    Ok(value)
 }
 
 /// Today, in the zone the rest of the app works in.
@@ -405,9 +425,8 @@ pub struct ReimbursementOutcome {
 /// The Reimbursement tab's form and what it produced.
 ///
 /// Two of Evolute's documents for the one month, and one figure entered manually. One session
-/// report rather
-/// than two, because a reimbursement settles a calendar month and one Evolute report is one
-/// calendar month. One schedule of rates rather than two, because our schedules change on the
+/// report rather than two, because a reimbursement settles a calendar month and one Evolute report
+/// is one calendar month. One schedule of rates rather than two, because our schedules change on the
 /// first of a month, so a month is priced at one set of rates or it is not a month we can
 /// reconcile.
 #[derive(Default)]
@@ -419,10 +438,9 @@ pub struct ReimbursementState {
     /// What Evolute actually paid, still in the text entered manually, for the reason the rates
     /// are text: a field being edited passes through states that are not numbers.
     ///
-    /// The one figure still entered by hand. It is what was seen to arrive -- from a bank
-    /// statement or a
-    /// remittance advice -- and taking it off the Charges Report instead would make it agree with
-    /// that report whatever Evolute had actually sent.
+    /// The one figure still entered by hand. It is what was seen to arrive -- from a bank statement
+    /// or a remittance advice -- and taking it off the Charges Report instead would make it agree
+    /// with that report whatever Evolute had actually sent.
     pub reimbursed: String,
     pub rates: RatesForm,
     pub outcome: Option<ReimbursementOutcome>,
@@ -488,20 +506,21 @@ impl ReimbursementState {
     ///
     /// # Errors
     ///
-    /// A blank or unreadable figure, named. Blank is refused rather than read as zero: zero is a
-    /// real answer -- Evolute paid nothing, nobody charged all month -- and must be entered to be
-    /// meant.
+    /// A blank or unreadable figure, named, and one that is not a figure a sum of money can take.
+    /// Blank is refused rather than read as zero: zero is a real answer -- Evolute paid nothing,
+    /// nobody charged all month -- and must be entered to be meant.
     fn number(text: &str, what: &str) -> Result<f64, String> {
         let text = text.trim();
         if text.is_empty() {
             return Err(format!("the {what} is blank"));
         }
-        text.parse()
-            .map_err(|e| format!("cannot read \"{text}\" as the {what}: {e}"))
+        let value: f64 = text
+            .parse()
+            .map_err(|e| format!("cannot read \"{text}\" as the {what}: {e}"))?;
+        checked_figure(value, what, text)
     }
 
-    /// What Evolute actually paid. The one figure still entered manually: it comes off a bank
-    /// statement or a remittance advice, neither of which this app opens.
+    /// What Evolute actually paid; see [`Self::reimbursed`].
     fn amount(&self) -> Result<f64, String> {
         Self::number(&self.reimbursed, "reimbursement amount")
     }

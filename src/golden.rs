@@ -5,7 +5,7 @@
 //! substrings. A change shows up as a diff in that file, which is where it should be visible during
 //! review.
 //!
-//! Integration tests reach `tests/fixtures/` through [`fixtures_dir_in`](../tests/common) instead;
+//! Integration tests reach `tests/fixtures/` through `fixtures_dir_in` in `tests/common` instead;
 //! that helper is only visible from `tests/`. This is the same directory, resolved the same way, for
 //! a test that has to live in `src/` because the inputs it renders are `#[cfg(test)]` fixtures the
 //! public API cannot reach.

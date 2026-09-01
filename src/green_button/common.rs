@@ -222,6 +222,7 @@ mod test {
             Anomaly::MissingInterval,
             Anomaly::DuplicateInterval,
             Anomaly::MisalignedInterval,
+            Anomaly::ImplausibleGap,
         ] {
             assert_eq!(Anomaly::from_token(a.as_str()), Some(a));
         }

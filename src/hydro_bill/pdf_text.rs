@@ -21,8 +21,9 @@
 use std::{
     collections::{BTreeMap, HashMap},
     error::Error,
+    fmt,
     io::{self, Write},
-    path::Path,
+    path::{Path, PathBuf},
 };
 
 use lopdf::{Document, Object, ObjectId, content::Operation};
@@ -106,34 +107,125 @@ pub fn write_pages(pages: &[Vec<Line>], out: &mut impl Write) -> io::Result<()> 
     Ok(())
 }
 
+/// Why a PDF did not give up its positioned text.
+///
+/// The file is a field rather than part of a message, and so is the page where the failure belongs
+/// to one; both are written at [`fmt::Display`]. A caller that wraps this must not add the path
+/// again -- see `BillError::Unreadable`, which defers to it entirely.
+#[derive(Debug)]
+pub struct PdfTextError {
+    /// The PDF that was being read.
+    pub path: PathBuf,
+    /// The page the failure is on, numbered as the document numbers its pages. `None` when the
+    /// document itself could not be loaded, which belongs to no page.
+    pub page: Option<u32>,
+    pub cause: PdfTextCause,
+}
+
+/// What went wrong, once the file and the page are known.
+#[derive(Debug)]
+pub enum PdfTextCause {
+    /// The file could not be opened, or is not a PDF `lopdf` can load.
+    Load(String),
+    /// The page's font dictionary or its content stream could not be reached.
+    Page(String),
+    /// A font on the page declares no `/ToUnicode` CMap, so its glyph codes stand for nothing this
+    /// can name.
+    NoCMap { font: String, cause: String },
+    /// A font's `/ToUnicode` CMap is there and could not be read.
+    BadCMap { font: String, cause: String },
+    /// A `Tf` operator names a font the page's resources do not declare.
+    ///
+    /// An error rather than a silent skip. There is no CMap to decode the text that follows, so
+    /// every run shown in that font would otherwise vanish from the page -- and a bill parser that
+    /// reads a figure off a line missing half its runs answers with a number rather than a
+    /// refusal. See the U+FFFD substitution in `ToUnicode::decode`, which is the same posture
+    /// for a single code.
+    UndeclaredFont { font: String },
+}
+
+impl fmt::Display for PdfTextError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.path.display())?;
+        if let Some(page) = self.page {
+            write!(f, ": page {page}")?;
+        }
+        write!(f, ": {}", self.cause)
+    }
+}
+
+impl fmt::Display for PdfTextCause {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Load(cause) | Self::Page(cause) => write!(f, "{cause}"),
+            Self::NoCMap { font, cause } => write!(f, "font /{font}: no ToUnicode CMap: {cause}"),
+            Self::BadCMap { font, cause } => {
+                write!(f, "font /{font}: unreadable ToUnicode CMap: {cause}")
+            }
+            Self::UndeclaredFont { font } => write!(
+                f,
+                "font /{font} is used on the page but is not among its resources, so the text \
+                 shown in it cannot be decoded"
+            ),
+        }
+    }
+}
+
+impl Error for PdfTextError {}
+
 /// Reads a PDF and returns its lines, page by page, each page ordered top to bottom.
-pub fn read_pages(path: &Path) -> Result<Vec<Vec<Line>>, Box<dyn Error>> {
-    let doc = Document::load(path).map_err(|e| format!("{}: {e}", path.display()))?;
+pub fn read_pages(path: &Path) -> Result<Vec<Vec<Line>>, PdfTextError> {
+    let doc = Document::load(path).map_err(|e| PdfTextError {
+        path: path.to_path_buf(),
+        page: None,
+        cause: PdfTextCause::Load(e.to_string()),
+    })?;
     let mut pages = Vec::new();
     for (number, id) in doc.get_pages() {
-        let fragments = page_fragments(&doc, id)
-            .map_err(|e| format!("{}: page {number}: {e}", path.display()))?;
+        let fragments = page_fragments(&doc, id).map_err(|cause| PdfTextError {
+            path: path.to_path_buf(),
+            page: Some(number),
+            cause,
+        })?;
         pages.push(into_lines(fragments));
     }
     Ok(pages)
 }
 
 /// Every run of text on one page, in the order the content stream shows it.
-fn page_fragments(doc: &Document, page: ObjectId) -> Result<Vec<Fragment>, Box<dyn Error>> {
+///
+/// The page number is not known here, so the failure comes back as a bare cause and
+/// [`read_pages`] attaches the page and the file.
+fn page_fragments(doc: &Document, page: ObjectId) -> Result<Vec<Fragment>, PdfTextCause> {
     let mut encodings: BTreeMap<Vec<u8>, ToUnicode> = BTreeMap::new();
-    for (name, font) in doc.get_page_fonts(page)? {
+    for (name, font) in doc
+        .get_page_fonts(page)
+        .map_err(|e| PdfTextCause::Page(e.to_string()))?
+    {
         let named = || String::from_utf8_lossy(&name).into_owned();
         let stream = font
             .get_deref(b"ToUnicode", doc)
             .and_then(Object::as_stream)
-            .map_err(|e| format!("font /{}: no ToUnicode CMap: {e}", named()))?;
-        let cmap = stream.get_plain_content()?;
+            .map_err(|e| PdfTextCause::NoCMap {
+                font: named(),
+                cause: e.to_string(),
+            })?;
+        let cmap = stream
+            .get_plain_content()
+            .map_err(|e| PdfTextCause::BadCMap {
+                font: named(),
+                cause: e.to_string(),
+            })?;
         let cmap = String::from_utf8_lossy(&cmap);
-        let cmap = ToUnicode::parse(&cmap)
-            .map_err(|e| format!("font /{}: unreadable ToUnicode CMap: {e}", named()))?;
+        let cmap = ToUnicode::parse(&cmap).map_err(|e| PdfTextCause::BadCMap {
+            font: named(),
+            cause: e.to_string(),
+        })?;
         encodings.insert(name, cmap);
     }
-    let content = doc.get_and_decode_page_content(page)?;
+    let content = doc
+        .get_and_decode_page_content(page)
+        .map_err(|e| PdfTextCause::Page(e.to_string()))?;
 
     let mut fragments = Vec::new();
     let mut ctm = IDENTITY;
@@ -158,10 +250,19 @@ fn page_fragments(doc: &Document, page: ObjectId) -> Result<Vec<Fragment>, Box<d
                 tlm = IDENTITY;
             }
             "Tf" => {
-                encoding = operands
-                    .first()
-                    .and_then(|o| o.as_name().ok())
-                    .and_then(|name| encodings.get(name));
+                // A `Tf` whose operand is not a name at all leaves the encoding as it was: that is
+                // a malformed operator rather than a font this cannot decode, and the runs after
+                // it are still shown in the font already selected.
+                if let Some(name) = operands.first().and_then(|o| o.as_name().ok()) {
+                    encoding =
+                        Some(
+                            encodings
+                                .get(name)
+                                .ok_or_else(|| PdfTextCause::UndeclaredFont {
+                                    font: String::from_utf8_lossy(name).into_owned(),
+                                })?,
+                        );
+                }
             }
             "TL" => leading = number(operands.first()),
             "Td" | "TD" => {

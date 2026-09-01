@@ -14,7 +14,7 @@
 //! what removes a session from the estimates. See [`AnomalyKind`].
 
 use super::{
-    Anomaly, AnomalyKind, duration_is_consistent,
+    Anomaly, AnomalyKind,
     csv::{SessionRows, csv_session_rows},
 };
 use crate::{
@@ -531,7 +531,10 @@ pub mod historic {
     use super::*;
     use crate::{
         log::RunLog,
-        session::{IntervalEstimates, RSession, Session, Sessions, estimates_from_sessions},
+        session::{
+            IntervalEstimates, RSession, Session, Sessions, duration_is_consistent,
+            estimates_from_sessions,
+        },
         time::{Interval, duration_of_serial, instant_of_serial},
     };
     use jiff::Timestamp;
@@ -588,8 +591,11 @@ pub mod historic {
     /// full is one whose peak numbers cannot be trusted, so no row is skipped quietly.
     /// Rows with no `Charge_Session_ID` at all are ignored.
     pub fn xlsx_to_sessions(path: &Path) -> Result<Sessions, Box<dyn Error>> {
-        // The path, once, for every way this can fail. See `csv::csv_sessions` for why it is done
-        // here rather than at each site.
+        // The path, once, for every way this can fail. Formatting it into the message is against
+        // the rule the rest of the crate follows -- a typed error with a `path` field, written at
+        // `Display` -- and is left alone deliberately: this reader is legacy, reached only by the
+        // two `historic` binaries, and converting it would mean a new public error type for code
+        // that is on its way out. See CLAUDE.md, "Rules this repository has settled on".
         read_sessions(path).map_err(|e| format!("{}: {e}", path.display()).into())
     }
 
@@ -733,10 +739,16 @@ pub mod historic {
         // stored duration for a session that has no duration is not a discrepancy worth a line.
         let adj_duration = (session.adj_conn_start() <= session.adj_conn_end())
             .then(|| serial_of_duration(session.adj_duration()));
+        // Skipped for a spike, for the same reason. The sheet's formula divides by
+        // `Active_Charge_Time`, so a zero one evaluates to `#DIV/0!` -- which is what the writer
+        // intends -- while `Session::avg_kw` substitutes `BREAKER_RATING_KW` so the row can still
+        // be listed. Once Excel has saved the workbook the cached cell holds the error token, and
+        // comparing the two would report every spike the writer produced as a discrepancy.
+        let avg_kw = (!session.charge_time.is_zero()).then(|| ("avg_kw", session.avg_kw()));
         let expected_values: Vec<(&str, f64)> = adj_duration
             .map(|d| ("adj_conn_duration", d))
             .into_iter()
-            .chain([("avg_kw", session.avg_kw())])
+            .chain(avg_kw)
             .collect();
 
         for (name, expected) in expected_values {

@@ -106,7 +106,7 @@ fn every_charges_report_parses_and_totals_its_own_columns() {
 fn totals_by_hand(path: &std::path::Path) -> (f64, f64) {
     let text = fs::read_to_string(path).expect("a readable CSV");
     let mut lines = text.lines();
-    let header: Vec<&str> = lines.next().expect("a header row").split(',').collect();
+    let header = cells(lines.next().expect("a header row"));
     let kwh_at = header.iter().position(|h| h.trim() == "kWh").expect("kWh");
     let cost_at = header
         .iter()
@@ -116,8 +116,12 @@ fn totals_by_hand(path: &std::path::Path) -> (f64, f64) {
     let mut kwh = 0.0;
     let mut amount = 0.0;
     for line in lines.filter(|l| !l.trim().is_empty()) {
-        let cells: Vec<&str> = line.split(',').collect();
-        kwh += cells[kwh_at].trim().parse::<f64>().expect("a kWh figure");
+        let cells = cells(line);
+        kwh += cells[kwh_at]
+            .trim()
+            .replace(',', "")
+            .parse::<f64>()
+            .expect("a kWh figure");
         amount += cells[cost_at]
             .trim()
             .replace(['$', ','], "")
@@ -125,4 +129,29 @@ fn totals_by_hand(path: &std::path::Path) -> (f64, f64) {
             .expect("a cost figure");
     }
     (kwh, amount)
+}
+
+/// One CSV line's cells, with quoted cells kept whole and their quotes removed.
+///
+/// A naive split on `,` would be wrong on the very reports this check exists for: a busy month's
+/// kWh reaches four figures, a four-figure cell is written `"1,234.5"`, and splitting inside those
+/// quotes yields `"1` for that cell and shifts every column after it. The check would then fail on
+/// its own parsing rather than on a discrepancy.
+///
+/// Deliberately not a CSV library. This is the independent reading that
+/// `charges_report::Charges::read` is compared against, and sharing a parser with it would make
+/// the two agree by construction.
+fn cells(line: &str) -> Vec<String> {
+    let mut cells = Vec::new();
+    let mut cell = String::new();
+    let mut quoted = false;
+    for c in line.chars() {
+        match c {
+            '"' => quoted = !quoted,
+            ',' if !quoted => cells.push(std::mem::take(&mut cell)),
+            _ => cell.push(c),
+        }
+    }
+    cells.push(cell);
+    cells
 }

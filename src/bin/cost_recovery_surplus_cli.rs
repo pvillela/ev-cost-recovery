@@ -108,6 +108,10 @@ fn run(
 
     // Written before the report is printed, so a failure to write one is not buried under it.
     surplus.notes.write_logs()?;
+    // The meter export's own log, beside the session ones. Without it a command-line run leaves
+    // fewer artifacts than the same inputs run through the app, and records no meter-side anomaly
+    // for the period priced.
+    surplus.meter.write_log()?;
 
     print!("{surplus}");
     Ok(())
@@ -117,6 +121,9 @@ fn run(
 ///
 /// One argument rather than four, so that the effective date cannot drift away from the rates it
 /// belongs to when a second schedule is added to the command line.
+///
+/// Duplicated verbatim in `cost_recovery_cli.rs`. Change one and change the other: the two
+/// binaries take the same argument and must read it the same way.
 fn parse_rates(spec: &str) -> Result<CostRecoveryRates, String> {
     const SHAPE: &str = "expected EFFECTIVE_DATE:ON_PEAK,MID_PEAK,OFF_PEAK, \
                          as in 2026-05-01:0.1100,0.0900,0.0700";
@@ -132,9 +139,22 @@ fn parse_rates(spec: &str) -> Result<CostRecoveryRates, String> {
     let [on_peak, mid_peak, off_peak] = rates.split(',').collect::<Vec<_>>()[..] else {
         return Err(format!("\"{rates}\" is not three rates: {SHAPE}"));
     };
+    // `"nan"`, `"inf"` and `"-inf"` all parse as `f64`, and a negative parses as itself. A NaN rate
+    // spreads into every total it touches and still produces a report; a negative one prices that
+    // band's energy at less than nothing. Both are refused here, where the band can be named.
     let rate = |s: &str, band: &str| -> Result<f64, String> {
-        s.parse()
-            .map_err(|e| format!("cannot read \"{s}\" as the {band} rate: {e}"))
+        let value: f64 = s
+            .parse()
+            .map_err(|e| format!("cannot read \"{s}\" as the {band} rate: {e}"))?;
+        if !value.is_finite() {
+            return Err(format!(
+                "cannot read \"{s}\" as the {band} rate: it is not a finite number"
+            ));
+        }
+        if value < 0.0 {
+            return Err(format!("the {band} rate cannot be negative: \"{s}\""));
+        }
+        Ok(value)
     };
 
     Ok(CostRecoveryRates {

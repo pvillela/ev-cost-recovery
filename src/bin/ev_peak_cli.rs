@@ -109,7 +109,7 @@ enum PathFault {
 /// that exists.
 ///
 /// Worth doing separately because the arguments shift *silently* when the workbook is omitted: the
-/// length is optional, so `estimates "2026-06-01 16:00" 1h` is a legal two-argument call in which
+/// length is optional, so `ev_peak_cli "2026-06-01 16:00" 1h` is a legal two-argument call in which
 /// the start time is read as the path and the length as the start time. Left to `parse_interval`,
 /// that comes out as a complaint about `1h` — a message about the argument that is present rather
 /// than the one that is missing.

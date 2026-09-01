@@ -1,4 +1,4 @@
-//! Small pieces of chrome the two tabs share.
+//! Small pieces of chrome the tabs share.
 //!
 //! Copied from `ev_peak_gui` rather than shared. Two binaries in one crate cannot import each
 //! other, and lifting window chrome into the library would put `egui` in its public surface. The

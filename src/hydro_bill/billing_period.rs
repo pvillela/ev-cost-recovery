@@ -105,10 +105,17 @@ impl BillingPeriod {
     ///
     /// # Panics
     ///
-    /// Panics if `ending` is not `bill_end_day` of a month. That is a caller mixing up two
-    /// calendars rather than bad input, since a closing date can only have come from a period
-    /// built on the same day.
+    /// Panics if `bill_end_day` is outside `1..=`[`MAX_BILL_END_DAY`], and if `ending` is not
+    /// `bill_end_day` of a month. Either is a caller mixing up two calendars rather than bad
+    /// input, since a closing date can only have come from a period built on the same day.
+    ///
+    /// The range is checked first. Without it a day of 28 to 31 reaches `date()` and panics inside
+    /// jiff for the short months, with a message naming neither the rule nor the constant.
     pub fn ending_on(ending: Date, bill_end_day: i8) -> Self {
+        assert!(
+            (1..=MAX_BILL_END_DAY).contains(&bill_end_day),
+            "a billing period closes on day 1 to {MAX_BILL_END_DAY} of the month, not {bill_end_day}"
+        );
         assert_eq!(
             ending.day(),
             bill_end_day,

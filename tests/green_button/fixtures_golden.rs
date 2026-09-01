@@ -63,8 +63,8 @@ fn each_fixture_matches_its_golden() {
         // `path` field.
         let feed = read_gb_feed(&fixture(&format!("{name}.XML"))).unwrap_or_else(|e| panic!("{e}"));
 
-        // A scratch directory per fixture, since tests run in parallel and the writer refuses to
-        // overwrite. A normal test run never writes into tests/fixtures.
+        // A scratch directory per fixture, since tests run in parallel. A normal test run never
+        // writes into tests/fixtures.
         let dir = env::temp_dir().join(format!("gb_golden_{}_{name}", process::id()));
         fs::create_dir_all(&dir).unwrap();
         let workbook = dir.join(format!("{name}.xlsx"));

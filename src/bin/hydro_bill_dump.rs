@@ -88,6 +88,7 @@ fn with_advice(e: BillError) -> String {
 #[cfg(test)]
 mod test {
     use super::*;
+    use ev_cost_recovery::hydro_bill::pdf_text::{PdfTextCause, PdfTextError};
     use std::path::PathBuf;
 
     #[test]
@@ -106,7 +107,11 @@ mod test {
     fn a_file_that_never_read_is_not_sent_to_lines() {
         let advice = with_advice(BillError::Unreadable {
             path: PathBuf::from("README.md"),
-            source: "README.md: couldn't parse input: invalid file header".into(),
+            source: PdfTextError {
+                path: PathBuf::from("README.md"),
+                page: None,
+                cause: PdfTextCause::Load("couldn't parse input: invalid file header".to_owned()),
+            },
         });
         assert_eq!(
             advice,

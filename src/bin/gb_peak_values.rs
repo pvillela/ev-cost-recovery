@@ -115,12 +115,19 @@ fn run(input: &Path) -> Result<(), Box<dyn Error>> {
 ///
 /// Returns an error if that would name the input itself, which would mean reading and writing the
 /// same file.
+///
+/// The extension is tested rather than the two paths compared. `Feed.XLSX` and the `Feed.xlsx`
+/// derived from it differ as bytes and are the same file on Windows and macOS, and there the
+/// comparison would let the exists-check below report the user's own input as something to move or
+/// delete.
 fn output_path(input: &Path) -> Result<PathBuf, String> {
-    let output = input.with_extension("xlsx");
-    if output == input {
+    if input
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("xlsx"))
+    {
         return Err(format!("{} is already an .xlsx file", input.display()));
     }
-    Ok(output)
+    Ok(input.with_extension("xlsx"))
 }
 
 /// Prints the holiday calendar actually applied.

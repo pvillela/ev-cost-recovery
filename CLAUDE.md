@@ -61,10 +61,11 @@ that actually went wrong, not a general principle.
   `Display`.** Never `format!("{}: {e}", path.display())` into a `Box<dyn Error>`.
   `BillError` (`src/hydro_bill/bill_pdf.rs`) is the model; `GbReadError`
   (`src/green_button/read_xml.rs`), `SessionCsvError` (`src/session/csv.rs`) and
-  `ChargesReportError` (`src/charges_report.rs`) follow it. All four readers now do; there is no
-  remaining place in the crate where a path reaches a message by string formatting. Being
-  structured is separate from being public — `SessionCsvError` is `pub(crate)`, because the
-  function that returns it is.
+  `ChargesReportError` (`src/charges_report.rs`) follow it, as does `PdfTextError`
+  (`src/hydro_bill/pdf_text.rs`). One place still formats a path into a message: the `historic`
+  workbook reader, `session::excel::historic::xlsx_to_sessions`, where a comment says it is legacy
+  and exempt. Being structured is separate from being public — `SessionCsvError` is `pub(crate)`,
+  because the function that returns it is.
 
 - **A wrapper that adds the path must not wrap a cause that already carries one.** When
   `SessionCsvError` gained its `path` field, `ConversionError::Write` — which prints the path,

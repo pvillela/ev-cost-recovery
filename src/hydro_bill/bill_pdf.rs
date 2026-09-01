@@ -27,7 +27,7 @@ use jiff::civil::Date;
 
 use super::{
     bill::HydroBill,
-    pdf_text::{self, Fragment, Line},
+    pdf_text::{self, Fragment, Line, PdfTextError},
 };
 
 /// Where the charges column ends, in PDF points from the left edge of the page.
@@ -134,7 +134,9 @@ pub enum BillError {
     /// understands.
     Unreadable {
         path: PathBuf,
-        source: Box<dyn Error>,
+        /// The reader's own typed error, which names the file and often the page. `path` above is
+        /// for a caller that wants the file as a value; the message comes from here.
+        source: PdfTextError,
     },
 
     /// A section or figure that every bill carries was not on the page. `what` names it as a noun
@@ -205,7 +207,7 @@ impl fmt::Display for BillError {
 impl Error for BillError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
-            BillError::Unreadable { source, .. } => Some(source.as_ref()),
+            BillError::Unreadable { source, .. } => Some(source),
             _ => None,
         }
     }
@@ -533,12 +535,43 @@ fn value_matching<'a>(
 }
 
 /// A number as the bill writes it: thousands separated by commas, sometimes led by a dollar sign.
+///
+/// A comma that does not group three digits is malformed rather than ignored. Stripping every one
+/// reads `1,2` as 12, which is a plausible figure standing in for a cell nobody read correctly.
 fn money(text: &str) -> Result<f64, Problem> {
     let text = text.trim();
-    text.trim_start_matches('$')
+    let digits = text.trim_start_matches('$');
+    if !commas_group_thousands(digits) {
+        return Err(malformed("a number", text));
+    }
+    digits
         .replace(',', "")
         .parse()
         .map_err(|_| malformed("a number", text))
+}
+
+/// Whether every comma in `text` separates a group of three digits.
+///
+/// `1,234.5` and `12,345,678` pass; `1,2`, `,123` and `1,2345` do not, and neither does a comma
+/// after the decimal point. A number with no comma in it passes untouched.
+///
+/// The same rule is written out in `charges_report::commas_group_thousands`, over the same
+/// question about a different document. Change one and change the other.
+fn commas_group_thousands(text: &str) -> bool {
+    if !text.contains(',') {
+        return true;
+    }
+    let (integer, fraction) = text.split_once('.').unwrap_or((text, ""));
+    if fraction.contains(',') {
+        return false;
+    }
+    let digits = integer
+        .strip_prefix('-')
+        .or_else(|| integer.strip_prefix('+'))
+        .unwrap_or(integer);
+    let mut groups = digits.split(',');
+    let leading = groups.next().unwrap_or("");
+    (1..=3).contains(&leading.len()) && groups.all(|g| g.len() == 3)
 }
 
 /// `Jan 28 2026`, or `JUN 23 2025` as the usage table writes it.
@@ -569,6 +602,7 @@ fn reading_period(text: &str) -> Option<(Date, Date)> {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::hydro_bill::pdf_text::PdfTextCause;
     use jiff::civil::date as civil_date;
 
     #[test]
@@ -650,7 +684,11 @@ mod test {
         assert!(
             !BillError::Unreadable {
                 path: path.to_path_buf(),
-                source: "bill.pdf: not a PDF".into(),
+                source: PdfTextError {
+                    path: path.to_path_buf(),
+                    page: None,
+                    cause: PdfTextCause::Load("not a PDF".to_owned()),
+                },
             }
             .is_layout()
         );
@@ -663,11 +701,18 @@ mod test {
     fn an_unreadable_file_is_reported_as_the_reader_reported_it() {
         let error = BillError::Unreadable {
             path: PathBuf::from("bill.pdf"),
-            source: "bill.pdf: page 2: font /F1: no ToUnicode CMap".into(),
+            source: PdfTextError {
+                path: PathBuf::from("bill.pdf"),
+                page: Some(2),
+                cause: PdfTextCause::NoCMap {
+                    font: "F1".to_owned(),
+                    cause: "not a stream".to_owned(),
+                },
+            },
         };
         assert_eq!(
             error.to_string(),
-            "Hydro Bill bill.pdf: page 2: font /F1: no ToUnicode CMap"
+            "Hydro Bill bill.pdf: page 2: font /F1: no ToUnicode CMap: not a stream"
         );
         assert!(error.source().is_some());
     }

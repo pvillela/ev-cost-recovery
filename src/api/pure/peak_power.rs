@@ -39,6 +39,7 @@ use std::{error::Error, fmt};
 pub use crate::{green_button::PeriodValues, hydro_bill::HydroBill, session::Sessions};
 
 /// Peak power estimates for a billing period.
+#[derive(Debug)]
 pub struct PowerEstimates {
     pub kw_estimates: IntervalEstimates,
     pub kva_estimates: IntervalEstimates,
@@ -333,10 +334,9 @@ const BILLED_DAYS_PER_MONTH: f64 = 30.0;
 
 /// Estimates the net delivery cost attributable to EV charging sessions during a billing period.
 ///
-/// Pure throughout, as [`fn@peak_power`] is: this is everything the call does once the meter
-/// export, the session reports and the bill have been read. There is no `io` counterpart yet, so a
-/// caller reads the bill with [`hydro_bill_from_pdf`](crate::hydro_bill::hydro_bill_from_pdf) and
-/// the rest as [`api::peak_power`](crate::api::peak_power) does.
+/// The reading half of the same call is [`api::peak_power_cost`](crate::api::peak_power_cost),
+/// which is where these arguments come from. This is everything that call does once the meter
+/// export, the session reports and the bill have been read.
 ///
 /// # How the figure is arrived at
 ///
@@ -951,8 +951,7 @@ mod test {
             period_values(Some(KW_PEAK_HOUR), None),
             &two_reports(),
         )
-        .err()
-        .expect("the period carries no kVA reading");
+        .expect_err("the period carries no kVA reading");
         assert!(
             matches!(err, PeakPowerError::NoPeak { unit: "kVA", .. }),
             "{err}"
@@ -963,8 +962,7 @@ mod test {
             period_values(None, Some(KVA_PEAK_HOUR)),
             &two_reports(),
         )
-        .err()
-        .expect("the period carries no kW reading");
+        .expect_err("the period carries no kW reading");
         assert!(
             matches!(err, PeakPowerError::NoPeak { unit: "kW", .. }),
             "{err}"
@@ -1145,8 +1143,7 @@ mod test {
         gappy.interval_count -= 1;
 
         let err = peak_power(period_ending_date(), gappy.clone(), &two_reports())
-            .err()
-            .expect("an hour of the period is missing");
+            .expect_err("an hour of the period is missing");
         assert!(
             matches!(
                 err,
@@ -1178,8 +1175,7 @@ mod test {
         may.interval_count = may.period.expected_intervals();
 
         let err = peak_power(period_ending_date(), may, &two_reports())
-            .err()
-            .expect("the figures are May's");
+            .expect_err("the figures are May's");
         assert!(
             matches!(
                 err,
@@ -1200,8 +1196,7 @@ mod test {
             period_values(Some(KW_PEAK_HOUR), Some(KVA_PEAK_HOUR)),
             &two_reports(),
         )
-        .err()
-        .expect("30 June does not label a billing period");
+        .expect_err("30 June does not label a billing period");
         assert!(
             matches!(err, PeakPowerError::NotABillingPeriodEnding(_)),
             "{err}"

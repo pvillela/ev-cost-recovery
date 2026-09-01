@@ -68,6 +68,10 @@ fn run(
     let cost = peak_power_cost(bill_pdf, gb_xml, session_csv1, session_csv2)?;
     // Written before the report is printed, so a failure to write one is not buried under it.
     cost.notes.write_logs()?;
+    // The meter export's own log, beside the session ones. Without it a command-line run leaves
+    // fewer artifacts than the same inputs run through the app, and records no meter-side anomaly
+    // for the period priced.
+    cost.meter.write_log()?;
 
     print!("{cost}");
     Ok(())
