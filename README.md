@@ -2,6 +2,17 @@
 
 This software supports the calculation of the impact of EV charging activity on the building's finances.
 
+## Contents
+
+- [Background](#background)
+- [What the software does](#what-the-software-does)
+- [Getting and running the software](#getting-and-running-the-software)
+- [Software inputs and outputs](#software-inputs-and-outputs)
+- [Error reporting and logging](#error-reporting-and-logging)
+- [License](#license)
+- [Additional documentation](#additional-documentation)
+- [Appendix](#appendix)
+
 ## Background
 
 The building is on a time-of-use (**TOU**) billing plan with Toronto Hydro.
