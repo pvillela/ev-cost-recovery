@@ -1,4 +1,4 @@
-# Kicking the tires on `ev_cost_recovery`
+# App cheat sheet: kicking the tires on `ev_cost_recovery`
 
 Every figure and message below was produced by running the files in the `data/` folder. That folder is not in the repository, so its contents need to be provided separately.
 
@@ -6,17 +6,21 @@ Every figure and message below was produced by running the files in the `data/` 
 
 See [README.md - Getting and running the software](../README.md#getting-and-running-the-software).
 
-## The one run that works end to end
+## Tabs
 
-Only the **June 2026** period can be run with the sample data. The sample Green Button export stops on 24 June, so no later
-period has meter data. Pick these four, in the order the window asks:
+The tab bar holds four: **Cost recovery**, **Peak power detail**, **Evolute reimbursement** and
+**Convert to workbook**.
+
+## Cost recovery
+
+Only the **June 2026** period can be run with the sample data. The sample Green Button export stops on 24 June, so no later period has meter data. Pick these four, in the order the window asks:
 
 | Picker | File |
 |:---|:---|
 | Toronto Hydro bill | `data/hydro_bills/TH_5728140000_2026_06_29.pdf` |
-| Green Button export | `data/TH_Electric_Usage_23-11-2024_to_24-06-2026.XML` |
-| Session report 1 | `data/Session_Report_May_1_2026-May_31_2026-mock.csv` |
-| Session report 2 | `data/Session_Report_June_1_2026-June_30_2026.csv` |
+| Green Button export | `data/green_button/TH_Electric_Usage_23-11-2024_to_24-06-2026.XML` |
+| Session report 1 | `data/evolute/Session_Report_May_1_2026-May_31_2026-mock.csv` |
+| Session report 2 | `data/evolute/Session_Report_June_1_2026-June_30_2026.csv` |
 
 Then the rates. **Effective from** `2026-05-01`, and `0.1100` / `0.0900` / `0.0700`.
 
@@ -31,43 +35,25 @@ EV delivery cost     -91.52
 Surplus             -159.45          (red, and "fell short" in the report)
 ```
 
-The report below runs to 142 lines. May's file is a mock built by `scripts/make-may-mock.py`; only
+The report shown runs to 142 lines. May's file is a mock built by `scripts/make-may-mock.py`; only
 June's is based on real anonymized data.
 
-## What to look at
+### What to look at
 
-The tab bar holds four: **Cost recovery**, **Peak power detail**, **Evolute reimbursement** and
-**Convert to workbook**. The first two are the run above; the last two are separate jobs with their
-own inputs, and have their own sections below.
+Collapse and expand the sections. *Session data* should name both CSVs. *Sessions needing a look* should list a handful of rows with a glossary beneath.
 
-**Cost recovery tab.** The four headline amounts are the report's own summary table — check they
-agree. Collapse and expand the sections. *Session data* should name both CSVs. *Sessions needing a
-look* should list a handful of rows with a glossary beneath, not a wall of them.
+### Things worth trying
 
-**Peak power detail tab.** Greyed until the run succeeds. Three sections:
-
-| Section | What to check |
-|:---|:---|
-| `kVA` | `2026-06-11 19:00 to 20:00` |
-| `kW` | The **same** interval — in this period the building's kW and kVA peaked together |
-| `kW 7-7` | A **different** interval, and inside 07:00–19:00. It cannot be the 19:00 one |
-
-Inside each, the `Interval` line and the `Segment` column say different things. The interval is where
-the *building* peaked, from the meter. The segment is the 15 minutes inside it where the *chargers*
-peaked, from the sessions — for the kVA section, `19:45`. The demand charge is billed on the segment.
-
-## Things worth trying
-
-| Do this | Expect |
-|:---|:---|
-| Rates `0.30` / `0.30` / `0.30` | Surplus **+131.06**, coloured as the accent rather than red, and "covered" in the report |
-| Rates `0.20` / `0.20` / `0.20` | Surplus **-5.14** — near break-even, so you can watch the sign flip either way |
+| Do this                                                      | Expect                                                       |
+| :----------------------------------------------------------- | :----------------------------------------------------------- |
+| Rates `0.30` / `0.30` / `0.30`                               | Surplus **+131.06**, coloured as the accent rather than red, and "covered" in the report |
+| Rates `0.20` / `0.20` / `0.20`                               | Surplus **-5.14** — near break-even, so you can watch the sign flip either way |
 | Tick *rates changed*, leave `0.1100/0.0900/0.0700` from 1 May, add `0.30` flat from `2026-06-01` | Cost recovery **359.95**, surplus **+82.41**; the recovery report gains a second stretches table |
-| Change any picker after a run | Figures vanish, and the detail tab greys out and drops you back |
-| Clear the mid-peak rate (delete it, don't set it to zero) and run | `the mid-peak rate is blank` — refused, not read as zero |
-| Type `eleven cents` into the mid-peak rate | `cannot read "eleven cents" as the mid-peak rate: …` |
+| Change any picker after a run                                | Figures vanish, and the *Peak power* tab greys out           |
+| Clear the mid-peak rate (delete it, don't set it to zero) and run | `the mid-peak rate is blank` — refused, not read as zero     |
+| Type `eleven cents` into the mid-peak rate                   | `cannot read "eleven cents" as the mid-peak rate: …`         |
 
-## Errors worth provoking
+### Errors worth provoking
 
 All four are real messages from these files.
 
@@ -101,26 +87,40 @@ after it starts on 2026-05-24
 one to a name without dates:
 
 ```sh
-cp data/Session_Report_June_1_2026-June_30_2026.csv data/sessions.csv
+cp data/evolute/Session_Report_June_1_2026-June_30_2026.csv data/evolute/sessions.csv
 ```
 
-Picking `data/sessions.csv` is refused at the picker, before anything is read, and
+Picking `data/evolute/sessions.csv` is refused at the picker, before anything is read, and
 **Work out the surplus** stays disabled until you replace it. Delete the copy afterwards.
 
-## The Evolute reimbursement tab
+## Peak power
+
+The tab is greyed until the *Cost recovery* run succeeds. A report with three sections provides details on the peak power values that drive the delivery cost portion of *Cost recovery*. The values used for delivery cost calculation are the mid-points of the energy-based ranges presented in the report:
+
+| Section | What to check |
+|:---|:---|
+| `kVA` | `2026-06-11 19:00 to 20:00` |
+| `kW` | The **same** interval — in this period the building's kW and kVA peaked together |
+| `kW 7-7` | A **different** interval, and inside 07:00–19:00. It cannot be the 19:00 one |
+
+Inside each, the `Interval` line and the `Segment` column say different things. The interval is where
+the *building* peaked, from the meter. The segment is the 15 minutes inside it where the *chargers*
+peaked, from the sessions — for the kVA section, `19:45`. The demand charge is billed on the segment.
+
+## Evolute reimbursement
 
 A separate run, and a separate question: whether Evolute paid what our rates earned over a
 **calendar month**. That is not the billing period the surplus covers, so the two figures are not
 two views of one number.
 
-| Field | Value |
+| Input field | Value |
 |:---|:---|
-| Evolute Session Report | `data/Session_Report_June_1_2026-June_30_2026.csv` |
-| Evolute Charges Report | `data/XX-XX_charges_2026-06-01T00_00_00-04_00.csv` |
+| Evolute Session Report | `data/evolute/Session_Report_June_1_2026-June_30_2026.csv` |
+| Evolute Charges Report | `data/evolute/XX-XX_charges_2026-06-01T00_00_00-04_00.csv` |
 | Reimbursement | `246.26` |
 | Rates | **Effective from** `2026-06-01`, and `0.1100` / `0.0900` / `0.0700` |
 
-Only June works. It is the one month with both a real session report and a Charges Report.
+Only June works. It is the one month with both a Session Report and a Charges Report.
 
 Press **Reconcile the month**. Expect:
 
@@ -157,7 +157,7 @@ Worth trying:
 | Clear **Reimbursement** and run | `the reimbursement amount is blank` — a blank field is refused, because zero is a real answer and has to be meant |
 | Pick the **May** session report against the same Charges Report | `no row of the Charges Report falls in 2026-05-01 to 2026-05-31, which is the month the session report is for; its rows cover 2026-06-01 to 2026-06-30. This is usually the wrong file.` |
 
-## The Convert to workbook tab
+## Convert to workbook
 
 Turns one source file into an Excel workbook beside it, for reading by eye. Nothing else in the app
 depends on the result — the other tabs read the source files themselves.
@@ -167,15 +167,22 @@ own last result, so switching between them loses nothing.
 
 | Do this | Expect |
 |:---|:---|
-| Convert `data/Session_Report_June_1_2026-June_30_2026.csv` | A **Replace existing workbook?** modal, because `data/` already holds that workbook. **Cancel** leaves it alone; **Replace** overwrites it and anything written into it by hand |
+| Convert `data/evolute/Session_Report_June_1_2026-June_30_2026.csv` | A **Replace existing workbook?** modal, because `data/evolute/` already holds that workbook. **Cancel** leaves it alone; **Replace** overwrites it and anything written into it by hand |
 | Convert the Green Button export | The same prompt, and a pause while a multi-year export is parsed. The workbook has two sheets: `Peak_values`, one row per billing period, and `Interval_values`, every hour |
 
-An existing workbook is never overwritten silently, in
-either conversion.
+An existing workbook is never overwritten silently, in either conversion.
 
 ## What it writes
 
-A run rewrites a log beside each file it reads, named after the file with the kind of read appended:
+Converted workbooks are, of course, written to the file system. In addition, reports can be optionally saved and logs are automatically written.
+
+### Saving reports
+
+In each tab, pressing the **Save** button saves the displayed report.
+
+### Logs
+
+Each run rewrites a log beside each file it reads, named after the file with the kind of read appended:
 
 | Tab | Logs written |
 |:---|:---|
@@ -185,7 +192,4 @@ A run rewrites a log beside each file it reads, named after the file with the ki
 
 Every one of those timestamps should move on the run that reads the file, whether or not you save
 anything.
-
-Nothing else is written unless you press **Save…**, and each tab saves its own document. The
-Convert tab is the exception: converting *is* the write, and there is nothing to save afterwards.
 
