@@ -619,6 +619,13 @@ fn format_counts(counts: &BTreeMap<Anomaly, usize>) -> String {
 }
 
 /// 1 -> A, 27 -> AA.
+///
+/// Named here only by `write_sheet`, for `column_dimension_mut`, whose API is keyed by letters
+/// rather than by index.
+///
+/// `session::excel` has a copy, and the duplication is deliberate. See the note there for why:
+/// the specification is Excel's and closed, so the two cannot drift, and sharing them would mean a
+/// crate-level module holding one function neither writer may own.
 fn column_letters(mut index: u32) -> String {
     let mut letters = String::new();
     while index > 0 {

@@ -226,6 +226,14 @@ fn write_session_xlsx(
 // ---------------------------------------------------------------------------
 
 /// 1-based column index to its Excel letters (1 -> A, 27 -> AA).
+///
+/// The bridge between this module's index-based `COLUMNS` table and the three Excel APIs that
+/// speak A1 notation instead: formula text, `column_dimension_mut`, and the auto-filter range.
+///
+/// `green_button::excel` has a copy, and the duplication is deliberate. Sharing it would mean a
+/// crate-level module holding one function neither writer may own, and the two cannot drift: the
+/// specification is Excel's bijective base-26, closed and external, and each copy is tested where
+/// it sits. Should a second helper ever be worth sharing between the two writers, both move then.
 fn column_letters(mut index: usize) -> String {
     let mut out = Vec::new();
     while index > 0 {
