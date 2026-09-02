@@ -15,7 +15,7 @@ use std::path::PathBuf;
 
 fn feed_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("data/TH_Electric_Usage_23-11-2024_to_24-06-2026.XML")
+        .join("data/green_button/TH_Electric_Usage_23-11-2024_to_24-06-2026.XML")
 }
 
 #[test]
@@ -26,7 +26,8 @@ fn the_real_export_parses_to_three_complete_hourly_series() {
     let feed = read_gb_feed(&feed_path()).unwrap_or_else(|e| {
         panic!(
             "{e}\nThe sample export is not in the repository: put \
-             data/TH_Electric_Usage_23-11-2024_to_24-06-2026.XML in place before running this."
+             data/green_button/TH_Electric_Usage_23-11-2024_to_24-06-2026.XML in place before \
+             running this."
         )
     });
 

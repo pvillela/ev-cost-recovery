@@ -12,6 +12,7 @@
 //! In production these files sit in the same folder as the session reports.
 
 use crate::{
+    csv::{CsvReadError, Document, Table},
     log::{RunLog, SourceLog},
     markdown::{h2, wrap},
 };
@@ -243,29 +244,25 @@ pub(crate) fn row_list(rows: &[usize]) -> String {
 }
 
 /// Why a Charges Report could not be read.
+///
+/// Everything a column-by-name reader can fail at is [`Self::Csv`], which is where the file, the
+/// row and the column live and where the message is written. Only what is particular to *this*
+/// document is a variant here.
 #[derive(Debug)]
 pub enum ChargesReportError {
-    /// The file could not be opened, or is not a readable CSV.
-    Unreadable {
-        path: PathBuf,
-        cause: Box<dyn Error>,
-    },
-
-    /// A column this reader needs is not there.
-    MissingColumn { path: PathBuf, name: &'static str },
+    /// The file could not be opened, is not a readable CSV, is missing a column this reader needs,
+    /// or holds a cell that will not parse.
+    Csv(CsvReadError),
 
     /// The file parsed but holds no rows. A month Evolute billed nothing for still has a row per
     /// breaker; an empty file is a truncated download, not a quiet month.
     NoRows { path: PathBuf },
+}
 
-    /// A cell could not be read as the kind of value its column holds.
-    BadValue {
-        path: PathBuf,
-        row: usize,
-        column: &'static str,
-        value: String,
-        cause: String,
-    },
+impl From<CsvReadError> for ChargesReportError {
+    fn from(cause: CsvReadError) -> Self {
+        Self::Csv(cause)
+    }
 }
 
 impl ChargesReportError {
@@ -273,42 +270,26 @@ impl ChargesReportError {
     /// before the file is opened.
     pub fn path(&self) -> &Path {
         match self {
-            Self::Unreadable { path, .. }
-            | Self::MissingColumn { path, .. }
-            | Self::NoRows { path }
-            | Self::BadValue { path, .. } => path,
+            Self::Csv(cause) => cause.path(),
+            Self::NoRows { path } => path,
         }
     }
 }
 
 impl fmt::Display for ChargesReportError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // Every arm names the kind of document expected and then the file, from the variant's own
-        // `path` field. The `csv` crate's errors do not carry the path and a per-row failure knows
-        // only its row, so without this a caller is told what went wrong and left to guess where.
-        // The kind is there because the path alone does not say which input slot rejected the
-        // file: a session report picked for this slot fails on a missing column, and so does a
-        // Charges Report picked for the session report slot. See `SessionCsvError`'s counterpart.
-        write!(f, "Charges Report {}: ", self.path().display())?;
         match self {
-            Self::Unreadable { cause, .. } => write!(f, "{cause}"),
-            Self::MissingColumn { name, .. } => {
-                write!(f, "missing required column `{name}`")
-            }
-            Self::NoRows { .. } => write!(
+            // Already written in full, document and path included. Adding either here would print
+            // it twice.
+            Self::Csv(cause) => cause.fmt(f),
+            // The same opening the shared errors use, from the same `Document`, so a reader cannot
+            // tell which half of this type refused the file.
+            Self::NoRows { path } => write!(
                 f,
-                "the file holds no rows; a Charges Report carries one row per breaker even in a \
-                 month nothing was billed for"
-            ),
-            Self::BadValue {
-                row,
-                column,
-                value,
-                cause,
-                ..
-            } => write!(
-                f,
-                "row {row}, column `{column}`: cannot read {value:?}: {cause}"
+                "{} {}: the file holds no rows; a Charges Report carries one row per breaker even \
+                 in a month nothing was billed for",
+                Document::ChargesReport,
+                path.display()
             ),
         }
     }
@@ -317,8 +298,8 @@ impl fmt::Display for ChargesReportError {
 impl Error for ChargesReportError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
-            Self::Unreadable { cause, .. } => Some(cause.as_ref()),
-            _ => None,
+            Self::Csv(cause) => Some(cause),
+            Self::NoRows { .. } => None,
         }
     }
 }
@@ -333,38 +314,7 @@ impl Error for ChargesReportError {
 /// See [`ChargesReportError`]. Nothing is totalled until every row has been read, so a file with a
 /// bad cell in the middle of it produces an error rather than a partial sum.
 pub fn charges_report(path: &Path) -> Result<ChargesReport, ChargesReportError> {
-    let unreadable = |cause: ::csv::Error| ChargesReportError::Unreadable {
-        path: path.to_path_buf(),
-        cause: cause.into(),
-    };
-
-    let mut reader = ::csv::Reader::from_path(path).map_err(unreadable)?;
-
-    let headers: BTreeMap<String, usize> = reader
-        .headers()
-        .map_err(unreadable)?
-        .iter()
-        .enumerate()
-        .map(|(i, h)| (h.trim().to_owned(), i))
-        .collect();
-
-    for required in REQUIRED_HEADERS {
-        if !headers.contains_key(*required) {
-            return Err(ChargesReportError::MissingColumn {
-                path: path.to_path_buf(),
-                name: required,
-            });
-        }
-    }
-
-    let field = |record: &::csv::StringRecord, name: &str| -> String {
-        headers
-            .get(name)
-            .and_then(|&i| record.get(i))
-            .unwrap_or("")
-            .trim()
-            .to_owned()
-    };
+    let table = Table::read(path, Document::ChargesReport, REQUIRED_HEADERS)?;
 
     let mut spans: BTreeMap<(Date, Date), Vec<usize>> = BTreeMap::new();
     let mut total_kwh = 0.0;
@@ -372,21 +322,21 @@ pub fn charges_report(path: &Path) -> Result<ChargesReport, ChargesReportError> 
     let mut statuses: BTreeMap<String, usize> = BTreeMap::new();
     let mut rows = 0;
 
-    for (i, record) in reader.records().enumerate() {
-        // Row 1 is the header, so the first record is row 2 -- the number a spreadsheet shows.
-        let row = i + 2;
-        let record = record.map_err(unreadable)?;
+    for i in 0..table.record_count() {
+        let row = Table::row_number(i);
 
-        let from = parse_date(&field(&record, "Start_Date"), path, row, "Start_Date")?;
-        let to = parse_date(&field(&record, "End_Date"), path, row, "End_Date")?;
+        let from = parse_date(table.cell(i, "Start_Date"), path, row, "Start_Date")?;
+        let to = parse_date(table.cell(i, "End_Date"), path, row, "End_Date")?;
         // Recorded, not judged. Rows differing from each other is not a fault here; a row whose
         // span leaves the month being reconciled is, and only the caller knows which month that
         // is. See the field's own note on `ChargesReport::spans`.
         spans.entry((from, to)).or_default().push(row);
 
-        total_kwh += number(&field(&record, "kWh"), path, row, "kWh")?;
-        total_amount += money(&field(&record, "Cost"), path, row, "Cost")?;
-        *statuses.entry(field(&record, "Bill_Status")).or_default() += 1;
+        total_kwh += number(table.cell(i, "kWh"), path, row, "kWh")?;
+        total_amount += money(table.cell(i, "Cost"), path, row, "Cost")?;
+        *statuses
+            .entry(table.cell(i, "Bill_Status").to_owned())
+            .or_default() += 1;
         rows += 1;
     }
 
@@ -417,50 +367,41 @@ pub fn charges_report(path: &Path) -> Result<ChargesReport, ChargesReportError> 
     })
 }
 
+/// A cell of this report that will not parse.
+///
+/// The document is pinned here, once, rather than at each of the parsers below.
+fn bad_value(
+    s: &str,
+    path: &Path,
+    row: usize,
+    column: &'static str,
+    cause: impl fmt::Display,
+) -> CsvReadError {
+    CsvReadError::bad_value(Document::ChargesReport, path, row, column, s, cause)
+}
+
 fn parse_date(
     s: &str,
     path: &Path,
     row: usize,
     column: &'static str,
-) -> Result<Date, ChargesReportError> {
-    Date::strptime(DATE_FORMAT, s).map_err(|e| ChargesReportError::BadValue {
-        path: path.to_path_buf(),
-        row,
-        column,
-        value: s.to_owned(),
-        cause: e.to_string(),
-    })
+) -> Result<Date, CsvReadError> {
+    Date::strptime(DATE_FORMAT, s).map_err(|e| bad_value(s, path, row, column, e))
 }
 
-fn number(
-    s: &str,
-    path: &Path,
-    row: usize,
-    column: &'static str,
-) -> Result<f64, ChargesReportError> {
+fn number(s: &str, path: &Path, row: usize, column: &'static str) -> Result<f64, CsvReadError> {
     // Thousands separators are stripped, since a busy month's kWh easily reaches four figures.
     let cleaned: String = s.chars().filter(|c| *c != ',').collect();
-    cleaned.parse().map_err(
-        |e: std::num::ParseFloatError| ChargesReportError::BadValue {
-            path: path.to_path_buf(),
-            row,
-            column,
-            value: s.to_owned(),
-            cause: e.to_string(),
-        },
-    )
+    cleaned
+        .parse()
+        .map_err(|e: std::num::ParseFloatError| bad_value(s, path, row, column, e))
 }
 
 /// A dollar amount as the report writes it: `$70.62`, or `-$1.00` for a credit.
 ///
 /// The sign is outside the `$` in every negative figure seen, which is how spreadsheets export
 /// currency. Thousands separators are handled by `number`.
-fn money(
-    s: &str,
-    path: &Path,
-    row: usize,
-    column: &'static str,
-) -> Result<f64, ChargesReportError> {
+fn money(s: &str, path: &Path, row: usize, column: &'static str) -> Result<f64, CsvReadError> {
     let cleaned: String = s.chars().filter(|c| *c != '$').collect();
     number(&cleaned, path, row, column)
 }
@@ -499,16 +440,51 @@ mod test {
     /// report for this slot fails on a missing column, and so does picking a Charges Report for
     /// the session report slot; the path alone leaves the two indistinguishable. The paired test
     /// is `session::csv::test::a_message_opens_with_the_kind_of_document_expected`.
+    ///
+    /// Through `charges_report`, not over a hand-built error: what is at stake is the
+    /// [`Document`] this reader hands the shared reader, and only the real call passes it.
     #[test]
     fn a_message_opens_with_the_kind_of_document_expected() {
-        let err = ChargesReportError::MissingColumn {
-            path: PathBuf::from("Session_Report_June.csv"),
-            name: "kWh",
-        };
+        const CSV: &str = "\
+Start_Date,End_Date,Bill_Status,Cost
+01-Jun-26,30-Jun-26,Issued,$1.00
+";
+        let dir = temp_dir("document_kind");
+        // Named as a session report, to show that the opening comes from the slot the file was
+        // offered to and not from what it is called.
+        let path = dir.join("Session_Report_June.csv");
+        fs::write(&path, CSV).unwrap();
+
+        let err = charges_report(&path).unwrap_err();
         assert_eq!(
             err.to_string(),
-            "Charges Report Session_Report_June.csv: missing required column `kWh`"
+            format!(
+                "Charges Report {}: missing required column `kWh`",
+                path.display()
+            )
         );
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    /// The refusal this reader raises itself opens the same way as the shared ones, so a reader
+    /// cannot tell which half of `ChargesReportError` refused the file.
+    #[test]
+    fn an_empty_report_is_refused_in_the_same_voice() {
+        const CSV: &str = "Start_Date,End_Date,Bill_Status,kWh,Cost\n";
+        let dir = temp_dir("no_rows");
+        let path = dir.join("charges.csv");
+        fs::write(&path, CSV).unwrap();
+
+        let err = charges_report(&path).unwrap_err();
+        let message = err.to_string();
+        assert!(
+            message.starts_with(&format!("Charges Report {}: ", path.display())),
+            "{message}"
+        );
+        assert!(message.contains("one row per breaker"), "{message}");
+
+        fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

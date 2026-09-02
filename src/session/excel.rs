@@ -14,7 +14,7 @@
 //! what removes a session from the estimates. See [`AnomalyKind`].
 
 use super::{
-    Anomaly, AnomalyKind, duration_is_consistent,
+    Anomaly, AnomalyKind,
     csv::{SessionRows, csv_session_rows},
 };
 use crate::{
@@ -531,7 +531,10 @@ pub mod historic {
     use super::*;
     use crate::{
         log::RunLog,
-        session::{IntervalEstimates, RSession, Session, Sessions, estimates_from_sessions},
+        session::{
+            IntervalEstimates, RSession, Session, Sessions, duration_is_consistent,
+            estimates_from_sessions,
+        },
         time::{Interval, duration_of_serial, instant_of_serial},
     };
     use jiff::Timestamp;

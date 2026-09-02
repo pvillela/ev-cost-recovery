@@ -16,14 +16,16 @@
 //! to the CSV record, and the reported wall times — so the writer cannot be built on
 //! [`csv_sessions`]. Both sit on `csv_session_rows` instead.
 //!
-//! The module is named for what it reads, so the `csv` crate is written `::csv` throughout to keep
-//! the two apart.
+//! Opening the file, finding the columns by name and refusing one that has no `Energy_Use` are
+//! not this module's work: [`crate::csv`] does that for both of Evolute's reports, and what is
+//! left here is what only a session report means.
 
 use super::{
     Anomaly, AnomalyKind, BREAKER_MAX_NORMAL_KW, RSession, Session, Sessions, TIME_GRID_STEP,
     duration_is_consistent,
 };
 use crate::{
+    csv::{CsvReadError, Document, Table},
     log::{RunLog, SourceLog},
     time::{is_on_grid, local_datetime, time_zone, wall_clock_instant},
 };
@@ -32,7 +34,6 @@ use jiff::{
     tz::{AmbiguousOffset, TimeZone},
 };
 use std::{
-    collections::HashMap,
     error::Error,
     fmt,
     path::{Path, PathBuf},
@@ -65,9 +66,9 @@ const REQUIRED_HEADERS: &[&str] = &[
 
 /// Why a session report CSV could not be read.
 ///
-/// Every variant carries the file as a `path` field and writes it at `Display`. Nothing here is
-/// pre-formatted into a string: the row, the column and the offending cell are fields, so a caller
-/// wanting to point at the cell reads them rather than parsing the sentence. The counterparts are
+/// Everything a column-by-name reader can fail at is [`Self::Csv`], which is where the file, the
+/// row and the column live and where the message is written. Only what is particular to *this*
+/// document is a variant here. The counterparts are
 /// [`GbReadError`](crate::green_button::GbReadError),
 /// [`ChargesReportError`](crate::charges_report::ChargesReportError) and
 /// [`BillError`](crate::hydro_bill::BillError).
@@ -76,26 +77,14 @@ const REQUIRED_HEADERS: &[&str] = &[
 /// [`Session::anomalies`] and summarised in the log, because the row still yields a session.
 #[derive(Debug)]
 pub(crate) enum SessionCsvError {
-    /// The file could not be opened, or is not a readable CSV.
-    Unreadable { path: PathBuf, cause: ::csv::Error },
-
-    /// A column this reader needs is not there.
-    MissingColumn { path: PathBuf, name: &'static str },
-
-    /// A cell could not be read as the kind of value its column holds.
-    BadValue {
-        path: PathBuf,
-        /// The CSV row, counting the header, so it is the number a spreadsheet shows.
-        row: usize,
-        column: &'static str,
-        value: String,
-        cause: String,
-    },
+    /// The file could not be opened, is not a readable CSV, is missing a column this reader needs,
+    /// or holds a cell that will not parse.
+    Csv(CsvReadError),
 
     /// A reported wall time could not be resolved to an instant.
     ///
-    /// Distinct from [`Self::BadValue`], which is about a cell that does not parse. Here the cell
-    /// parsed and names a time the calendar cannot place.
+    /// Distinct from [`CsvReadError::BadValue`], which is about a cell that does not parse. Here
+    /// the cell parsed and names a time the calendar cannot place.
     Unresolvable {
         path: PathBuf,
         row: usize,
@@ -103,42 +92,26 @@ pub(crate) enum SessionCsvError {
     },
 }
 
-impl SessionCsvError {
-    /// The report the failure is about. Every variant has one: nothing here is checked before the
-    /// file is opened.
-    pub fn path(&self) -> &Path {
-        match self {
-            Self::Unreadable { path, .. }
-            | Self::MissingColumn { path, .. }
-            | Self::BadValue { path, .. }
-            | Self::Unresolvable { path, .. } => path,
-        }
+impl From<CsvReadError> for SessionCsvError {
+    fn from(cause: CsvReadError) -> Self {
+        Self::Csv(cause)
     }
 }
 
 impl fmt::Display for SessionCsvError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // Every arm names the kind of document expected and then the file, from the variant's own
-        // `path`. The `csv` crate's errors do not carry the path and a per-row failure knows only
-        // its row, so without this a caller is told what went wrong and left to guess where. The
-        // kind is there because the path alone does not say which input slot rejected the file: a
-        // Charges Report picked for this slot fails on a missing column, and so does a session
-        // report picked for the Charges Report slot. See `ChargesReportError`'s counterpart.
-        write!(f, "Session Report {}: ", self.path().display())?;
         match self {
-            Self::Unreadable { cause, .. } => write!(f, "{cause}"),
-            Self::MissingColumn { name, .. } => write!(f, "missing required column `{name}`"),
-            Self::BadValue {
-                row,
-                column,
-                value,
-                cause,
-                ..
-            } => write!(
+            // Already written in full, document and path included. Adding either here would print
+            // it twice.
+            Self::Csv(cause) => cause.fmt(f),
+            // The same opening the shared errors use, from the same `Document`, so a reader cannot
+            // tell which half of this type refused the file.
+            Self::Unresolvable { path, row, cause } => write!(
                 f,
-                "row {row}, column `{column}`: cannot read {value:?}: {cause}"
+                "{} {}: row {row}: {cause}",
+                Document::SessionReport,
+                path.display()
             ),
-            Self::Unresolvable { row, cause, .. } => write!(f, "row {row}: {cause}"),
         }
     }
 }
@@ -146,9 +119,8 @@ impl fmt::Display for SessionCsvError {
 impl Error for SessionCsvError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
-            Self::Unreadable { cause, .. } => Some(cause),
+            Self::Csv(cause) => Some(cause),
             Self::Unresolvable { cause, .. } => Some(cause.as_ref()),
-            Self::MissingColumn { .. } | Self::BadValue { .. } => None,
         }
     }
 }
@@ -212,18 +184,16 @@ fn read_sessions(path: &Path) -> Result<Sessions, SessionCsvError> {
 /// estimate from it. It keeps what bucketing discards: report order, the pass-through CSV fields,
 /// and the reported wall times, which differ from a re-derivation inside the DST gap.
 ///
-/// The `records` are held rather than copied out because the pass-through columns are not part of
+/// The `table` is held rather than copied out because the pass-through columns are not part of
 /// a [`Session`] and should not become part of one — a `Session` is what the arithmetic needs, not
 /// a copy of the source row. Reach them through [`SessionRows::field`] and
-/// [`SessionRows::duration`], which keep the header lookup and the parsing on this side of the
+/// [`SessionRows::duration`], which keep the column lookup and the parsing on this side of the
 /// boundary.
 pub(super) struct SessionRows {
-    /// The file these came from. Held so that [`SessionRows::duration`], which parses a cell on
-    /// demand, can raise an error that names it — the rest of the parsing is done and gone by the
-    /// time a caller has one of these.
-    path: PathBuf,
-    headers: Headers,
-    records: Vec<::csv::StringRecord>,
+    /// The file as read. Held for the pass-through columns, and for its path:
+    /// [`SessionRows::duration`] parses a cell on demand and its error has to name the report,
+    /// which the rest of the parsing did while it still had the path in hand.
+    table: Table,
     /// One per output row, in report order. A record duplicated to resolve a DST fold yields two.
     pub rows: Vec<Row>,
     /// Every judgement call made, numbered by output row rather than by CSV record.
@@ -235,7 +205,7 @@ pub(super) struct SessionRows {
 impl SessionRows {
     /// The named CSV column for `row`, trimmed. Empty when the column is absent or blank.
     pub fn field(&self, row: &Row, name: &str) -> &str {
-        field(&self.headers, &self.records[row.record], name)
+        self.table.cell(row.record, name)
     }
 
     /// The named CSV column for `row` parsed as an elapsed time, or `None` when the cell is blank.
@@ -248,7 +218,9 @@ impl SessionRows {
         if raw.is_empty() {
             return Ok(None);
         }
-        parse_duration(raw, &self.path, row.record + 2, name).map(Some)
+        parse_duration(raw, self.table.path(), Table::row_number(row.record), name)
+            .map(Some)
+            .map_err(SessionCsvError::from)
     }
 }
 
@@ -258,20 +230,20 @@ impl SessionRows {
 /// which is what makes the two agree by construction rather than by inspection.
 pub(super) fn csv_session_rows(path: &Path) -> Result<SessionRows, SessionCsvError> {
     let tz = time_zone();
-    let (headers, records) = read_csv(path)?;
+    let table = Table::read(path, Document::SessionReport, REQUIRED_HEADERS)?;
     // One allocation for the file, shared by every session read from it.
     let source = Rc::new(path.to_path_buf());
 
     let mut anomalies = Vec::new();
     let mut rows: Vec<Row> = Vec::new();
-    for (i, record) in records.iter().enumerate() {
+    for i in 0..table.record_count() {
         // The CSV row, counting the header, and the number every session parsed from this record
         // carries. A record duplicated to resolve a DST fold yields two sessions and they share it,
         // because they share the row they came from — see `Session::row`. The workbook row is a
         // different number, and it belongs to the workbook: `super::excel` derives it from a
         // session's position in `rows` when it writes one.
-        let csv_row = i + 2;
-        let session = CsvSession::parse(&headers, record, path, csv_row)?;
+        let csv_row = Table::row_number(i);
+        let session = CsvSession::parse(&table, i, csv_row)?;
         for row in session.resolve(&tz, &source, csv_row)? {
             anomalies.extend(row.session.anomalies.iter().map(|&kind| Anomaly {
                 session: row.session.clone(),
@@ -296,9 +268,7 @@ pub(super) fn csv_session_rows(path: &Path) -> Result<SessionRows, SessionCsvErr
     }
 
     Ok(SessionRows {
-        path: path.to_path_buf(),
-        headers,
-        records,
+        table,
         rows,
         anomalies,
         log,
@@ -347,45 +317,17 @@ fn note_off_grid_rows(rows: &[Row], log: &mut RunLog) {
 // CSV input
 // ---------------------------------------------------------------------------
 
-type Headers = HashMap<String, usize>;
-
-fn read_csv(path: &Path) -> Result<(Headers, Vec<::csv::StringRecord>), SessionCsvError> {
-    let unreadable = |cause: ::csv::Error| SessionCsvError::Unreadable {
-        path: path.to_path_buf(),
-        cause,
-    };
-
-    let mut reader = ::csv::Reader::from_path(path).map_err(unreadable)?;
-    let headers: Headers = reader
-        .headers()
-        .map_err(unreadable)?
-        .iter()
-        .enumerate()
-        .map(|(i, h)| (h.trim().to_owned(), i))
-        .collect();
-
-    for required in REQUIRED_HEADERS {
-        if !headers.contains_key(*required) {
-            return Err(SessionCsvError::MissingColumn {
-                path: path.to_path_buf(),
-                name: required,
-            });
-        }
-    }
-
-    let records = reader
-        .records()
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(unreadable)?;
-    Ok((headers, records))
-}
-
-fn field<'a>(headers: &Headers, record: &'a ::csv::StringRecord, name: &str) -> &'a str {
-    headers
-        .get(name)
-        .and_then(|&i| record.get(i))
-        .unwrap_or("")
-        .trim()
+/// A cell of this report that will not parse.
+///
+/// The document is pinned here, once, rather than at each of the parsers below.
+fn bad_value(
+    s: &str,
+    path: &Path,
+    row: usize,
+    column: &'static str,
+    cause: impl fmt::Display,
+) -> CsvReadError {
+    CsvReadError::bad_value(Document::SessionReport, path, row, column, s, cause)
 }
 
 /// Local time as `YYYY-MM-DD HH:MM`, or with seconds appended so a finer-grained report still
@@ -395,20 +337,14 @@ fn parse_local(
     path: &Path,
     row: usize,
     column: &'static str,
-) -> Result<civil::DateTime, SessionCsvError> {
+) -> Result<civil::DateTime, CsvReadError> {
     // 1. Try parsing with seconds first
     if let Ok(dt) = civil::DateTime::strptime("%Y-%m-%d %H:%M:%S", s) {
         return Ok(dt);
     }
 
     // 2. Fall back to parsing without seconds (seconds default to 00)
-    civil::DateTime::strptime("%Y-%m-%d %H:%M", s).map_err(|e| SessionCsvError::BadValue {
-        path: path.to_path_buf(),
-        row,
-        column,
-        value: s.to_owned(),
-        cause: e.to_string(),
-    })
+    civil::DateTime::strptime("%Y-%m-%d %H:%M", s).map_err(|e| bad_value(s, path, row, column, e))
 }
 
 /// `H:MM:SS`, with hours unbounded so a session longer than a day still parses.
@@ -422,14 +358,8 @@ fn parse_duration(
     path: &Path,
     row: usize,
     column: &'static str,
-) -> Result<Duration, SessionCsvError> {
-    let bad = || SessionCsvError::BadValue {
-        path: path.to_path_buf(),
-        row,
-        column,
-        value: s.to_owned(),
-        cause: "expected an elapsed time as H:MM:SS".to_owned(),
-    };
+) -> Result<Duration, CsvReadError> {
+    let bad = || bad_value(s, path, row, column, "expected an elapsed time as H:MM:SS");
     let mut parts = s.split(':');
     let (Some(h), Some(m), Some(sec), None) =
         (parts.next(), parts.next(), parts.next(), parts.next())
@@ -490,47 +420,37 @@ impl Row {
 }
 
 impl CsvSession {
-    fn parse(
-        headers: &Headers,
-        record: &::csv::StringRecord,
-        path: &Path,
-        row: usize,
-    ) -> Result<Self, SessionCsvError> {
-        let energy_raw = field(headers, record, "Energy_Use");
+    fn parse(table: &Table, index: usize, row: usize) -> Result<Self, CsvReadError> {
+        let path = table.path();
+        let energy_raw = table.cell(index, "Energy_Use");
         Ok(Self {
-            id: field(headers, record, "Charge_Session_ID").to_owned(),
+            id: table.cell(index, "Charge_Session_ID").to_owned(),
             start_local: parse_local(
-                field(headers, record, "Conn_DateTime_Start"),
+                table.cell(index, "Conn_DateTime_Start"),
                 path,
                 row,
                 "Conn_DateTime_Start",
             )?,
             end_local: parse_local(
-                field(headers, record, "Conn_DateTime_End"),
+                table.cell(index, "Conn_DateTime_End"),
                 path,
                 row,
                 "Conn_DateTime_End",
             )?,
             conn_duration: parse_duration(
-                field(headers, record, "Conn_Duration"),
+                table.cell(index, "Conn_Duration"),
                 path,
                 row,
                 "Conn_Duration",
             )?,
             active_charge_time: parse_duration(
-                field(headers, record, "Active_Charge_Time"),
+                table.cell(index, "Active_Charge_Time"),
                 path,
                 row,
                 "Active_Charge_Time",
             )?,
             energy_use: energy_raw.parse().map_err(|e: std::num::ParseFloatError| {
-                SessionCsvError::BadValue {
-                    path: path.to_path_buf(),
-                    row,
-                    column: "Energy_Use",
-                    value: energy_raw.to_owned(),
-                    cause: e.to_string(),
-                }
+                bad_value(energy_raw, path, row, "Energy_Use", e)
             })?,
         })
     }
@@ -1169,16 +1089,30 @@ S3,2026-06-03 09:00,2026-06-03 09:00,0:00:00,0:00:00,4.2
     /// Report for this slot fails on a missing column, and so does picking a session report for
     /// the Charges Report slot; the path alone leaves the two indistinguishable. The paired test
     /// is `charges_report::test::a_message_opens_with_the_kind_of_document_expected`.
+    ///
+    /// Through `csv_sessions`, not over a hand-built error: what is at stake is the [`Document`]
+    /// this reader hands the shared reader, and only the real call passes it.
     #[test]
     fn a_message_opens_with_the_kind_of_document_expected() {
-        let err = SessionCsvError::MissingColumn {
-            path: PathBuf::from("XX-XX_charges_2026-06-01.csv"),
-            name: "Energy_Use",
-        };
+        const CSV: &str = "\
+Start_Date,End_Date,Bill_Status,kWh,Cost
+01-Jun-26,30-Jun-26,Issued,10,$1.00
+";
+        let dir = temp_dir("document_kind");
+        // A Charges Report, named as one, offered to this slot.
+        let csv_path = dir.join("XX-XX_charges_2026-06-01.csv");
+        fs::write(&csv_path, CSV).unwrap();
+
+        let err = csv_sessions(&csv_path).unwrap_err();
         assert_eq!(
             err.to_string(),
-            "Session Report XX-XX_charges_2026-06-01.csv: missing required column `Energy_Use`"
+            format!(
+                "Session Report {}: missing required column `Charge_Session_ID`",
+                csv_path.display()
+            )
         );
+
+        fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

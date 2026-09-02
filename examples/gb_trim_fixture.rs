@@ -29,7 +29,7 @@ Usage:
     cargo run --example gb_trim_fixture -- <XML> <FROM> <TO> > out.XML
 
 Example:
-    cargo run --example gb_trim_fixture -- data/TH_Electric_Usage_23-11-2024_to_24-06-2026.XML 2025-07-23 2025-08-24
+    cargo run --example gb_trim_fixture -- data/green_button/TH_Electric_Usage_23-11-2024_to_24-06-2026.XML 2025-07-23 2025-08-24
 
 See docs/maintenance-manual.md.
 ";
