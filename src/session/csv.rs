@@ -323,8 +323,7 @@ fn parse_local(
 ///
 /// Returns an unsigned [`Duration`], matching [`Session`]'s own fields. The sign is rejected here
 /// rather than carried: `Conn_Duration` and `Active_Charge_Time` are elapsed times, and a negative
-/// one is a malformed cell, not a value to propagate. Only the DST-fold comparison in
-/// [`CsvSession::reproduces_reported_end`] genuinely needs a sign, and it makes its own.
+/// one is a malformed cell, not a value to propagate.
 fn parse_duration(
     s: &str,
     path: &Path,
@@ -555,9 +554,14 @@ impl CsvSession {
     ) -> Row {
         // Checked on the resolved instants rather than the reported wall times: the two differ only
         // by a whole-hour offset in this zone, so either answers the question, and these are the
-        // values every later allowance is applied to. Skipped for a record holding the sentinels,
-        // which sit off the grid for reasons that say nothing about Evolute's reporting.
-        let placeable = conn_start <= conn_end;
+        // values every later allowance is applied to.
+        //
+        // Skipped only for a record holding the sentinels, which sit off the grid for reasons that
+        // say nothing about Evolute's reporting. The test is against the sentinels themselves and
+        // not against the span being inverted: a record flagged `InconsistentDuration` alone may
+        // also report an end before its start, and its times are real readings the check still
+        // applies to.
+        let placeable = conn_start != UNPLACEABLE_START || conn_end != UNPLACEABLE_END;
         if placeable
             && (!is_on_grid(conn_start, TIME_GRID_STEP) || !is_on_grid(conn_end, TIME_GRID_STEP))
         {
@@ -941,6 +945,54 @@ mod test {
             session("2026-03-08 02:30", "2026-03-08 04:00", "0:30:00").resolve(&test_source(), 2);
         assert_eq!(rows[0].start_local, dt("2026-03-08 02:30"));
         assert_eq!(rows[0].end_local, dt("2026-03-08 04:00"));
+    }
+
+    /// A fold start where no reading of the record makes its three fields agree. The evidence that
+    /// ordinarily settles the fold — `Conn_Duration` — has failed, so there is nothing left to
+    /// choose with and no instant is assigned. `DstUnresolvable` says the ambiguity is why;
+    /// `InconsistentDuration` says the record disagrees with itself under every reading.
+    #[test]
+    fn an_unresolvable_fold_gets_no_instant() {
+        // 01:30 local is the repeated hour. Neither reading of it plus 9 hours lands anywhere near
+        // the reported 02:00, which is at most 90 minutes later under either.
+        let rows =
+            session("2026-11-01 01:30", "2026-11-01 02:00", "9:00:00").resolve(&test_source(), 2);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].session.conn_start, UNPLACEABLE_START);
+        assert_eq!(rows[0].session.conn_end, UNPLACEABLE_END);
+        assert_eq!(
+            timing_anomalies(&rows[0].session.anomalies),
+            vec![
+                AnomalyKind::DstUnresolvable,
+                AnomalyKind::InconsistentDuration
+            ]
+        );
+    }
+
+    /// The same disagreement on a date with only one reading to test is `InconsistentDuration`
+    /// alone, and the record keeps its instants: they are real readings, and the listing prints
+    /// them. This is the line between the two kinds.
+    #[test]
+    fn an_inconsistent_record_off_the_fold_keeps_its_instants() {
+        let rows =
+            session("2026-06-15 01:30", "2026-06-15 02:00", "9:00:00").resolve(&test_source(), 2);
+        assert_eq!(rows.len(), 1);
+        assert!(rows[0].session.is_placeable());
+        assert_eq!(local_of(rows[0].session.conn_start), dt("2026-06-15 01:30"));
+        assert_eq!(
+            timing_anomalies(&rows[0].session.anomalies),
+            vec![AnomalyKind::InconsistentDuration]
+        );
+    }
+
+    /// Every kind that leaves a record without instants also excludes it, on its own rather than by
+    /// relying on `InconsistentDuration` travelling alongside.
+    #[test]
+    fn no_instant_implies_exclusion() {
+        for kind in [AnomalyKind::FellInDstGap, AnomalyKind::DstUnresolvable] {
+            assert!(kind.leaves_no_instant(), "{kind:?}");
+            assert!(kind.excludes_session(), "{kind:?}");
+        }
     }
 
     /// The case local arithmetic gets wrong: a session spanning the fold. Wall clock says 2 hours,

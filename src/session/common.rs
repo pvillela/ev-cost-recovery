@@ -186,9 +186,9 @@ impl Session {
     /// Whether the reported wall times were resolved to instants at all.
     ///
     /// `false` for the two records that name none: a reported time in the DST gap, which never
-    /// occurred, and a fold no reading of the record resolves. Both are given
-    /// [`UNPLACEABLE_START`](crate::time::UNPLACEABLE_START) and
-    /// [`UNPLACEABLE_END`](crate::time::UNPLACEABLE_END) instead of a guess, and both are excluded.
+    /// occurred, and a fold no reading of the record resolves. Both are given the crate-private
+    /// sentinels `time::UNPLACEABLE_START` and `time::UNPLACEABLE_END` instead of a guess, and both
+    /// are excluded.
     ///
     /// What it is for is the handful of places that legitimately hold an excluded session and would
     /// otherwise read those two fields: the report's listing, and the workbook's writer and reader.
@@ -777,9 +777,9 @@ pub enum AnomalyKind {
     ///
     /// **No instant is assigned.** There is none to assign: the clocks jumped over that wall time,
     /// so it names nothing, and shifting it to either side of the gap would be a guess dressed as a
-    /// reading. The session is given [`UNPLACEABLE_START`](crate::time::UNPLACEABLE_START) and
-    /// [`UNPLACEABLE_END`](crate::time::UNPLACEABLE_END) — see [`Self::leaves_no_instant`] — and is
-    /// excluded from every estimate.
+    /// reading. The session is given the sentinels `time::UNPLACEABLE_START` and
+    /// `time::UNPLACEABLE_END` — see [`Self::leaves_no_instant`] — and is excluded from every
+    /// estimate.
     ///
     /// Raised once per session whichever end it came from, since the kind does not say which. Every
     /// other test that reads the instants is skipped for such a record; the reported wall times are
@@ -787,7 +787,7 @@ pub enum AnomalyKind {
     /// is. See docs/time/README.md, "Time zone".
     FellInDstGap,
     /// A reported wall time fell in the DST fold, and no combination of the readings at either end
-    /// satisfies [`duration_is_consistent`].
+    /// satisfies `duration_is_consistent`.
     ///
     /// A wall time in the repeated hour names two instants an hour apart. `Conn_Duration` is what
     /// ordinarily says which: the true combination has the reported start, the reported end and the
@@ -893,10 +893,10 @@ impl AnomalyKind {
 
     /// Whether this kind means no instant could be assigned to the record's reported times.
     ///
-    /// The two that hand a session [`UNPLACEABLE_START`](crate::time::UNPLACEABLE_START) and
-    /// [`UNPLACEABLE_END`](crate::time::UNPLACEABLE_END) instead of a reading:
-    /// [`Self::FellInDstGap`], where a reported wall time never occurred, and
-    /// [`Self::DstUnresolvable`], where it occurred twice and nothing in the record says which.
+    /// The two that hand a session the sentinels `time::UNPLACEABLE_START` and
+    /// `time::UNPLACEABLE_END` instead of a reading: [`Self::FellInDstGap`], where a reported wall
+    /// time never occurred, and [`Self::DstUnresolvable`], where it occurred twice and nothing in
+    /// the record says which.
     ///
     /// This is how the workbook reader recognises such a row. The writer leaves every cell derived
     /// from those two fields empty, so the `anomalies` column is the only thing left saying what the

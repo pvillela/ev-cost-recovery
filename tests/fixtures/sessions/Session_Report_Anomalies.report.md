@@ -28,9 +28,9 @@ asked for, because that is the basis the demand charge is billed on. An hour
 is reported as the highest of its four segments, not as an average over the
 whole hour.
 
-2 sessions in the source report were excluded from every figure above,
-having reported times that contradict each other. They are listed under
-Excluded sessions.
+3 sessions in the source report were excluded from every figure above,
+having reported times that cannot be placed on a timeline. They are listed
+under Excluded sessions.
 
 
 Segments
@@ -69,18 +69,25 @@ Excluded sessions
 |----:|:---------|:-----------------|:------|:------------|:---------------------|
 |   4 | BAD      | 2026-06-15 16:05 | 16:31 | yes         | InconsistentDuration |
 |   8 | REVERSED | 2026-06-15 16:30 | 16:21 | yes         | InconsistentDuration |
+|  10 | INGAP    | —                | —     | —           | FellInDstGap         |
 
 These sessions take no part in any estimate. Times are local (ET), and the
 list covers the whole source report rather than the interval estimated, so
 "From" carries its date and "To" carries one only when the session crosses
-midnight. "In interval" is whether the session appears to fall in the
-interval - appears only, because a record whose own fields contradict each
-other cannot be trusted to say where it belongs. It reads the same doubtful
-times, so no row was dropped on its say-so.
+midnight. A dash means the reported times name no instant at all - a wall
+time the clocks jumped over, or a repeated hour the record cannot choose
+between - so there is nothing to show; the row and session number address it
+in the source file. "In interval" is whether the session appears to fall in
+the interval - appears only, because a record whose own fields contradict
+each other cannot be trusted to say where it belongs. It reads the same
+doubtful times, so no row was dropped on its say-so.
 
 - InconsistentDuration - reported start, end and duration contradict each
   other by more than truncation to the minute can explain; the session is
   excluded from every estimate.
+- FellInDstGap - reported start or end is a local time that never occurred,
+  in the hour the clocks jump over when DST begins; it names no instant, so
+  none was assigned and the session is excluded from every estimate.
 
 
 Anomalies

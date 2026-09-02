@@ -1165,7 +1165,7 @@ mod test_historic {
             csv::csv_sessions,
             test_support::{timing_anomalies, timing_anomalies_in_cell},
         },
-        time::instant_of_serial,
+        time::{UNPLACEABLE_END, UNPLACEABLE_START, instant_of_serial},
     };
     use jiff::{Timestamp, civil, tz::TimeZone};
     use std::{env, fs, process, time::Duration};
@@ -1186,6 +1186,198 @@ UR_ID,Location_Address,Location_City,Location_Postal_Code,Station_ID,Station_Net
 CKT-7,,Toronto,,Station-7,Evolute Inc.,FLO,G5,S69865,,2026-06-01 16:22,2026-06-01 21:29,5:07:53,5:07:53,5:07:52,Level 2,30.6,5.63,VinFast,Vf8,2024
 CKT-7,,Toronto,,Station-7,Evolute Inc.,FLO,G5,S13577,,2026-06-02 08:00,2026-06-02 08:00,0:00:11,0:00:11,0:00:10,Level 2,0,0,VinFast,Vf8,2024
 ";
+
+    // -----------------------------------------------------------------------
+    // DST round trips
+    // -----------------------------------------------------------------------
+    //
+    // One CSV record per case, written to a workbook and read back. What every one of them is
+    // really testing is that the workbook carries enough to rebuild the session: the writer leaves
+    // the instant columns empty for a record that has none, so the `anomalies` column is the only
+    // thing left saying what the row is.
+    //
+    // These live here rather than in `tests/` because reading a workbook back is `historic`, and
+    // `grep -rn historic tests/` is expected to find nothing. See CLAUDE.md.
+
+    /// The header every case below shares, with only the columns the reader requires.
+    const DST_HEADER: &str = "Charge_Session_ID,Conn_DateTime_Start,Conn_DateTime_End,Conn_Duration,\
+         Active_Charge_Time,Energy_Use\n";
+
+    /// Converts one record and reads it straight back.
+    fn dst_round_trip(tag: &str, record: &str) -> Sessions {
+        let xlsx = convert(tag, &format!("{DST_HEADER}{record}\n"));
+        xlsx_to_sessions(&xlsx).unwrap()
+    }
+
+    /// What a record with no instants must look like coming back out of a workbook.
+    ///
+    /// The exact equality on the sentinels is the point. A serial carries whole seconds and the
+    /// sentinels do not sit on one, so a reader that parsed the stored cells rather than
+    /// substituting from the token would come back close but unequal — and this is what says so.
+    fn assert_unplaceable(report: &Sessions, kinds: &[AnomalyKind]) {
+        assert!(report.sessions.is_empty(), "should not be countable");
+        assert!(report.spikes.is_empty(), "should not be a spike");
+        assert_eq!(report.excluded.len(), 1, "should be excluded");
+
+        let s = &report.excluded[0];
+        assert_eq!(s.conn_start, UNPLACEABLE_START);
+        assert_eq!(s.conn_end, UNPLACEABLE_END);
+        assert!(!s.is_placeable());
+        assert_eq!(timing_anomalies(&s.anomalies), kinds.to_vec());
+        assert!(
+            !report
+                .anomalies
+                .iter()
+                .any(|a| a.kind == AnomalyKind::WorkbookDiscrepancy),
+            "the empty cells are deliberate, not a disagreement: {:?}",
+            report.anomalies
+        );
+    }
+
+    /// A reported start in the hour the clocks jump over.
+    #[test]
+    fn a_gap_start_round_trips_as_unplaceable() {
+        let report = dst_round_trip(
+            "gap_start",
+            "S1,2026-03-08 02:30,2026-03-08 04:00,0:30:00,0:29:00,2.9",
+        );
+        assert_unplaceable(&report, &[AnomalyKind::FellInDstGap]);
+    }
+
+    /// The same on the end column. The whole span is poisoned, not just that end.
+    #[test]
+    fn a_gap_end_round_trips_as_unplaceable() {
+        let report = dst_round_trip(
+            "gap_end",
+            "S1,2026-03-08 01:30,2026-03-08 02:30,1:00:00,0:59:00,5.9",
+        );
+        assert_unplaceable(&report, &[AnomalyKind::FellInDstGap]);
+    }
+
+    /// Both ends in the gap is one flag, not two, and it survives as one.
+    #[test]
+    fn a_gap_at_both_ends_round_trips_flagged_once() {
+        let report = dst_round_trip(
+            "gap_both",
+            "S1,2026-03-08 02:10,2026-03-08 02:40,0:30:00,0:29:00,2.9",
+        );
+        assert_unplaceable(&report, &[AnomalyKind::FellInDstGap]);
+    }
+
+    /// A fold no reading of the record resolves. It reaches the same state as a gap by a different
+    /// route, and both kinds have to come back for the row to say why.
+    #[test]
+    fn an_unresolvable_fold_round_trips_as_unplaceable() {
+        let report = dst_round_trip(
+            "fold_unresolvable",
+            "S1,2026-11-01 01:30,2026-11-01 02:00,9:00:00,0:29:00,2.9",
+        );
+        assert_unplaceable(
+            &report,
+            &[
+                AnomalyKind::DstUnresolvable,
+                AnomalyKind::InconsistentDuration,
+            ],
+        );
+    }
+
+    /// A fold the reported end does settle, in each direction. These are the cases that must *not*
+    /// end up unplaceable: one combination fits, the record keeps its instants, and the workbook
+    /// carries them back to the second.
+    #[test]
+    fn a_resolved_fold_round_trips_with_its_instant() {
+        // 01:30 local, ending 03:30 local. Three hours elapsed only under the EDT reading
+        // (05:30Z); under EST (06:30Z) the same wall times are two hours apart.
+        let edt = dst_round_trip(
+            "fold_edt",
+            "S1,2026-11-01 01:30,2026-11-01 03:30,3:00:00,2:59:00,17.9",
+        );
+        assert_eq!(edt.sessions.len(), 1);
+        assert_eq!(edt.sessions[0].id, "S1");
+        assert_eq!(
+            edt.sessions[0].conn_start,
+            utc(civil::date(2026, 11, 1).at(5, 30, 0, 0))
+        );
+        assert!(timing_anomalies(&edt.sessions[0].anomalies).is_empty());
+
+        // The mirror image: two hours elapsed fits only the EST reading (06:30Z).
+        let est = dst_round_trip(
+            "fold_est",
+            "S1,2026-11-01 01:30,2026-11-01 03:30,2:00:00,1:59:00,11.9",
+        );
+        assert_eq!(est.sessions.len(), 1);
+        assert_eq!(
+            est.sessions[0].conn_start,
+            utc(civil::date(2026, 11, 1).at(6, 30, 0, 0))
+        );
+        assert!(timing_anomalies(&est.sessions[0].anomalies).is_empty());
+    }
+
+    /// A session short enough to sit inside the repeated hour fits under both readings, so both are
+    /// written and both must come back — as two sessions, told apart by the suffix on the id.
+    #[test]
+    fn an_ambiguous_fold_round_trips_as_two_sessions() {
+        let report = dst_round_trip(
+            "fold_ambiguous",
+            "S1,2026-11-01 01:10,2026-11-01 01:40,0:30:00,0:29:00,2.9",
+        );
+        assert_eq!(report.sessions.len(), 2);
+        let ids: Vec<&str> = report.sessions.iter().map(|s| s.id.as_str()).collect();
+        assert_eq!(ids, vec!["S1-EDT", "S1-EST"]);
+        // An hour apart, and each carries the flag saying why there are two of them.
+        assert_eq!(
+            report.sessions[1]
+                .conn_start
+                .duration_since(report.sessions[0].conn_start)
+                .as_secs(),
+            3600
+        );
+        for s in &report.sessions {
+            assert_eq!(
+                timing_anomalies(&s.anomalies),
+                vec![AnomalyKind::DstAmbiguousDuplicated]
+            );
+        }
+    }
+
+    /// The writer's side of the same bargain: every column derived from the instants is left empty,
+    /// and the two columns that are not — the reported wall times, copied from the CSV text — still
+    /// say what the report said. Those are the ones that never occurred, which is the point of
+    /// keeping them.
+    #[test]
+    fn the_writer_empties_only_the_derived_time_cells() {
+        let xlsx = convert(
+            "gap_cells",
+            &format!("{DST_HEADER}S1,2026-03-08 02:30,2026-03-08 04:00,0:30:00,0:29:00,2.9\n"),
+        );
+        let book = umya_spreadsheet::reader::xlsx::read(&xlsx).unwrap();
+        let sheet = book.sheet(0).unwrap();
+        let headers = sheet_headers(sheet).unwrap();
+        let cell = |name: &str| sheet.value((headers[name], 2)).trim().to_owned();
+
+        for name in [
+            "conn_start_utc",
+            "conn_end_utc",
+            "adj_conn_start_utc",
+            "adj_conn_end_utc",
+            "adj_conn_start",
+            "adj_conn_end",
+            "adj_conn_duration",
+        ] {
+            assert_eq!(cell(name), "", "{name} should be empty");
+        }
+
+        // Written, and equal to the serials for the wall times as the CSV stated them.
+        assert_eq!(
+            cell("Conn_DateTime_Start").parse::<f64>().unwrap(),
+            serial_of_civil(civil::date(2026, 3, 8).at(2, 30, 0, 0))
+        );
+        assert_eq!(
+            cell("Conn_DateTime_End").parse::<f64>().unwrap(),
+            serial_of_civil(civil::date(2026, 3, 8).at(4, 0, 0, 0))
+        );
+        assert_eq!(cell("anomalies"), "FellInDstGap");
+    }
 
     /// A record whose start falls in the fold and whose end cannot discriminate the two offsets
     /// occupies two workbook rows. Each gets its own row number, its own id and its own cell, so
@@ -1238,6 +1430,11 @@ S2,2026-11-02 08:00,2026-11-02 09:00,1:00:00,0:59:00,5.9
     /// front of them. A resolved DST fold is where that shows — it is one CSV record and two
     /// workbook rows — so the fixture puts a duplication first and every later row is displaced by
     /// it, with one session of each bucket after that.
+    ///
+    /// `S5` is the case the two readers reach by different routes rather than by a shared parse:
+    /// the CSV reader finds the gap in the reported wall time, while the workbook reader has only
+    /// the `anomalies` cell and empty timestamp columns to go on. Agreeing on it is what says the
+    /// substitution and the detection describe the same record.
     #[test]
     fn the_two_readers_agree() {
         const CSV: &str = "\
@@ -1246,6 +1443,7 @@ S1,2026-11-01 01:10,2026-11-01 01:40,0:30:00,0:29:00,2.9
 S2,2026-06-01 16:22,2026-06-01 21:29,5:07:53,5:07:52,30.6
 S3,2026-06-02 10:00,2026-06-02 09:00,0:10:00,0:09:00,1.5
 S4,2026-06-03 09:00,2026-06-03 09:00,0:00:00,0:00:00,4.2
+S5,2026-03-08 02:30,2026-03-08 04:00,0:30:00,0:29:00,2.9
 ";
         let dir = temp_dir("both_readers");
         let csv_path = dir.join("Session_Report_Test.csv");
@@ -1267,12 +1465,12 @@ S4,2026-06-03 09:00,2026-06-03 09:00,0:00:00,0:00:00,4.2
         };
 
         // Read from the CSV, the rows are the CSV's. Both halves of the `S1` fold came from record
-        // 2 and both say so; `S2` follows on 3, undisplaced.
-        assert_eq!(rows(&from_csv), (vec![2, 2, 3], vec![5], vec![4]));
+        // 2 and both say so; `S2` follows on 3, undisplaced. `S3` and `S5` are both excluded.
+        assert_eq!(rows(&from_csv), (vec![2, 2, 3], vec![5], vec![4, 6]));
 
         // Read from the workbook, the rows are the sheet's. The fold occupies two of them, so `S2`
         // sits on row 4 rather than 3, and everything after it is pushed down to match.
-        assert_eq!(rows(&from_xlsx), (vec![2, 3, 4], vec![6], vec![5]));
+        assert_eq!(rows(&from_xlsx), (vec![2, 3, 4], vec![6], vec![5, 7]));
 
         // Both readers name the file they read, which is what makes a row number resolvable.
         assert!(from_csv.sessions.iter().all(|s| *s.path == csv_path));

@@ -312,11 +312,18 @@ reads badly. It is deliberately distinct from `as_str` for exactly that reason. 
 glossary is generated from `Display`, so there is one wording to maintain rather than a second copy
 in `report.rs`.
 
-**Whether it excludes.** `InconsistentDuration` is the only kind that removes a session from the
-estimates, and it does so where the buckets are sorted, in `Sessions::from_session_lists`. Everything else is
-informational: the session still counts towards every figure. If a new kind should exclude, that is
-a decision to make explicitly and to record in README's "Other" section — not something that
-follows from adding the variant.
+**Whether it excludes.** `AnomalyKind::excludes_session` names the kinds that remove a session from
+the estimates, and the buckets are sorted on it in `Sessions::from_session_lists`. Three do today:
+`InconsistentDuration`, whose fields contradict each other, and the two that leave a record with no
+instant at all — `FellInDstGap` and `DstUnresolvable`, which `leaves_no_instant` names and which
+`excludes_session` defers to. Everything else is informational: the session still counts towards
+every figure. If a new kind should exclude, that is a decision to make explicitly and to record in
+README's "Other" section — not something that follows from adding the variant.
+
+A kind that means *no instant could be assigned* belongs in `leaves_no_instant` as well. That
+predicate is what the workbook reader recognises such a row by, since the writer leaves every cell
+derived from the instants empty and the `anomalies` column is all that is left to say what the row
+is.
 
 **What you do *not* have to wire up:** `collect_session_anomalies` in `src/session/peak.rs` matches on
 nothing. It is deliberately blind to the kind, so a variant added here surfaces in the report
@@ -339,6 +346,12 @@ inverted session is therefore always flagged `InconsistentDuration` and sorted i
 `Sessions::excluded`, and `estimates_from_sessions` never puts an excluded session in front of the
 estimating logic. Reaching the panic means one got somewhere it should not have, which is worth a
 crash rather than a plausible-looking answer.
+
+A session carrying the `UNPLACEABLE_START`/`UNPLACEABLE_END` sentinels is inverted by construction,
+and it reaches `Sessions::excluded` by its own flag rather than by this argument — see
+`AnomalyKind::leaves_no_instant`. The panic is the point there: those two values exist so that
+placing such a session on a timeline is impossible rather than merely wrong. `Session::adj_duration`
+and `SessionOverlap::duration` panic on the same inversion, and for the same reason.
 
 `Session::lenient_intersects` reads the two endpoints in whichever order puts them the right way
 round, and answers instead of panicking.

@@ -3,7 +3,7 @@
 **Scope.** *Terminology*, *Givens* and *Key properties* define `adj_start` and `adj_end` generally;
 they underpin `Session::adj_conn_start` and `Session::adj_conn_end` and every calculation built on
 them. From *Inconsistent duration anomaly* onward the document derives one thing only, the
-`InconsistentDuration` anomaly. The other six `AnomalyKind`s are out of scope.
+`InconsistentDuration` anomaly. The other eight `AnomalyKind`s are out of scope.
 
 `EV_STEP` is Evolute's reporting resolution. It is a device for this analysis and appears nowhere in
 the code; only `OUR_STEP`, which is `TIME_GRID_STEP`, does.
@@ -125,8 +125,14 @@ before truncation throws precision away. `real_start + conn_duration == real_end
 
 ## Result
 
-The three checks the software applies. Any failure raises `InconsistentDuration`, which is the only
-anomaly that removes a session from every estimate.
+The three checks the software applies. Any failure raises `InconsistentDuration`, one of the three
+anomalies that remove a session from every estimate — `AnomalyKind::excludes_session` names them
+all, and the other two are the DST kinds that leave a record with no instant at all.
+
+These checks are also what settles an ambiguous wall time. When a reported time falls in the DST
+fold it has two readings, and the combination of readings satisfying the three below is the one the
+record supports; see `docs/time/README.md`, "Settling the fold". There is no second statement of
+the test for that purpose.
 
 ```
 1.  rep_start <= rep_end                                          // check 4

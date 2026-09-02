@@ -84,21 +84,24 @@ Adding to a feature is a test-coverage decision. `ioi`'s ten tests now run only 
 **This is a smaller loss than it first looks, and the distinction is worth being exact about.**
 The crate resolves DST ambiguity in two places, deliberately separate, and only one of them moved:
 
-| | `session::csv`, `CsvSession::resolve` | `session::ioi`, `map_local` |
+Both now live in `time::dst` and share the probe that enumerates a wall time's readings,
+`local_readings`. What differs — and what the gate falls between — is what each does with more than
+one reading.
+
+| | `session::csv`, `CsvSession::resolve` | `time::dst`, `map_local` |
 |---|---|---|
 | Question | an Evolute record reports a local start in the fall-back hour — which instant is it? | a *user* names a wall time — what could it mean? |
 | Evidence | the reported end and an untruncated `Conn_Duration` | none; a wall time is all there is |
-| Outcome | resolves it, or duplicates the record as EDT and EST and flags it | reports the ambiguity for the front-end to put to the user |
+| Outcome | resolves it, duplicates the record as EDT and EST, or assigns no instant — and flags it | reports the ambiguity for the front-end to put to the user |
 | Bears on a figure | **yes — every kWh and kW attribution** | no |
-| Gated | no | yes |
-| Tests | 7, ungated | 5, now gated |
+| Gated | no | yes; `session::ioi` is its only caller |
+| Tests | ungated, in `session::csv` and `time::dst` | 5, gated with `ioi` |
 
-`ioi`'s doc comment states the split: *"The session reader faces the same ambiguity with more
-evidence — an untruncated `Conn_Duration` — and settles it."* So a default `cargo test` still
-covers DST everywhere a bill figure depends on it: the fold resolved from the reported end, the
-hour-early candidate rejected, the unresolvable record duplicated, the gap shifted forward and
-reported, and a fold-spanning session's true elapsed duration. Those are `session::csv`'s seven,
-and they are where the correctness of the numbers lives.
+The probe itself is ungated and tested in `time::dst`, so a default `cargo test` still covers DST
+everywhere a bill figure depends on it: the fold resolved from the reported end, the hour-early
+reading rejected, the ambiguous record duplicated, the gap and the unresolvable fold left without an
+instant, and a fold-spanning session's true elapsed duration. Those are where the correctness of the
+numbers lives.
 
 What went behind the gate is the *input-validation* half — refusing a start in the DST gap,
 requiring a designator on a fold start, checking a designator against its date, and which hours a

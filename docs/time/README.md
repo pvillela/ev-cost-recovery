@@ -3,8 +3,9 @@
 The `time` module: everything about dates, times and zones that more than one part of this software
 needs. Module-specific date arithmetic stays in its own module.
 
-`src/time/` holds the code — `base.rs` for the zone, the grid and intervals, `excel.rs` for
-serial-date conversion, `tou.rs` and `holidays.rs` for Ontario's time-of-use rules.
+`src/time/` holds the code — `base.rs` for the zone, the grid and intervals, `dst.rs` for resolving
+a wall time the zone reads twice or not at all, `excel.rs` for serial-date conversion, `tou.rs` and
+`holidays.rs` for Ontario's time-of-use rules.
 
 ## What lives here and what does not
 
@@ -42,7 +43,7 @@ makes the distinction easy to lose and expensive to get wrong: a summer period c
 clock is an hour out at each end, and a period containing a clock change is an hour out overall.
 Cutting on prevailing local time reproduced 6 of 19 invoices; cutting on standard time reproduces
 all 19 to the milli-kWh. The derivation is in
-[`../hydro_bill/archive/dst-energy-anomaly-pre-fix.md`](../hydro_bill/archive/dst-energy-anomaly-pre-fix.md).
+[`../archive/hydro_bill/dst-energy-anomaly-pre-fix.md`](../archive/hydro_bill/dst-energy-anomaly-pre-fix.md).
 
 Two consequences worth knowing:
 
@@ -72,7 +73,7 @@ The label is easy to misread as "the 23rd to the 23rd", which no clock makes tru
 This is inferred rather than stated. The bill gives only the two dates and a `Number of Days` of
 `31`; counting both dates would give 32 and counting neither 30, so exactly one endpoint is
 included. Which one is settled by the reconciliation of 19 invoices with Green Button data, in
-[`../hydro_bill/archive/dst-energy-anomaly-pre-fix.md`](../hydro_bill/archive/dst-energy-anomaly-pre-fix.md).
+[`../archive/hydro_bill/dst-energy-anomaly-pre-fix.md`](../archive/hydro_bill/dst-energy-anomaly-pre-fix.md).
 
 None of the arithmetic depends on the label. `BillingPeriod` works in instants and never parses it;
 the reading matters only when someone compares an invoice to the code and has to decide whether the
@@ -80,63 +81,94 @@ two agree.
 
 ## Time zone
 
-- The session report's timestamps are stated in local time, i.e., ET. We need to convert them to UTC.
-  The time zone is `America/Toronto`.
-- The conversion to UTC is straightforward for almost every point in time, except for the repeated hour on the day that DST ends (move from EDT 02:00 to EST 01:00). 
-  - Based on the `Conn_DateTime_Start`, `Conn_DateTime_End`, and `Conn_Duration` fields in the Evolute session report, the corresponding UTC values can be inferred, except for sessions with duration of less than 1 hour that fall between the ambiguous 01:00:00-01:59:59 interval.
-  - For the above-mentioned short sessions in the ambiguous interval, we need to make an assumption. For now, our policy will be to duplicate those session records, with one copy in the 01:00:00-01:59:59 EDT interval and the other copy in the 01:00:00-01:59:59 EST interval. This should be recorded in the CSV to Excel transformation function's result.
+The session report's timestamps are stated in local time — ET, `America/Toronto` — and every
+calculation works in UTC, so each reported wall time has to be placed on the calendar. Almost every
+one of them names exactly one instant. Two hours a year do not: the hour repeated when DST ends
+names two, and the hour skipped when DST begins names none.
 
-### The inference, in detail
+The reader settles both from the record itself, and where the record cannot settle it, says so
+rather than guessing.
+
+### One probe, three outcomes
+
+Everything below falls out of one question, asked once per offset in `TZ_OFFSETS`: read the wall
+time *as if* at that fixed offset, and check that the zone really is at that offset on the instant
+you land on. The readings that survive are what the wall time names, and how many there are is the
+classification.
+
+| Readings | What it is | What the reader does |
+|---:|---|---|
+| 1 | Every wall time but two hours a year | Use it |
+| 2 | The **fold**, 01:00:00-01:59:59 when DST ends | Settle it against `Conn_Duration`, below |
+| 0 | The **gap**, 02:00:00-02:59:59 when DST begins | Assign no instant at all |
+
+`local_readings` in `src/time/dst.rs` is the probe, and both resolvers sit on it — see "Two
+resolvers, deliberately" below.
+
+### Settling the fold
 
 **The assumption it rests on.** `Conn_Duration` is *physical elapsed time*, so it spans the true
 start and the true end of the connection. This is what makes the inference possible. Were
 `Conn_Duration` instead a naive subtraction of local clock values, a session spanning the fold would
 under-report by exactly the repeated hour, and the reported end could not distinguish the two
-candidate offsets from each other.
+readings from each other.
 
-Note the assumption holds of the *true* instants, not of the reported ones. Because the report
-truncates start and end to whole minutes, `conn_start_utc + Conn_Duration` does not land on
-`conn_end_utc` — it misses by strictly less than one `TIME_GRID_STEP`, in either
-direction, on a perfectly sound record.
-Every test below is stated as a tolerance for that reason, and the exact size of the discrepancy is
-derived in step 2.
+**The procedure.** Take every combination of a start reading with an end reading — one or two of
+each, so at most four — and keep the combinations satisfying `duration_is_consistent`, the same
+three checks any other record is held to and the crate's only statement of them. All of it is
+instant arithmetic in UTC; nothing compares wall times.
 
-**The procedure**, applied to `Conn_DateTime_Start`:
+A mismatched combination — a start read as EDT with an end read as EST — needs no special case. It
+implies a duration a whole hour out from the reported one, so the consistency test rejects it on its
+own.
 
-1. If the local time maps to exactly one instant, use it. This is every timestamp except during the
-   two transitions each year.
-2. If it falls in the **fold** — the repeated 01:00:00-01:59:59 hour — there are two candidate
-   instants, one at the EDT offset (UTC-4) and one at the EST offset (UTC-5). Take each candidate
-   in turn, add `Conn_Duration`, convert back to local time, and check whether the result matches
-   the reported `Conn_DateTime_End`. **A candidate matches when the two are less than 60 seconds
-   apart**, not when they are equal. Both reported timestamps are truncated to the whole minute
-   while `Conn_Duration` carries seconds, so for a consistent record `Conn_start + Conn_Duration`
-   lands within a minute of the reported end *on either side*: writing the true start as
-   `S + α` and the true end as `E + β` with `α, β ∈ [0, 60)`, the implied end is `E + (β − α)`.
-   Demanding equal minutes therefore rejects every record with `β < α` — roughly half of them, and
-   116 of the 238 rows in this project's `data` directory. The tolerance cannot blur the two
-   candidates together: they lie a full hour apart.
+The number of survivors is the answer:
 
-   The comparison is made on *local wall time*, which is what lets both candidates match a session
-   short enough to fit inside the repeated hour — the very ambiguity being tested for. It must also
-   stay two-sided: a one-sided test would accept a candidate landing an hour *early* and duplicate a
-   session that is not ambiguous at all.
-   - *Exactly one candidate matches* — that offset is the session's; the ambiguity is resolved.
-   - *Both candidates match* — the reported end cannot discriminate, so the record is duplicated
-     per the policy above. This is precisely the "duration of less than 1 hour" case: both
-     candidates agree exactly when the session is short enough to end inside the repeated hour.
-     Note it is *derived* from the test rather than applied as a hardcoded 1-hour threshold.
-   - *Neither candidate matches* — the record is internally inconsistent. The earlier (EDT) offset
-     is assumed and the row is reported.
-3. If it falls in the **gap** — the 02:00:00-02:59:59 hour skipped when DST begins, a wall time that
-   never occurred — the instant is resolved forward to just after the gap, the row is flagged
-   `FellInDstGap`, and the session is excluded from every estimate. Such a timestamp indicates a
-   fault upstream: the shift is the only reading available and it is a guess, so the span built
-   from it cannot be relied on any more than an inconsistent duration can.
+- **Exactly one** — that is the session. The ambiguity is resolved.
+- **Two** — reachable only when *both* wall times fall in the fold. The hour then cancels on each
+  side of the comparison, so the EDT/EDT and EST/EST combinations pass or fail together and the
+  record cannot say which it is. This is precisely the case of a session short enough to end inside
+  the repeated hour, derived rather than applied as a hardcoded 1-hour threshold. Both are kept —
+  see **Duplicated records** below.
+- **None** — the evidence has failed: whatever `Conn_Duration` measures on this row, it is not the
+  elapsed time the inference assumes. There is nothing left to choose with, so no instant is
+  assigned. The row is flagged `DstUnresolvable`, and `InconsistentDuration` with it, since a record
+  agreeing with itself under no reading is inconsistent however it is read.
 
-`Conn_DateTime_End` is resolved the same way, except that a fold is settled by taking whichever
-candidate is nearer to `conn_start_utc + Conn_Duration`, which is by then already known. A gap at
-either end raises the same `FellInDstGap`, once for the session.
+Note the consistency test is a *window*, not an equality, and that is what makes failing it mean
+something. Both reported timestamps are truncated while `Conn_Duration` carries seconds, so on a
+perfectly sound record the implied end misses the reported one — by up to but never reaching one
+truncation step, in either direction. Demanding equal minutes would reject every record whose end
+was truncated less than its start: roughly half of them, and 116 of the 238 rows in this project's
+`data` directory. The window cannot blur the two readings together, since they lie a full hour
+apart. Its derivation is in
+[`docs/session/time-reporting-uncertainty.md`](../session/time-reporting-uncertainty.md).
+
+### The gap: no instant is assigned
+
+A wall time in the skipped hour never occurred. There is no instant to record, and shifting it to
+either side of the gap would be a guess dressed as a reading — so the reader assigns none.
+
+The session is given two sentinel timestamps, `UNPLACEABLE_START` and `UNPLACEABLE_END`, whose only
+property is that they are inverted: any span built from them is impossible, and code that tries to
+place such a session on a timeline gets a panic rather than a plausible answer. It is flagged
+`FellInDstGap` — once, whichever end it came from — and excluded from every estimate.
+
+The gap is settled before anything else and settles the record on its own. No fold work is done, and
+no test that reads the instants runs: `duration_is_consistent` and the grid check would both be
+reporting the sentinels rather than the record.
+
+What survives is what the record actually said. The reported wall times are written to the
+workbook's `Conn_DateTime_Start` and `Conn_DateTime_End` columns verbatim, from the CSV text rather
+than re-derived, and the row and file name where the record is. Every column derived from the
+instants is left empty, and the workbook reader puts the sentinels back from the `anomalies` column
+rather than parsing those cells — a serial carries whole seconds and the sentinels do not sit on
+one, so reading them back could not reproduce them.
+
+`DstUnresolvable` reaches the same state by the other route. The two kinds are kept apart because
+they say different things about *why* the record could not be placed.
+
+### Duplicated records
 
 **Duplicated records** are given distinct ids — `<id>-EDT` and `<id>-EST` — because the peak power
 contribution logic keys `Session` on its id alone and holds sessions in a `BTreeSet`. With identical
@@ -163,15 +195,22 @@ would round towards zero — forwards — and break the bound above.
 
 ## Two resolvers, deliberately
 
-Two functions resolve an ambiguous local time, and they must not be merged. They are asked
-different questions:
+Two functions resolve an ambiguous local time, and they must not be merged. They **share the probe**
+that enumerates the readings, `local_readings`, and differ in what they do with more than one of
+them, because they are asked different questions:
 
-- **`map_local`** (`session::ioi`) is asked *what could this wall time mean?* by a user choosing an
-  interval of interest. It has nothing but the wall time, so it reports every candidate and lets the
-  caller choose, or name `EST`/`EDT`.
-- **`CsvSession::resolve`** (`session::csv`) is asked *which offset was this session actually
+- **`map_local`** (`time::dst`) is asked *what could this wall time mean?* by a user choosing an
+  interval of interest. It has nothing but the wall time, so it reports every reading and lets the
+  caller choose, or name `EST`/`EDT`. `session::ioi` is its only caller, which is why it is gated
+  behind `historic`.
+- **`CsvSession::resolve`** (`session::csv`) is asked *which reading was this session actually
   at?* and has evidence the other lacks: `Conn_Duration`, untruncated elapsed time. That usually
-  settles it; duplication is the fallback when it does not.
+  settles it; duplication and the sentinels are the fallbacks when it does not.
 
 Their tie-breaks differ for the same reason. Giving the first the second's behaviour would have it
 invent evidence it does not have; giving the second the first's would throw evidence away.
+
+They sit in the same module so that this warning is read where both of them are. The split of labour
+is the other thing to keep: `time::dst` owns the zone arithmetic and knows nothing about sessions,
+while `session::csv` owns the policy — which reading the record's own fields support, which
+`AnomalyKind` to raise, and what a record gets when no reading fits.

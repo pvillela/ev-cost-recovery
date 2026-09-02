@@ -54,6 +54,10 @@ the same value in the start column would be flagged.
 ***Fix:*** have `resolve_end` report the gap case back to `resolve` so `DstGapShifted` (or a
 dedicated kind) lands in the row's anomalies. <@ In addition, `DstGapShifted` should be renamed `FellInDstGap` any session with that anomaly must be excluded, just like with `InconsistentDuration`. @>
 
+*Resolved, and further than this.* The shift itself was the fault: a gap at either end now assigns
+**no instant at all**, and `resolve_end` is gone along with the wall-clock fold comparison. See
+`docs/time/README.md`, "Time zone", and `docs/dst-gap-plan.md`.
+
 **C4. The Detail tab shows a failed save for one frame only.** CONFIRMED.
 `src/bin/ev_cost_recovery/detail.rs:92-94`: the save error is drawn via `widgets::error_block`
 inside the `clicked()` branch, which in immediate mode runs only on the click frame. The other
