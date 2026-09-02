@@ -59,10 +59,7 @@ that actually went wrong, not a general principle.
 
 - **Information that reaches a message lives in a field of the error variant, formatted at
   `Display`.** Never `format!("{}: {e}", path.display())` into a `Box<dyn Error>`.
-  `BillError` (`src/hydro_bill/bill_pdf.rs`) is the model; `GbReadError`
-  (`src/green_button/read_xml.rs`), `SessionCsvError` (`src/session/csv.rs`) and
-  `ChargesReportError` (`src/charges_report.rs`) follow it. All four readers now do; there is no
-  remaining place in the crate where a path reaches a message by string formatting. Being
+  `BillError` (`src/hydro_bill/bill_pdf.rs`) is the model. Being
   structured is separate from being public — `SessionCsvError` is `pub(crate)`, because the
   function that returns it is.
 
@@ -118,7 +115,7 @@ that actually went wrong, not a general principle.
   exactly this reason. To decide what may go private, take such a list as the floor and let
   `cargo check` add the rest: it refuses a `pub use` of a `pub(crate)` item (`E0365`).
 
-- **An error type is only as public as the function that returns it needs it to be.** Of the four
+- **An error type is only as public as the most public function that returns it, directly or indirectly.** Of the four
   readers, only `BillError` has a real external consumer — `hydro_bill_dump` calls `is_layout()` to
   change its advice. The other three are reached by nothing outside the crate, so their visibility
   follows their function's: `csv_sessions` is `pub(crate)`, so `SessionCsvError` is too. Do not
