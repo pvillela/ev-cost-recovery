@@ -508,7 +508,7 @@ left-aligns it. The golden dumps now record horizontal alignment for exactly tha
 ## Regenerating the fixtures
 
 
-`<FEED>` is the full export, `data/TH_Electric_Usage_23-11-2024_to_24-06-2026.XML`.
+`<FEED>` is the full export, `data/green_button/TH_Electric_Usage_23-11-2024_to_24-06-2026.XML`.
 
 ```
 cargo build --release --example gb_trim_fixture

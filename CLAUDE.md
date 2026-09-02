@@ -119,7 +119,7 @@ that actually went wrong, not a general principle.
   exactly this reason. To decide what may go private, take such a list as the floor and let
   `cargo check` add the rest: it refuses a `pub use` of a `pub(crate)` item (`E0365`).
 
-- **An error type is only as public as the function that returns it needs it to be.** Of the four
+- **An error type is only as public as the most public function that returns it, directly or indirectly.** Of the four
   readers, only `BillError` has a real external consumer — `hydro_bill_dump` calls `is_layout()` to
   change its advice. The other three are reached by nothing outside the crate, so their visibility
   follows their function's: `csv_sessions` is `pub(crate)`, so `SessionCsvError` is too. Do not

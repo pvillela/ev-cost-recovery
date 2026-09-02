@@ -1,6 +1,9 @@
 pub mod api;
 
 pub mod charges_report;
+// Public because `ChargesReportError::Csv` carries a `CsvReadError`, and a payload with no path is
+// a payload a caller cannot match past. `Table` inside it stays `pub(crate)`.
+pub mod csv;
 // `ConversionError` is public API only through this module; `api::ApiError::Conversion` embeds it.
 pub mod error;
 pub mod green_button;

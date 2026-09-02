@@ -1,4 +1,4 @@
-//! Slow-tier check against the real Charges Reports in `data`.
+//! Slow-tier check against the real Charges Reports in `data/evolute`.
 //!
 //! Ignored by default: those files are not in the repository. Run explicitly with:
 //!
@@ -14,8 +14,9 @@
 use ev_cost_recovery::charges_report::charges_report;
 use std::{fs, path::PathBuf};
 
-fn data_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("data")
+/// Evolute's own files, both reports, beside each other -- see `crate::charges_report`.
+fn evolute_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("data/evolute")
 }
 
 /// Charges Reports are named `<building>_charges_<start timestamp>.csv`.
@@ -27,10 +28,10 @@ fn is_charges_report(path: &std::path::Path) -> bool {
 }
 
 #[test]
-#[ignore = "reads the Charges Report CSVs in data"]
+#[ignore = "reads the Charges Report CSVs in data/evolute"]
 fn every_charges_report_parses_and_totals_its_own_columns() {
-    let mut paths: Vec<PathBuf> = fs::read_dir(data_dir())
-        .expect("the data directory is not in the repository")
+    let mut paths: Vec<PathBuf> = fs::read_dir(evolute_dir())
+        .expect("the sample data is not in the repository")
         .map(|entry| entry.expect("readable directory entry").path())
         .filter(|p| is_charges_report(p))
         .collect();
@@ -38,7 +39,7 @@ fn every_charges_report_parses_and_totals_its_own_columns() {
     assert!(
         !paths.is_empty(),
         "no Charges Report found in {}",
-        data_dir().display()
+        evolute_dir().display()
     );
 
     for path in &paths {
