@@ -390,23 +390,38 @@ fn parse_date(
 }
 
 fn number(s: &str, path: &Path, row: usize, column: &'static str) -> Result<f64, CsvReadError> {
+    parse_number(s, s, path, row, column)
+}
+
+/// `text` is what is parsed; `cell` is what the report wrote, and is what any error quotes.
+///
+/// The two differ for [`money`], which takes the `$` off before parsing. An error quoting `1,2`
+/// for a cell that reads `$1,2` sends a reader looking for something the file does not contain,
+/// and the quoted value is there to be looked for.
+fn parse_number(
+    text: &str,
+    cell: &str,
+    path: &Path,
+    row: usize,
+    column: &'static str,
+) -> Result<f64, CsvReadError> {
     // Thousands separators are stripped, since a busy month's kWh easily reaches four figures --
     // but only where they group digits in threes. Stripping every comma reads `1,2` as 12, which
     // turns a malformed cell into a plausible figure in a reader whose posture is an error rather
     // than a partial sum.
-    if !commas_group_thousands(s.trim()) {
+    if !commas_group_thousands(text.trim()) {
         return Err(bad_value(
-            s,
+            cell,
             path,
             row,
             column,
             "a comma here does not separate thousands",
         ));
     }
-    let cleaned: String = s.chars().filter(|c| *c != ',').collect();
+    let cleaned: String = text.chars().filter(|c| *c != ',').collect();
     cleaned
         .parse()
-        .map_err(|e: std::num::ParseFloatError| bad_value(s, path, row, column, e))
+        .map_err(|e: std::num::ParseFloatError| bad_value(cell, path, row, column, e))
 }
 
 /// Whether every comma in `text` separates a group of three digits.
@@ -439,7 +454,7 @@ fn commas_group_thousands(text: &str) -> bool {
 /// currency. Thousands separators are handled by `number`.
 fn money(s: &str, path: &Path, row: usize, column: &'static str) -> Result<f64, CsvReadError> {
     let cleaned: String = s.chars().filter(|c| *c != '$').collect();
-    number(&cleaned, path, row, column)
+    parse_number(&cleaned, s, path, row, column)
 }
 
 // cargo test --lib -- charges_report::test
@@ -521,6 +536,48 @@ Start_Date,End_Date,Bill_Status,Cost
         assert!(message.contains("one row per breaker"), "{message}");
 
         fs::remove_dir_all(&dir).ok();
+    }
+
+    /// A comma that does not group three digits is a malformed cell, not a separator to ignore.
+    /// Stripping every comma would read `1,2` as 12 — a plausible figure standing in for a cell
+    /// nobody read correctly, in a reader whose whole posture is to refuse rather than guess.
+    #[test]
+    fn a_comma_that_does_not_separate_thousands_is_refused() {
+        for text in ["1,2", ",123", "1,2345", "1.234,5"] {
+            let err = number(text, &fake_path(), 2, "kWh").unwrap_err();
+            let message = err.to_string();
+            assert!(
+                message.contains("does not separate thousands"),
+                "{text}: {message}"
+            );
+            assert!(message.contains(&format!("{text:?}")), "{text}: {message}");
+        }
+    }
+
+    /// The grouped forms the reports do carry, and a figure with no comma at all.
+    #[test]
+    fn a_comma_that_does_separate_thousands_is_read() {
+        for (text, expected) in [
+            ("1,234.5", 1234.5),
+            ("12,345,678", 12_345_678.0),
+            ("35", 35.0),
+        ] {
+            assert_eq!(
+                number(text, &fake_path(), 2, "kWh").unwrap(),
+                expected,
+                "{text}"
+            );
+        }
+    }
+
+    /// The message quotes the cell as the report wrote it, `$` and all. `money` parses a copy with
+    /// the `$` taken off, and an error quoting that copy would name a value the file does not hold
+    /// — the quoted value is there to be searched for.
+    #[test]
+    fn a_bad_cost_cell_is_quoted_as_the_report_wrote_it() {
+        let err = money("$1,2", &fake_path(), 4, "Cost").unwrap_err();
+        let message = err.to_string();
+        assert!(message.contains("\"$1,2\""), "{message}");
     }
 
     #[test]
