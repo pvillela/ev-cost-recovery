@@ -162,9 +162,9 @@ impl SessionNotes {
 
     /// The sessions left out of the figures entirely, listed in full.
     ///
-    /// Counted would not do. Such a record's start, end and duration contradict each other, so the
-    /// only way to judge what happened is to read the row -- and its absence moves every figure
-    /// drawn from these sessions without appearing in any of them.
+    /// Counted would not do. Such a record cannot be placed on a timeline, so the only way to judge
+    /// what happened is to read the row -- and its absence moves every figure drawn from these
+    /// sessions without appearing in any of them.
     fn push_excluded(&self, out: &mut Vec<String>) {
         if self.excluded.is_empty() {
             return;
@@ -172,9 +172,11 @@ impl SessionNotes {
         out.push(h2("Sessions left out"));
         out.push(String::new());
         out.push(wrap(
-            "These records' reported start, end and duration contradict each other, so they \
-             cannot be placed on a timeline and take no part in any figure above. Every one of \
-             them is energy the chargers may have drawn and none of the figures counts.",
+            "These records cannot be placed on a timeline, so they take no part in any figure \
+             above: either their reported start, end and duration contradict each other, or a \
+             reported time names no instant - a wall time the clocks jumped over, or a repeated \
+             hour the record cannot choose between. Every one of them is energy the chargers may \
+             have drawn and none of the figures counts.",
             "",
         ));
         out.push(String::new());
@@ -370,7 +372,7 @@ impl IntervalEstimates {
             out.push(wrap(
                 &format!(
                     "{} in the source report {} excluded from every figure above, having \
-                     reported times that contradict each other. They are listed under Excluded sessions.",
+                     reported times that cannot be placed on a timeline. They are listed under Excluded sessions.",
                     if n == 1 {
                         "One session".to_owned()
                     } else {
@@ -466,12 +468,24 @@ impl IntervalEstimates {
             .excluded_sessions
             .iter()
             .map(|s| {
+                // A session whose reported times name no instant has nothing to put in a time
+                // column, and `adj_conn_*` would report the sentinels rather than a reading. The
+                // dashes say so; `Row` and `Session` still address the record in its source file,
+                // which is where anyone looking at it goes.
+                let (from, to, within) = match s.is_placeable() {
+                    true => (
+                        ymd_hm(s.adj_conn_start()),
+                        ymd_hm_to(s.adj_conn_start(), s.adj_conn_end()),
+                        in_interval(s, &self.interval),
+                    ),
+                    false => ("—".to_owned(), "—".to_owned(), "—".to_owned()),
+                };
                 vec![
                     s.row.to_string(),
                     s.id.clone(),
-                    ymd_hm(s.adj_conn_start()),
-                    ymd_hm_to(s.adj_conn_start(), s.adj_conn_end()),
-                    in_interval(s, &self.interval),
+                    from,
+                    to,
+                    within,
                     // An excluded session is in no segment, but the report holds the session
                     // itself here, so its figure needs no lookup.
                     s.anomalies
@@ -491,7 +505,10 @@ impl IntervalEstimates {
         out.push(wrap(
             "These sessions take no part in any estimate. Times are local (ET), and the list \
              covers the whole source report rather than the interval estimated, so \"From\" \
-             carries its date and \"To\" carries one only when the session crosses midnight. \
+             carries its date and \"To\" carries one only when the session crosses midnight. A \
+             dash means the reported times name no instant at all - a wall time the clocks jumped \
+             over, or a repeated hour the record cannot choose between - so there is nothing to \
+             show; the row and session number address it in the source file. \
              \"In interval\" \
              is whether the session appears to fall in the interval - appears only, because a \
              record whose own fields contradict each other cannot be trusted to say where it \

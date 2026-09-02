@@ -4,6 +4,10 @@
 //! wall times are resolved to UTC, the DST fold is settled or the record duplicated, and every
 //! judgement call is recorded as an [`AnomalyKind`]. Nothing here knows about workbooks.
 //!
+//! The zone arithmetic itself is [`crate::time`]'s: this module holds only the policy — which
+//! reading of an ambiguous wall time the record's own `Conn_Duration` supports, which anomaly to
+//! raise, and what a record gets when no reading fits.
+//!
 //! Two ways out, sharing all of that:
 //!
 //! - [`csv_sessions`] buckets the sessions for the peak power contribution logic, straight from
@@ -27,12 +31,12 @@ use super::{
 use crate::{
     csv::{CsvReadError, Document, Table},
     log::{RunLog, SourceLog},
-    time::{is_on_grid, local_datetime, time_zone, wall_clock_instant},
+    time::{
+        UNPLACEABLE_END, UNPLACEABLE_START, falls_in_gap, is_on_grid, local_datetime,
+        local_readings,
+    },
 };
-use jiff::{
-    SignedDuration, Timestamp, civil,
-    tz::{AmbiguousOffset, TimeZone},
-};
+use jiff::{Timestamp, civil};
 use std::{
     error::Error,
     fmt,
@@ -40,19 +44,6 @@ use std::{
     rc::Rc,
     time::Duration,
 };
-
-/// The window `Conn_start + Conn_Duration` may land in, stated as an offset from the reported end.
-///
-/// Both bounds are exclusive, and the window is **asymmetric**: it is
-/// [`duration_is_consistent`]'s checks 2 and 3 with the reported end subtracted from each side.
-/// The extra second on the late side is there because the reported end is not only truncated —
-/// it is also unknown whether the reporting includes or excludes its last second. See
-/// `docs/session/time-reporting-uncertainty.md`.
-///
-/// Derived from [`TIME_GRID_STEP`] rather than written out, so a change to the grid moves this
-/// with it.
-const SLACK_EARLY: SignedDuration = SignedDuration::from_secs(-(TIME_GRID_STEP.as_secs() as i64));
-const SLACK_LATE: SignedDuration = SignedDuration::from_secs(TIME_GRID_STEP.as_secs() as i64 + 1);
 
 /// CSV columns that must be present for the file to mean anything.
 const REQUIRED_HEADERS: &[&str] = &[
@@ -75,21 +66,13 @@ const REQUIRED_HEADERS: &[&str] = &[
 ///
 /// Only whole-file failures are here. A per-row *judgement* call is not an error: it is carried on
 /// [`Session::anomalies`] and summarised in the log, because the row still yields a session.
+/// Resolving a wall time is not among them. A reported time that names no instant, or two, is a
+/// judgement call and not a failure: it is flagged on the session and the row is still written.
 #[derive(Debug)]
 pub(crate) enum SessionCsvError {
     /// The file could not be opened, is not a readable CSV, is missing a column this reader needs,
     /// or holds a cell that will not parse.
     Csv(CsvReadError),
-
-    /// A reported wall time could not be resolved to an instant.
-    ///
-    /// Distinct from [`CsvReadError::BadValue`], which is about a cell that does not parse. Here
-    /// the cell parsed and names a time the calendar cannot place.
-    Unresolvable {
-        path: PathBuf,
-        row: usize,
-        cause: Box<dyn Error>,
-    },
 }
 
 impl From<CsvReadError> for SessionCsvError {
@@ -104,14 +87,6 @@ impl fmt::Display for SessionCsvError {
             // Already written in full, document and path included. Adding either here would print
             // it twice.
             Self::Csv(cause) => cause.fmt(f),
-            // The same opening the shared errors use, from the same `Document`, so a reader cannot
-            // tell which half of this type refused the file.
-            Self::Unresolvable { path, row, cause } => write!(
-                f,
-                "{} {}: row {row}: {cause}",
-                Document::SessionReport,
-                path.display()
-            ),
         }
     }
 }
@@ -120,7 +95,6 @@ impl Error for SessionCsvError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::Csv(cause) => Some(cause),
-            Self::Unresolvable { cause, .. } => Some(cause.as_ref()),
         }
     }
 }
@@ -228,7 +202,6 @@ impl SessionRows {
 /// Shared by [`csv_sessions`] and [`session_csv_to_xlsx`](crate::session::session_csv_to_xlsx),
 /// which is what makes the two agree by construction rather than by inspection.
 pub(super) fn csv_session_rows(path: &Path) -> Result<SessionRows, SessionCsvError> {
-    let tz = time_zone();
     let table = Table::read(path, Document::SessionReport, REQUIRED_HEADERS)?;
     // One allocation for the file, shared by every session read from it.
     let source = Rc::new(path.to_path_buf());
@@ -243,7 +216,7 @@ pub(super) fn csv_session_rows(path: &Path) -> Result<SessionRows, SessionCsvErr
         // session's position in `rows` when it writes one.
         let csv_row = Table::row_number(i);
         let session = CsvSession::parse(&table, i, csv_row)?;
-        for row in session.resolve(&tz, &source, csv_row)? {
+        for row in session.resolve(&source, csv_row) {
             anomalies.extend(row.session.anomalies.iter().map(|&kind| Anomaly {
                 session: row.session.clone(),
                 kind,
@@ -454,41 +427,29 @@ impl CsvSession {
         })
     }
 
-    /// Resolves this session's local timestamps to UTC and derives `adj_conn_end`.
+    /// Resolves this session's reported wall times to UTC instants.
     ///
-    /// Returns one row normally, or two when the start falls in the DST fold and the reported end
-    /// cannot tell the two offsets apart — see docs/time/README.md, "Time zone", for why duplication is the
-    /// policy and why the copies get distinct ids.
+    /// Returns one row normally, or two when both reported times fall in the DST fold and the
+    /// record cannot say which of the repeated hours it belongs to — see docs/time/README.md,
+    /// "Time zone", for why duplication is the policy and why the copies get distinct ids.
     ///
-    /// # Not the same problem as [`crate::session::map_local`]
+    /// # Not the same problem as [`crate::time::map_local`]
     ///
-    /// Both resolve an ambiguous local time, and the two must **not** be merged. They are asked
-    /// different questions and are right to answer differently:
+    /// Both resolve an ambiguous local time, and the two must **not** be merged. They share the
+    /// probe that enumerates the readings, [`crate::time::local_readings`], and differ in what they
+    /// do with more than one of them:
     ///
     /// - `map_local` is asked *"what could this wall time mean?"* by a user picking an interval of
-    ///   interest. It has nothing but the wall time, so it returns every candidate and makes the
+    ///   interest. It has nothing but the wall time, so it returns every reading and makes the
     ///   caller choose, or say `EST`/`EDT`.
-    /// - This is asked *"which offset was this session actually at?"* and has evidence the other
-    ///   lacks: `Conn_Duration`, which is untruncated elapsed time. Testing each candidate against
-    ///   `start + Conn_Duration` usually settles it, and duplication is the fallback for when it
-    ///   does not.
+    /// - This is asked *"which reading was this session actually at?"* and has evidence the other
+    ///   lacks: `Conn_Duration`, untruncated elapsed time. Every start-end combination is tested
+    ///   with [`duration_is_consistent`], and duplication is the fallback for when more than one
+    ///   survives.
     ///
-    /// Their tie-breaks differ for the same reason. Giving this one `map_local`'s behaviour would
-    /// throw away the duration evidence; giving `map_local` this one's would have it invent
-    /// evidence it does not have.
-    fn resolve(
-        &self,
-        tz: &TimeZone,
-        source: &Rc<PathBuf>,
-        row: usize,
-    ) -> Result<Vec<Row>, SessionCsvError> {
-        // Every failure below comes out of jiff placing a wall time on the calendar, so they share
-        // one variant. `source` is the file, already allocated once for the whole read.
-        let unresolvable = |cause: jiff::Error| SessionCsvError::Unresolvable {
-            path: source.as_ref().clone(),
-            row,
-            cause: Box::new(cause),
-        };
+    /// Giving this one `map_local`'s behaviour would throw away the duration evidence; giving
+    /// `map_local` this one's would have it invent evidence it does not have.
+    fn resolve(&self, source: &Rc<PathBuf>, row: usize) -> Vec<Row> {
         // Kinds known before the DST branch runs. They describe the record itself, so on
         // duplication both copies inherit them.
         let mut common = Vec::new();
@@ -509,138 +470,121 @@ impl CsvSession {
             }
         }
 
-        let ambiguous = tz.to_ambiguous_timestamp(self.start_local);
-        let starts: Vec<(Timestamp, Option<&str>)> = match ambiguous.offset() {
-            AmbiguousOffset::Unambiguous { .. } => {
-                vec![(ambiguous.unambiguous().map_err(unresolvable)?, None)]
-            }
-            AmbiguousOffset::Gap { .. } => {
-                // A wall time that never occurred. `compatible` moves to just after the gap; the
-                // row is still written, but the shift is reported rather than silently applied,
-                // and the flag excludes the session from the estimates.
-                common.push(AnomalyKind::FellInDstGap);
-                vec![(ambiguous.compatible().map_err(unresolvable)?, None)]
-            }
-            AmbiguousOffset::Fold { .. } => {
-                let earlier = tz
-                    .to_ambiguous_timestamp(self.start_local)
-                    .earlier()
-                    .map_err(unresolvable)?;
-                let later = tz
-                    .to_ambiguous_timestamp(self.start_local)
-                    .later()
-                    .map_err(unresolvable)?;
-                let earlier_fits = self.reproduces_reported_end(tz, earlier);
-                let later_fits = self.reproduces_reported_end(tz, later);
-                match (earlier_fits, later_fits) {
-                    (true, false) => vec![(earlier, None)],
-                    (false, true) => vec![(later, None)],
-                    (true, true) => {
-                        // Both offsets are consistent with the report, which happens exactly when
-                        // the session is short enough to fit inside the repeated hour. Keep both.
-                        common.push(AnomalyKind::DstAmbiguousDuplicated);
-                        vec![(earlier, Some("EDT")), (later, Some("EST"))]
-                    }
-                    (false, false) => {
-                        common.push(AnomalyKind::DstUnresolvable);
-                        vec![(earlier, None)]
-                    }
-                }
-            }
-        };
+        // The gap is settled before anything else, and settles the record on its own. A wall time
+        // the clocks jumped over never occurred, so there is no instant to assign and nothing that
+        // reads one may run: both `duration_is_consistent` and `is_on_grid` would be reporting the
+        // sentinels rather than the record.
+        if falls_in_gap(self.start_local) || falls_in_gap(self.end_local) {
+            common.push(AnomalyKind::FellInDstGap);
+            return vec![self.row(
+                source,
+                row,
+                UNPLACEABLE_START,
+                UNPLACEABLE_END,
+                None,
+                common,
+            )];
+        }
 
-        starts
-            .into_iter()
-            .map(|(start_utc, suffix)| {
-                let (end_utc, end_in_gap) =
-                    self.resolve_end(tz, start_utc).map_err(unresolvable)?;
-                let mut anomalies = common.clone();
-                // The start may already have carried the flag in from `common`; one per session is
-                // what a reader needs, and the kind does not say which end it came from.
-                if end_in_gap && !anomalies.contains(&AnomalyKind::FellInDstGap) {
-                    anomalies.push(AnomalyKind::FellInDstGap);
-                }
-                if !duration_is_consistent(start_utc, end_utc, self.conn_duration) {
-                    anomalies.push(AnomalyKind::InconsistentDuration);
-                }
-                // Checked on the resolved instants rather than the reported wall times: the two
-                // differ only by a whole-hour offset in this zone, so either answers the question,
-                // and these are the values every later allowance is applied to.
-                if !is_on_grid(start_utc, TIME_GRID_STEP) || !is_on_grid(end_utc, TIME_GRID_STEP) {
-                    anomalies.push(AnomalyKind::OffGridTimes);
-                }
+        // One reading at each end, or two where the hour repeats. Every combination of the two is
+        // tested, so a start and an end read at different offsets is rejected by the same test that
+        // accepts a matched pair: it implies a duration a whole hour out.
+        let starts = local_readings(self.start_local);
+        let ends = local_readings(self.end_local);
+        let ambiguous = starts.len() > 1 || ends.len() > 1;
+        let fits: Vec<(&'static str, Timestamp, Timestamp)> = starts
+            .iter()
+            .flat_map(|&(name, start)| ends.iter().map(move |&(_, end)| (name, start, end)))
+            .filter(|&(_, start, end)| duration_is_consistent(start, end, self.conn_duration))
+            .collect();
 
-                Ok(Row {
-                    record: row - 2,
-                    session: Rc::new(Session {
-                        path: source.clone(),
-                        // The CSV row this record occupies. Both halves of a duplicated fold carry
-                        // it, since both were read from that one row; the `-EDT`/`-EST` suffix on
-                        // the id is what tells them apart.
-                        row,
-                        id: match suffix {
-                            Some(s) => format!("{}-{s}", self.id),
-                            None => self.id.clone(),
-                        },
-                        conn_start: start_utc,
-                        conn_end: end_utc,
-                        conn_duration: self.conn_duration,
-                        charge_time: self.active_charge_time,
-                        energy_use: self.energy_use,
-                        anomalies,
-                    }),
-                    start_local: self.start_local,
-                    end_local: self.end_local,
-                })
-            })
-            .collect()
+        match fits.as_slice() {
+            // The record says which reading it was at.
+            [(_, start, end)] => vec![self.row(source, row, *start, *end, None, common)],
+
+            // Two survivors are reachable only from the fold at both ends, where the hour cancels
+            // on each side and the two matched combinations pass or fail together. The record
+            // cannot say which, so both are kept and told apart by the id.
+            [_, _, ..] => {
+                common.push(AnomalyKind::DstAmbiguousDuplicated);
+                fits.iter()
+                    .map(|&(name, start, end)| {
+                        self.row(source, row, start, end, Some(name), common.clone())
+                    })
+                    .collect()
+            }
+
+            // Nothing fits. Where the reading was ambiguous, no instant can be assigned at all and
+            // the record gets the sentinels, exactly as a gap does; `DstUnresolvable` says the
+            // ambiguity is why. Where it was not, the single reading stands and only the
+            // consistency of the record is in question.
+            [] if ambiguous => {
+                common.push(AnomalyKind::DstUnresolvable);
+                common.push(AnomalyKind::InconsistentDuration);
+                vec![self.row(
+                    source,
+                    row,
+                    UNPLACEABLE_START,
+                    UNPLACEABLE_END,
+                    None,
+                    common,
+                )]
+            }
+            [] => {
+                common.push(AnomalyKind::InconsistentDuration);
+                vec![self.row(source, row, starts[0].1, ends[0].1, None, common)]
+            }
+        }
     }
 
-    /// Does `start` plus the reported elapsed duration land back on the reported end?
+    /// Builds one output row from a pair of resolved instants.
     ///
-    /// The same window [`duration_is_consistent`] applies, expressed as an offset — see
-    /// [`SLACK_EARLY`] and [`SLACK_LATE`]. Requiring equal minutes instead rejects roughly half of
-    /// all consistent records — 116 of the 238 rows in this project's `data` directory.
+    /// `designator` is `Some` only for the two halves of a duplicated fold, which share a CSV row
+    /// and are told apart by the `-EDT`/`-EST` suffix it puts on the id.
     ///
-    /// The comparison is made on *local wall time*, not on instants. That is what lets both fold
-    /// candidates match a session short enough to fit inside the repeated hour, which is the very
-    /// ambiguity this test exists to detect. The window cannot blur the two candidates together
-    /// otherwise: they lie a full hour apart.
-    fn reproduces_reported_end(&self, tz: &TimeZone, start: Timestamp) -> bool {
-        let end = (start + self.conn_duration).to_zoned(tz.clone()).datetime();
-        let offset = wall_clock_instant(end).duration_since(wall_clock_instant(self.end_local));
-        SLACK_EARLY < offset && offset < SLACK_LATE
-    }
-
-    /// Resolves the reported end to UTC, and says whether it fell in the DST gap. When the end
-    /// itself falls in the fold, the candidate nearest to `start + Conn_Duration` is the one
-    /// consistent with this session.
-    ///
-    /// The gap is reported back rather than resolved quietly. A wall time that never occurred is
-    /// the same fault at either end of the session, and the caller is where an
-    /// [`AnomalyKind`] is attached.
-    fn resolve_end(
+    /// [`AnomalyKind::OffGridTimes`] is decided here because it is the last kind that reads the
+    /// instants, and a record given the sentinels has none to read.
+    fn row(
         &self,
-        tz: &TimeZone,
-        start_utc: Timestamp,
-    ) -> Result<(Timestamp, bool), jiff::Error> {
-        let ambiguous = tz.to_ambiguous_timestamp(self.end_local);
-        Ok(match ambiguous.offset() {
-            AmbiguousOffset::Unambiguous { .. } => (ambiguous.unambiguous()?, false),
-            AmbiguousOffset::Gap { .. } => (ambiguous.compatible()?, true),
-            AmbiguousOffset::Fold { .. } => {
-                let reference = start_utc + self.conn_duration;
-                let earlier = tz.to_ambiguous_timestamp(self.end_local).earlier()?;
-                let later = tz.to_ambiguous_timestamp(self.end_local).later()?;
-                let d = |t: Timestamp| (t.as_second() - reference.as_second()).abs();
-                let nearest = if d(earlier) <= d(later) {
-                    earlier
-                } else {
-                    later
-                };
-                (nearest, false)
-            }
-        })
+        source: &Rc<PathBuf>,
+        row: usize,
+        conn_start: Timestamp,
+        conn_end: Timestamp,
+        designator: Option<&str>,
+        mut anomalies: Vec<AnomalyKind>,
+    ) -> Row {
+        // Checked on the resolved instants rather than the reported wall times: the two differ only
+        // by a whole-hour offset in this zone, so either answers the question, and these are the
+        // values every later allowance is applied to. Skipped for a record holding the sentinels,
+        // which sit off the grid for reasons that say nothing about Evolute's reporting.
+        let placeable = conn_start <= conn_end;
+        if placeable
+            && (!is_on_grid(conn_start, TIME_GRID_STEP) || !is_on_grid(conn_end, TIME_GRID_STEP))
+        {
+            anomalies.push(AnomalyKind::OffGridTimes);
+        }
+
+        Row {
+            record: row - 2,
+            session: Rc::new(Session {
+                path: source.clone(),
+                // The CSV row this record occupies. Both halves of a duplicated fold carry it,
+                // since both were read from that one row.
+                row,
+                id: match designator {
+                    Some(s) => format!("{}-{s}", self.id),
+                    None => self.id.clone(),
+                },
+                conn_start,
+                conn_end,
+                conn_duration: self.conn_duration,
+                charge_time: self.active_charge_time,
+                energy_use: self.energy_use,
+                anomalies,
+            }),
+            start_local: self.start_local,
+            end_local: self.end_local,
+        }
     }
 }
 
@@ -649,6 +593,7 @@ impl CsvSession {
 mod test {
     use super::*;
     use crate::{session::test_support::timing_anomalies, time::serial_of_civil};
+    use jiff::{SignedDuration, tz::TimeZone};
     use std::{env, fs, path::PathBuf, process};
 
     /// Both forms the reader itself accepts, in the same order — see `parse_local`. A helper
@@ -684,7 +629,7 @@ mod test {
     }
 
     fn local_of(ts: Timestamp) -> civil::DateTime {
-        ts.to_zoned(time_zone()).datetime()
+        local_datetime(ts)
     }
 
     /// A scratch directory of its own per test, since these run in parallel within one process.
@@ -723,18 +668,16 @@ mod test {
     /// the second has `start + duration` (23:40:29) *before* the reported end.
     #[test]
     fn adj_conn_end_pads_the_reported_end() {
-        let rows = session("2026-06-01 16:22", "2026-06-01 21:29", "5:07:53")
-            .resolve(&time_zone(), &test_source(), 2)
-            .unwrap();
+        let rows =
+            session("2026-06-01 16:22", "2026-06-01 21:29", "5:07:53").resolve(&test_source(), 2);
         assert_eq!(
             local_of(rows[0].session.adj_conn_end()),
             civil::date(2026, 6, 1).at(21, 30, 0, 0)
         );
         assert!(timing_anomalies(&rows[0].session.anomalies).is_empty());
 
-        let rows = session("2026-06-07 16:42", "2026-06-07 23:41", "6:58:29")
-            .resolve(&time_zone(), &test_source(), 2)
-            .unwrap();
+        let rows =
+            session("2026-06-07 16:42", "2026-06-07 23:41", "6:58:29").resolve(&test_source(), 2);
         assert_eq!(
             local_of(rows[0].session.adj_conn_end()),
             civil::date(2026, 6, 7).at(23, 42, 0, 0)
@@ -754,7 +697,7 @@ mod test {
         ];
         for (start, end, conn) in cases {
             let s = session(start, end, conn);
-            let rows = s.resolve(&time_zone(), &test_source(), 2).unwrap();
+            let rows = s.resolve(&test_source(), 2);
             let row = &rows[0];
             assert!(
                 row.session.adj_conn_end() >= row.session.conn_end,
@@ -778,9 +721,8 @@ mod test {
 
     #[test]
     fn utc_conversion_uses_edt_in_june() {
-        let rows = session("2026-06-01 16:22", "2026-06-01 21:29", "5:07:53")
-            .resolve(&time_zone(), &test_source(), 2)
-            .unwrap();
+        let rows =
+            session("2026-06-01 16:22", "2026-06-01 21:29", "5:07:53").resolve(&test_source(), 2);
         assert_eq!(
             rows[0]
                 .session
@@ -795,9 +737,8 @@ mod test {
     #[test]
     fn dst_fold_resolved_by_reported_end() {
         // 01:30 EDT + 3h elapsed = 03:30 EST. Starting at 01:30 EST would end at 04:30.
-        let rows = session("2026-11-01 01:30", "2026-11-01 03:30", "3:00:00")
-            .resolve(&time_zone(), &test_source(), 2)
-            .unwrap();
+        let rows =
+            session("2026-11-01 01:30", "2026-11-01 03:30", "3:00:00").resolve(&test_source(), 2);
         assert_eq!(rows.len(), 1);
         assert_eq!(
             rows[0]
@@ -817,9 +758,8 @@ mod test {
     #[test]
     fn dst_fold_resolved_to_est_rejects_the_hour_early_candidate() {
         // 01:30 EST + 3h elapsed = 04:30 EST. Starting at 01:30 EDT would end at 03:30.
-        let rows = session("2026-11-01 01:30", "2026-11-01 04:30", "3:00:00")
-            .resolve(&time_zone(), &test_source(), 2)
-            .unwrap();
+        let rows =
+            session("2026-11-01 01:30", "2026-11-01 04:30", "3:00:00").resolve(&test_source(), 2);
         assert_eq!(
             rows.len(),
             1,
@@ -846,9 +786,8 @@ mod test {
     #[test]
     fn a_boundary_off_the_time_grid_is_flagged() {
         // Ordinary minute boundaries, so nothing is flagged.
-        let rows = session("2026-06-10 02:00", "2026-06-10 03:00", "1:00:00")
-            .resolve(&time_zone(), &test_source(), 2)
-            .unwrap();
+        let rows =
+            session("2026-06-10 02:00", "2026-06-10 03:00", "1:00:00").resolve(&test_source(), 2);
         assert!(
             !rows[0]
                 .session
@@ -860,8 +799,7 @@ mod test {
 
         // A start carrying seconds: the report has moved to a finer resolution than the grid.
         let rows = session("2026-06-10 02:00:30", "2026-06-10 03:00", "0:59:30")
-            .resolve(&time_zone(), &test_source(), 2)
-            .unwrap();
+            .resolve(&test_source(), 2);
         assert!(
             rows[0]
                 .session
@@ -890,9 +828,8 @@ mod test {
         // 01:30 EDT + 2:59:31 = 03:29:31 local, which truncates to 03:29, not the reported 03:30.
         // The EST candidate lands at 04:29:31, an hour out, so only EDT is consistent — but the old
         // equal-minutes test rejected *both* and called the record unresolvable.
-        let rows = session("2026-11-01 01:30", "2026-11-01 03:30", "2:59:31")
-            .resolve(&time_zone(), &test_source(), 2)
-            .unwrap();
+        let rows =
+            session("2026-11-01 01:30", "2026-11-01 03:30", "2:59:31").resolve(&test_source(), 2);
         assert_eq!(rows.len(), 1);
         assert!(
             !rows[0]
@@ -916,9 +853,8 @@ mod test {
     /// record is duplicated with distinct ids.
     #[test]
     fn dst_fold_ambiguous_duplicates_the_record() {
-        let rows = session("2026-11-01 01:10", "2026-11-01 01:40", "0:30:00")
-            .resolve(&time_zone(), &test_source(), 2)
-            .unwrap();
+        let rows =
+            session("2026-11-01 01:10", "2026-11-01 01:40", "0:30:00").resolve(&test_source(), 2);
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0].session.id, "S1-EDT");
         assert_eq!(rows[1].session.id, "S1-EST");
@@ -939,29 +875,31 @@ mod test {
         }
     }
 
-    /// A wall time that never occurred, on the March 8 spring-forward.
+    /// A start that never occurred, on the March 8 spring-forward. No instant is assigned: the
+    /// record gets the sentinels, and shifting it to either side of the gap would be a guess.
     #[test]
-    fn dst_gap_resolves_forward_and_reports() {
-        let rows = session("2026-03-08 02:30", "2026-03-08 04:00", "0:30:00")
-            .resolve(&time_zone(), &test_source(), 2)
-            .unwrap();
+    fn a_start_in_the_dst_gap_gets_no_instant() {
+        let rows =
+            session("2026-03-08 02:30", "2026-03-08 04:00", "0:30:00").resolve(&test_source(), 2);
         assert_eq!(rows.len(), 1);
-        assert_eq!(local_of(rows[0].session.conn_start), dt("2026-03-08 03:30"));
+        assert_eq!(rows[0].session.conn_start, UNPLACEABLE_START);
+        assert_eq!(rows[0].session.conn_end, UNPLACEABLE_END);
+        assert!(!rows[0].session.is_placeable());
         assert_eq!(
             timing_anomalies(&rows[0].session.anomalies),
             vec![AnomalyKind::FellInDstGap]
         );
     }
 
-    /// The same fault on the *end* column. It was resolved silently until the reader was made to
-    /// report it: the row passed every consistency check and reached the estimates unflagged.
+    /// The same fault on the *end* column poisons the whole span, not just that end. A half-real
+    /// span would invite a reader to take the good half for a reading.
     #[test]
-    fn a_session_ending_in_the_dst_gap_is_flagged() {
-        let rows = session("2026-03-08 01:30", "2026-03-08 02:30", "1:00:00")
-            .resolve(&time_zone(), &test_source(), 2)
-            .unwrap();
+    fn an_end_in_the_dst_gap_gets_no_instant() {
+        let rows =
+            session("2026-03-08 01:30", "2026-03-08 02:30", "1:00:00").resolve(&test_source(), 2);
         assert_eq!(rows.len(), 1);
-        assert_eq!(local_of(rows[0].session.conn_end), dt("2026-03-08 03:30"));
+        assert_eq!(rows[0].session.conn_start, UNPLACEABLE_START);
+        assert_eq!(rows[0].session.conn_end, UNPLACEABLE_END);
         assert_eq!(
             timing_anomalies(&rows[0].session.anomalies),
             vec![AnomalyKind::FellInDstGap]
@@ -971,9 +909,8 @@ mod test {
     /// One flag for a session whose reported start and end both fall in the gap, not two.
     #[test]
     fn a_gap_at_both_ends_is_flagged_once() {
-        let rows = session("2026-03-08 02:10", "2026-03-08 02:40", "0:30:00")
-            .resolve(&time_zone(), &test_source(), 2)
-            .unwrap();
+        let rows =
+            session("2026-03-08 02:10", "2026-03-08 02:40", "0:30:00").resolve(&test_source(), 2);
         assert_eq!(rows.len(), 1);
         assert_eq!(
             timing_anomalies(&rows[0].session.anomalies),
@@ -981,13 +918,37 @@ mod test {
         );
     }
 
+    /// A gap settles the record on its own. Nothing that reads the instants runs, so neither the
+    /// consistency test nor the grid test may add a kind of its own — both would be reporting the
+    /// sentinels rather than the record. `0:30:00` here contradicts the reported hour between
+    /// 02:10 and 02:40 read either side of the gap, and the seconds put both times off the grid.
+    #[test]
+    fn a_gap_suppresses_every_test_that_reads_the_instants() {
+        let rows = session("2026-03-08 02:10:17", "2026-03-08 02:40:44", "9:00:00")
+            .resolve(&test_source(), 2);
+        assert_eq!(
+            rows[0].session.anomalies,
+            vec![AnomalyKind::FellInDstGap],
+            "only the gap should be reported"
+        );
+    }
+
+    /// The reported wall times survive on the row even though no instant does. They are what the
+    /// workbook's local columns show, and re-deriving them from the sentinels would give nonsense.
+    #[test]
+    fn a_gap_row_keeps_the_wall_times_the_report_stated() {
+        let rows =
+            session("2026-03-08 02:30", "2026-03-08 04:00", "0:30:00").resolve(&test_source(), 2);
+        assert_eq!(rows[0].start_local, dt("2026-03-08 02:30"));
+        assert_eq!(rows[0].end_local, dt("2026-03-08 04:00"));
+    }
+
     /// The case local arithmetic gets wrong: a session spanning the fold. Wall clock says 2 hours,
     /// elapsed is 3.
     #[test]
     fn fold_spanning_session_has_true_elapsed_duration() {
-        let rows = session("2026-11-01 00:30", "2026-11-01 02:30", "3:00:00")
-            .resolve(&time_zone(), &test_source(), 2)
-            .unwrap();
+        let rows =
+            session("2026-11-01 00:30", "2026-11-01 02:30", "3:00:00").resolve(&test_source(), 2);
         let row = &rows[0];
         let elapsed = row
             .session
@@ -1012,7 +973,7 @@ mod test {
         for energy in [5.0, 0.0] {
             let mut s = session("2026-06-01 10:00", "2026-06-01 10:00", "0:00:00");
             s.energy_use = energy;
-            let rows = s.resolve(&time_zone(), &test_source(), 7).unwrap();
+            let rows = s.resolve(&test_source(), 7);
             assert_eq!(
                 timing_anomalies(&rows[0].session.anomalies),
                 vec![AnomalyKind::ZeroActiveChargeTime],
@@ -1035,8 +996,7 @@ mod test {
     fn inconsistent_duration_is_reported() {
         let kinds = |start, end, conn| {
             let all = session(start, end, conn)
-                .resolve(&time_zone(), &test_source(), 2)
-                .unwrap()
+                .resolve(&test_source(), 2)
                 .swap_remove(0)
                 .session
                 .anomalies

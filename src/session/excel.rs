@@ -77,6 +77,26 @@ enum Source {
     Anomalies,
 }
 
+impl Source {
+    /// Whether this column is derived from a session's resolved instants.
+    ///
+    /// The set a record flagged unplaceable has no value for — see [`Session::is_placeable`]. Both
+    /// the writer, which leaves these cells empty, and the reader, which rebuilds the sentinels
+    /// instead of parsing them, are stated by this one list, so the two cannot drift apart.
+    fn reads_instants(self) -> bool {
+        matches!(
+            self,
+            Self::ConnStartUtc
+                | Self::ConnEndUtc
+                | Self::AdjConnStartLocal
+                | Self::AdjConnStartUtc
+                | Self::AdjConnEndLocal
+                | Self::AdjConnEndUtc
+                | Self::AdjConnDuration
+        )
+    }
+}
+
 /// The output sheet's columns, in order. Drives both the header row and every data row,
 /// so layout changes need only happen here.
 const COLUMNS: &[(&str, Source)] = &[
@@ -249,6 +269,17 @@ fn write_sheet(
 
         for (i, (_, source)) in COLUMNS.iter().enumerate() {
             let col = i as u32 + 1;
+            // A record whose reported times name no instant has nothing for the columns derived
+            // from them, so those cells are left empty rather than filled with the sentinels. The
+            // duration goes with them: it is a formula over two of the cells, and subtracting two
+            // empty ones would evaluate to a plausible-looking `0:00:00`.
+            //
+            // `ConnStartLocal` and `ConnEndLocal` are deliberately not here. They come from the CSV
+            // text rather than from the instants, so they still show the wall times the report
+            // stated -- which for a gap record are exactly the ones that never occurred.
+            if !row.session.is_placeable() && source.reads_instants() {
+                continue;
+            }
             match source {
                 Source::Text(name) => {
                     let value = data.field(row, name);
@@ -535,7 +566,9 @@ pub mod historic {
             IntervalEstimates, RSession, Session, Sessions, duration_is_consistent,
             estimates_from_sessions,
         },
-        time::{Interval, duration_of_serial, instant_of_serial},
+        time::{
+            Interval, UNPLACEABLE_END, UNPLACEABLE_START, duration_of_serial, instant_of_serial,
+        },
     };
     use jiff::Timestamp;
     use std::{collections::HashMap, rc::Rc};
@@ -624,12 +657,25 @@ pub mod historic {
             let charge_time =
                 duration_of_serial(number(sheet, &headers, "Active_Charge_Time", row)?);
             let mut anomalies = anomaly_kinds(sheet, &headers, row)?;
-            let conn_start = instant_of_serial(number(sheet, &headers, "conn_start_utc", row)?)?;
-            let conn_end = instant_of_serial(number(sheet, &headers, "conn_end_utc", row)?)?;
             let conn_duration = duration_of_serial(number(sheet, &headers, "Conn_Duration", row)?);
+            // The anomalies column, already read, is what says whether this row has instants at
+            // all. Where it does not, the writer left every cell derived from them empty and the
+            // sentinels are put back from the token -- reading the cells could not reproduce them
+            // anyway, since a serial carries only whole seconds.
+            let (conn_start, conn_end) = match anomalies.iter().any(AnomalyKind::leaves_no_instant)
+            {
+                true => (UNPLACEABLE_START, UNPLACEABLE_END),
+                false => (
+                    instant_of_serial(number(sheet, &headers, "conn_start_utc", row)?)?,
+                    instant_of_serial(number(sheet, &headers, "conn_end_utc", row)?)?,
+                ),
+            };
             // Re-derived rather than trusted to the stored cell, so an edited workbook cannot put
             // an inverted record in front of the estimating logic; the CSV reader does the same.
-            if !duration_is_consistent(conn_start, conn_end, conn_duration)
+            // Not asked of a row holding the sentinels: the answer would be about them rather than
+            // about the record, and its own flag already excludes it.
+            if conn_start <= conn_end
+                && !duration_is_consistent(conn_start, conn_end, conn_duration)
                 && !anomalies.contains(&AnomalyKind::InconsistentDuration)
             {
                 anomalies.push(AnomalyKind::InconsistentDuration);
@@ -726,12 +772,16 @@ pub mod historic {
                 }
             }
         };
-        check_instant(
-            "adj_conn_start_utc",
-            session.adj_conn_start(),
-            &mut disagreed,
-        );
-        check_instant("adj_conn_end_utc", session.adj_conn_end(), &mut disagreed);
+        // Skipped whole for a row with no instants: the writer left these cells empty on purpose,
+        // and an empty cell is not a disagreement with anything.
+        if session.is_placeable() {
+            check_instant(
+                "adj_conn_start_utc",
+                session.adj_conn_start(),
+                &mut disagreed,
+            );
+            check_instant("adj_conn_end_utc", session.adj_conn_end(), &mut disagreed);
+        }
 
         // `adj_duration` subtracts one adjusted bound from the other and panics if they are inverted.
         // This runs before the exclusion sort, so an `InconsistentDuration` row reaches here — and the

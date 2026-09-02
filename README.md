@@ -230,6 +230,7 @@ The software is structured as top-level library modules, each of which may have 
 | `session`        | Functionality related to the Evolute monthly CSV Session Report. Notably, computes peak load and energy consumption attributable to EV charging sessions. |
 | `time`           | Date-time-related constants and functions.                   |
 | `charges_report` | Functionality to read the Evolute monthly CSV Charges Report. |
+| `csv`            | Common CSV reading logic.                                    |
 | `error`          | Error types used by multiple other modules.                  |
 | `golden`         | Defines a consistent mechanism for integration tests to check their outputs against their golden files. |
 | `log`            | Common functionality to produce read logs.                   |

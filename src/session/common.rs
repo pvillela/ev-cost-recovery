@@ -4,7 +4,7 @@ use super::site_model::{
 };
 use crate::{
     log::SourceLog,
-    time::{Interval, duration, time_zone, truncate_to},
+    time::{Interval, UNPLACEABLE_END, UNPLACEABLE_START, duration, time_zone, truncate_to},
 };
 use jiff::{Timestamp, Zoned};
 use std::{
@@ -183,6 +183,24 @@ pub struct Session {
 
 impl Session {
     /// `adj_conn_start_utc`: see `adj_conn_start_of`, which this defers to.
+    /// Whether the reported wall times were resolved to instants at all.
+    ///
+    /// `false` for the two records that name none: a reported time in the DST gap, which never
+    /// occurred, and a fold no reading of the record resolves. Both are given
+    /// [`UNPLACEABLE_START`](crate::time::UNPLACEABLE_START) and
+    /// [`UNPLACEABLE_END`](crate::time::UNPLACEABLE_END) instead of a guess, and both are excluded.
+    ///
+    /// What it is for is the handful of places that legitimately hold an excluded session and would
+    /// otherwise read those two fields: the report's listing, and the workbook's writer and reader.
+    /// Everywhere else, reaching them is a fault and the inverted span is what says so.
+    ///
+    /// Tested against the sentinels rather than by asking whether the span is inverted. A record
+    /// flagged [`AnomalyKind::InconsistentDuration`] alone may also report an end before its start,
+    /// and *its* times are real readings that the listing should still print.
+    pub fn is_placeable(&self) -> bool {
+        self.conn_start != UNPLACEABLE_START || self.conn_end != UNPLACEABLE_END
+    }
+
     pub fn adj_conn_start(&self) -> Timestamp {
         adj_conn_start_of(self.conn_start)
     }
@@ -756,30 +774,35 @@ pub enum AnomalyKind {
     /// so the record was duplicated. See docs/time/README.md, "Time zone".
     DstAmbiguousDuplicated,
     /// The reported start or end fell in the DST gap, i.e. a wall time that never occurred.
-    /// Resolved forward to the instant just after the gap.
     ///
-    /// The session is excluded from every estimate. The shift is the only reading available, and
-    /// it is a guess: a wall time that never occurred says the record's clock and the calendar
-    /// disagree, so neither the instant it names nor the span built from it can be relied on.
+    /// **No instant is assigned.** There is none to assign: the clocks jumped over that wall time,
+    /// so it names nothing, and shifting it to either side of the gap would be a guess dressed as a
+    /// reading. The session is given [`UNPLACEABLE_START`](crate::time::UNPLACEABLE_START) and
+    /// [`UNPLACEABLE_END`](crate::time::UNPLACEABLE_END) — see [`Self::leaves_no_instant`] — and is
+    /// excluded from every estimate.
+    ///
+    /// Raised once per session whichever end it came from, since the kind does not say which. Every
+    /// other test that reads the instants is skipped for such a record; the reported wall times are
+    /// still written to the workbook's local columns, and the row and file name where the record
+    /// is. See docs/time/README.md, "Time zone".
     FellInDstGap,
-    /// `Conn_DateTime_Start` falls in the DST fold, and for neither the EDT nor the EST reading
-    /// does `Conn_start + Conn_Duration` land within a minute of the reported `Conn_DateTime_End`.
+    /// A reported wall time fell in the DST fold, and no combination of the readings at either end
+    /// satisfies [`duration_is_consistent`].
     ///
-    /// The test is a tolerance rather than an equality, and that is what makes failing it mean
-    /// something. The reported timestamps are truncated to the whole minute while `Conn_Duration`
-    /// carries seconds, so even for a sound record the implied end misses the reported one — by up
-    /// to but never reaching one `TIME_GRID_STEP`, in either direction. Missing it is therefore
-    /// normal; missing it by *a minute or more under both readings* is not, especially as the two
-    /// readings sit a full hour apart,
-    /// so one of them is ordinarily well inside the tolerance. When neither is, the record's own
-    /// fields disagree by more than truncation can account for: whatever `Conn_Duration` measures
-    /// on this row, it is not the elapsed time the inference assumes it to be.
+    /// A wall time in the repeated hour names two instants an hour apart. `Conn_Duration` is what
+    /// ordinarily says which: the true combination has the reported start, the reported end and the
+    /// elapsed time agreeing, and a mismatched one is out by a whole hour. When *no* combination
+    /// agrees, that evidence has failed — whatever `Conn_Duration` measures on this row, it is not
+    /// the elapsed time the inference assumes it to be — and there is nothing else to choose with.
     ///
-    /// The earlier (EDT) reading is assumed so the row can still be processed, but this session's
-    /// UTC timestamps may be an hour early.
+    /// **No instant is assigned**, for the same reason as [`Self::FellInDstGap`]: the record names
+    /// two candidates and cannot pick, so picking one would be a guess. See
+    /// [`Self::leaves_no_instant`]. [`Self::InconsistentDuration`] accompanies it, since a record
+    /// whose fields agree under no reading is inconsistent however it is read.
     ///
-    /// Only fold starts are checked this way; the same inconsistency on any other date is caught,
-    /// if at all, by [`AnomalyKind::InconsistentDuration`]. See docs/time/README.md, "Time zone".
+    /// Distinct from `InconsistentDuration` alone, which is the same disagreement on a date with
+    /// only one reading to test. Keeping them apart is what says *why* the record could not be
+    /// placed. See docs/time/README.md, "Time zone".
     DstUnresolvable,
     /// The session's average power exceeds [`BREAKER_MAX_NORMAL_KW`], which the hardware is
     /// supposed to make impossible.
@@ -845,12 +868,11 @@ impl AnomalyKind {
     /// connected and cuts the result at the period's boundaries; only three kinds bear on that:
     ///
     /// - [`Self::InconsistentDuration`] — the session is left out of the sum entirely.
-    /// - [`Self::FellInDstGap`] — left out of the sum entirely, for the same reason: a wall time
-    ///   that never occurred leaves the span it bounds a guess.
+    /// - [`Self::FellInDstGap`] and [`Self::DstUnresolvable`] — left out of the sum entirely, for
+    ///   the same reason: a wall time naming no instant, or two, leaves the span it bounds
+    ///   unknown.
     /// - [`Self::DuplicateId`] — two records may be one session counted twice, or one id on two
     ///   sessions; the energy differs by a whole session either way.
-    /// - [`Self::DstUnresolvable`] — the timestamps may be an hour out, which moves energy between
-    ///   time-of-use bands and can move it across the period's own boundary.
     ///
     /// The rest do not. [`Self::ZeroActiveChargeTime`] and [`Self::ExcessiveAvgKw`] are about
     /// power, which is not what is summed; [`Self::DstAmbiguousDuplicated`] is a fold already
@@ -869,17 +891,40 @@ impl AnomalyKind {
         )
     }
 
+    /// Whether this kind means no instant could be assigned to the record's reported times.
+    ///
+    /// The two that hand a session [`UNPLACEABLE_START`](crate::time::UNPLACEABLE_START) and
+    /// [`UNPLACEABLE_END`](crate::time::UNPLACEABLE_END) instead of a reading:
+    /// [`Self::FellInDstGap`], where a reported wall time never occurred, and
+    /// [`Self::DstUnresolvable`], where it occurred twice and nothing in the record says which.
+    ///
+    /// This is how the workbook reader recognises such a row. The writer leaves every cell derived
+    /// from those two fields empty, so the `anomalies` column is the only thing left saying what the
+    /// row is — and it is the column already read first. Recognising it by the token rather than by
+    /// the stored instants is also what keeps the round trip exact: a serial carries whole seconds,
+    /// and the sentinels are not on a whole second.
+    pub fn leaves_no_instant(&self) -> bool {
+        matches!(self, Self::FellInDstGap | Self::DstUnresolvable)
+    }
+
     /// Whether this kind removes the session from every estimate.
     ///
-    /// Two kinds do, and both for the same reason: the record's own timestamps cannot be placed on
-    /// a timeline. [`Self::InconsistentDuration`] means start, end and duration contradict each
-    /// other; [`Self::FellInDstGap`] means one of the reported wall times never occurred, so the
-    /// instant it was resolved to is a guess rather than a reading.
+    /// Three kinds do, and all for the same reason: the record cannot be placed on a timeline.
+    /// [`Self::InconsistentDuration`] means start, end and duration contradict each other. The
+    /// other two are [`Self::leaves_no_instant`]'s pair, where there is no timeline position to
+    /// argue about — [`Self::FellInDstGap`] because a reported wall time never occurred, and
+    /// [`Self::DstUnresolvable`] because it occurred twice and the record does not say which.
+    ///
+    /// Those two exclude on their own rather than by relying on `InconsistentDuration` travelling
+    /// with them. It always does, since a record with no instant is given an inverted span that
+    /// fails the consistency test — but the sessions carry the sentinels, and a hand-edited
+    /// `anomalies` cell that dropped the companion flag would otherwise put an inverted span in
+    /// front of the estimating logic.
     ///
     /// This is what [`Sessions::from_session_lists`] sorts on, so a kind added here excludes
     /// sessions from both readers at once.
     pub fn excludes_session(&self) -> bool {
-        matches!(self, Self::InconsistentDuration | Self::FellInDstGap)
+        matches!(self, Self::InconsistentDuration) || self.leaves_no_instant()
     }
 
     /// The variant name, as written to the workbook's `anomalies` column. Deliberately distinct
@@ -945,12 +990,14 @@ impl fmt::Display for AnomalyKind {
             }
             Self::DstAmbiguousDuplicated => "ambiguous DST fold; record duplicated as EDT and EST",
             Self::FellInDstGap => {
-                "reported start or end is a local time that never occurred, in the DST gap; \
-                 resolved forward, and the session is excluded from every estimate"
+                "reported start or end is a local time that never occurred, in the hour the \
+                 clocks jump over when DST begins; it names no instant, so none was assigned and \
+                 the session is excluded from every estimate"
             }
             Self::DstUnresolvable => {
-                "DST fold: neither EDT nor EST reproduces the reported end, so the record is \
-                 inconsistent; assumed EDT, timestamps may be an hour early"
+                "DST fold: a reported time falls in the repeated hour and no reading of the \
+                 record makes its start, end and duration agree, so no instant was assigned and \
+                 the session is excluded from every estimate"
             }
             Self::ExcessiveAvgKw => {
                 "average kilowatts above the Evolute breaker rating at the top of the normal \
@@ -1029,11 +1076,10 @@ pub struct Sessions {
     /// `Questions_for_Evolute.md`, "Answers received". [`Session::avg_kw`] substitutes a finite
     /// figure so the row can still be listed. See docs/session/README.md, "Other".
     pub spikes: Vec<RSession>,
-    /// Sessions that cannot be placed on a timeline, flagged
-    /// [`AnomalyKind::InconsistentDuration`] — their reported start, end and duration contradict
-    /// each other — or [`AnomalyKind::FellInDstGap`], where one of the reported wall times never
-    /// occurred. Excluded from the estimates and returned only for review. See
-    /// docs/session/README.md, "Other".
+    /// Sessions that cannot be placed on a timeline — every kind [`AnomalyKind::excludes_session`]
+    /// names. Either the reported start, end and duration contradict each other, or a reported wall
+    /// time names no instant at all and none was assigned. Excluded from the estimates and returned
+    /// only for review. See docs/session/README.md, "Other".
     pub excluded: Vec<RSession>,
     /// Anomalies that are not properties of any single record, and so are not reachable through
     /// [`Session::anomalies`]. Currently [`AnomalyKind::DuplicateId`], plus
@@ -1078,8 +1124,8 @@ impl Sessions {
     /// same session read back from the workbook written from it cannot land in different buckets.
     /// The tests are applied in this order, strongest first:
     ///
-    /// 1. Flagged [`AnomalyKind::InconsistentDuration`] or [`AnomalyKind::FellInDstGap`] —
-    ///    [`Sessions::excluded`]. Such a
+    /// 1. Flagged with any kind [`AnomalyKind::excludes_session`] names — [`Sessions::excluded`].
+    ///    Such a
     ///    session takes no part in the estimates whatever its charge time, and letting one through
     ///    would put an inverted session in front of the segmenting logic, whose endpoints would
     ///    then arrive out of order.
@@ -1265,10 +1311,11 @@ pub struct SessionNotes {
     /// The anomalies that bear on this figure, both the sessions' own and the relations between
     /// them.
     pub anomalies: Vec<Anomaly>,
-    /// Sessions left out of the figures entirely, for [`AnomalyKind::InconsistentDuration`].
+    /// Sessions left out of the figures entirely — every kind [`AnomalyKind::excludes_session`]
+    /// names.
     ///
-    /// Listed rather than counted. Such a record's own fields contradict each other, so nothing
-    /// short of the row itself lets a reader judge what happened.
+    /// Listed rather than counted. Such a record either contradicts itself or names no instant at
+    /// all, so nothing short of the row itself lets a reader judge what happened.
     pub excluded: Vec<RSession>,
     /// The run logs of the files read, unwritten. See [`Sessions::logs`].
     pub logs: Vec<SourceLog>,

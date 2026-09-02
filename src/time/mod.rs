@@ -10,6 +10,8 @@
 
 mod base;
 
+mod dst;
+
 mod excel;
 
 mod tou;
@@ -32,9 +34,11 @@ pub(crate) use base::{
     duration, is_on_grid, local_datetime, local_hour, local_midnight, standard_date,
     standard_midnight, truncate_to,
 };
+// What the session reader needs to place a reported wall time, and the sentinels for when it
+// cannot. Nothing outside the crate names any of them, so `dst` publishes nothing.
+pub(crate) use dst::{UNPLACEABLE_END, UNPLACEABLE_START, falls_in_gap, local_readings};
 pub(crate) use excel::{
     serial_of_civil, serial_of_date, serial_of_duration, serial_of_instant, serial_of_local,
-    wall_clock_instant,
 };
 pub(crate) use tou::{is_off_peak, tou_of, tou_partition};
 
@@ -44,9 +48,10 @@ pub(crate) use tou::{is_off_peak, tou_of, tou_partition};
 // by the path `crate::time::X` unless the feature is on" -- which is a fact about this module's
 // consumers, and says nothing about whether the item itself is compiled or used.
 
-// The one case where item and re-export agree: `excel`'s two serial readers are themselves
-// `#[cfg(any(test, feature = "historic"))]`, because reading a serial back is done only by the
-// workbook reader. The writing direction, which the API uses, is not gated.
+// Two cases where item and re-export agree, both `#[cfg(any(test, feature = "historic"))]` on the
+// item itself: `excel`'s two serial readers, because reading a serial back is done only by the
+// workbook reader, and `dst`'s reporting half below. The writing direction, which the API uses, is
+// not gated.
 #[cfg(feature = "historic")]
 pub(crate) use excel::{duration_of_serial, instant_of_serial};
 
@@ -59,3 +64,9 @@ pub(crate) use excel::{duration_of_serial, instant_of_serial};
 pub(crate) use base::TIME_ZONE_NAME;
 #[cfg(feature = "historic")]
 pub use base::TZ_OFFSETS;
+
+// The reporting half of `dst`, which only `session::ioi` calls: it hands a user every reading of an
+// ambiguous wall time instead of choosing one. The deciding half above is ungated, because the CSV
+// reader is in every build.
+#[cfg(feature = "historic")]
+pub(crate) use dst::{TzLocalMapping, map_local};

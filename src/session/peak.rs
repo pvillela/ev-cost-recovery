@@ -1,4 +1,6 @@
-use super::{Anomaly, AnomalyKind, Bracket, RSegment, RSession, SEGMENT_DURATION, Segment, Sessions};
+use super::{
+    Anomaly, AnomalyKind, Bracket, RSegment, RSession, SEGMENT_DURATION, Segment, Sessions,
+};
 use crate::{log::SourceLog, time::Interval};
 use std::{error::Error, path::PathBuf, rc::Rc};
 
@@ -35,14 +37,15 @@ pub struct IntervalEstimates {
     /// in any of them. Sessions excluded outright are *not* here; they are in
     /// [`Self::excluded_sessions`].
     pub session_anomalies: Vec<Anomaly>,
-    /// Every session excluded from the estimates for
-    /// [`crate::session::AnomalyKind::InconsistentDuration`] — the whole workbook's worth, not only those
-    /// intersecting this interval.
+    /// Every session excluded from the estimates — every kind
+    /// [`crate::session::AnomalyKind::excludes_session`] names, and the whole workbook's worth, not
+    /// only those intersecting this interval.
     ///
-    /// Unfiltered on purpose. Such a record's own fields contradict each other, so asking whether
-    /// it intersects the interval is asking a question of the very timestamps that are in doubt.
-    /// The report states which ones appear to touch the interval and lists the rest anyway,
-    /// leaving the judgement to a reader who can go back to the source rows.
+    /// Unfiltered on purpose. Such a record either contradicts itself or names no instant at all,
+    /// so asking whether it intersects the interval is asking a question of the very timestamps
+    /// that are in doubt. The report states which ones appear to touch the interval, dashes the
+    /// ones with no instant to compare, and lists the rest anyway, leaving the judgement to a
+    /// reader who can go back to the source rows.
     pub excluded_sessions: Vec<RSession>,
     /// The run logs of the files the sessions were read from, unwritten.
     ///
@@ -246,7 +249,11 @@ fn collect_session_anomalies(
             // `intersects` panics on an inverted span -- so those are dropped here.
             report_anomalies
                 .iter()
-                .filter(|a| !a.session.anomalies.contains(&AnomalyKind::InconsistentDuration))
+                .filter(|a| {
+                    !a.session
+                        .anomalies
+                        .contains(&AnomalyKind::InconsistentDuration)
+                })
                 .filter(|a| a.session.intersects(interval))
                 .cloned(),
         )

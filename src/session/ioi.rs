@@ -17,15 +17,12 @@
 //! setting. So the whole question this module answers arises only where someone picks the window
 //! by hand, which is `ev_peak_cli` and `ev_peak_gui`. See `docs/historic-feature.md`.
 
-use crate::time::{Interval, TZ_OFFSETS, time_zone};
+use crate::time::{Interval, TZ_OFFSETS, TzLocalMapping, map_local, time_zone};
 // Named only by the doc links below, which is enough to make them resolve and is why the import is
 // here at all. Those three links were dead while `TIME_ZONE_NAME` was private.
 #[allow(unused_imports)]
 use crate::time::TIME_ZONE_NAME;
-use jiff::{
-    SignedDuration, Timestamp, civil,
-    tz::{Offset, TimeZone},
-};
+use jiff::{SignedDuration, Timestamp, civil, tz::Offset};
 
 /// The four legal start minutes. See docs/session/README.md, "Interval of interest boundaries".
 pub const LEGAL_START_MINUTES: [i8; 4] = [0, 15, 30, 45];
@@ -67,47 +64,6 @@ impl IoiLength {
     /// Whether a start on `minute` may run for this length.
     pub fn allowed_from(self, minute: i8) -> bool {
         self != Self::Hour || minute == 0
-    }
-}
-
-/// What instants a local wall time names in [`TIME_ZONE_NAME`].
-///
-/// Every case falls out of one question asked per offset in [`TZ_OFFSETS`]: read the wall time *as if*
-/// at that fixed offset, and check the zone really is at that offset on the instant you land on.
-/// The number of offsets that survive says which situation this is, so the gap and the fold need no
-/// special-casing and a designator can be checked against the date rather than merely believed.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TzLocalMapping {
-    /// Exactly one instant. Every wall time except during the two transitions each year.
-    Unique(Timestamp),
-    /// Two instants an hour apart, on the night DST ends, each paired with the name that picks it
-    /// out.
-    Twice(Vec<(&'static str, Timestamp)>),
-    /// No instant: the clocks jump forward over this wall time when DST begins.
-    Never,
-}
-
-/// Maps a local wall time to the instant or instants it names.
-///
-/// This reports the ambiguity rather than resolving it, because at this point there is nothing to
-/// resolve it *with*: a user has named a wall time and that is all. The session reader faces the
-/// same ambiguity with more evidence — an untruncated `Conn_Duration` — and settles it. See
-/// `CsvSession::resolve` for why the two are deliberately separate.
-pub fn map_local(dt: civil::DateTime) -> TzLocalMapping {
-    let tz = time_zone();
-    let candidates: Vec<(&'static str, Timestamp)> = TZ_OFFSETS
-        .iter()
-        .filter_map(|(name, hours)| {
-            let offset = Offset::constant(*hours);
-            let ts = dt.to_zoned(TimeZone::fixed(offset)).ok()?.timestamp();
-            (tz.to_offset(ts) == offset).then_some((*name, ts))
-        })
-        .collect();
-
-    match candidates.len() {
-        0 => TzLocalMapping::Never,
-        1 => TzLocalMapping::Unique(candidates[0].1),
-        _ => TzLocalMapping::Twice(candidates),
     }
 }
 
