@@ -147,7 +147,7 @@ Below the headline, in the sections:
 |:---|:---|
 | *Energy variance* | `1330.30` kWh on the Charges Report against `1315.73` priced, a variance of `14.57` — the two come from different documents and are not expected to agree exactly |
 | *Sessions needing a look* | Two rows, both `DuplicateId`, both session `S37487` |
-| *Charges Report* | The file it was read from, and nothing more — every row of June's report covers the whole month, which is the clean case |
+| *Charges Report* | The file it was read from, and nothing more |
 
 Worth trying:
 
