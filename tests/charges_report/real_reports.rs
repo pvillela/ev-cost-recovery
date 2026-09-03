@@ -54,9 +54,6 @@ fn every_charges_report_parses_and_totals_its_own_columns() {
             report.total_kwh,
             report.total_amount,
         );
-        for (status, count) in &report.statuses {
-            println!("  Bill_Status {status:?}: {count}");
-        }
         // Printed rather than asserted. Every report seen so far carries one span on every row,
         // but whether a row may state its breaker's own subscription span is an open question with
         // Evolute -- see docs/Questions_for_Evolute.md -- so a file with several is not a failure.
@@ -69,6 +66,22 @@ fn every_charges_report_parses_and_totals_its_own_columns() {
         assert!(
             report.from <= report.to,
             "{}: dates reversed",
+            path.display()
+        );
+
+        // The reader refuses a file whose rows leave the month its name states, so reaching here
+        // is already proof of it. Restated as an assertion because it is the property this whole
+        // walk over the real files exists to confirm: that Evolute's own reports satisfy the rule
+        // the reader now enforces, and no genuine file is being turned away.
+        assert_eq!(
+            report.month,
+            report.from.first_of_month(),
+            "{}: the name's month does not contain the rows",
+            path.display()
+        );
+        assert!(
+            report.from >= report.month && report.to <= report.month.last_of_month(),
+            "{}: rows reach outside the month the name states",
             path.display()
         );
 
@@ -88,18 +101,6 @@ fn every_charges_report_parses_and_totals_its_own_columns() {
             path.display(),
             report.total_amount
         );
-
-        // Only `Issued` has ever been seen. This is not a rule the reader enforces -- every row
-        // counts whatever its status -- so failing here means a new status has appeared and
-        // somebody has to decide whether it should still count.
-        for status in report.statuses.keys() {
-            assert_eq!(
-                status,
-                "Issued",
-                "{}: unfamiliar Bill_Status; decide whether it counts towards the totals",
-                path.display()
-            );
-        }
     }
 }
 

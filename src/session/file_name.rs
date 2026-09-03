@@ -47,6 +47,21 @@ pub fn report_coverage(path: &Path) -> Option<SessionReportCoverage> {
     })
 }
 
+/// The first day of the calendar month a session report's file name says it covers.
+///
+/// `None` when the name does not state its dates, or states a span that is not a whole calendar
+/// month. Both are refusals rather than a best guess: a reconciliation is for one calendar month,
+/// and a partial month reconciled against a full month's figures is a variance that means nothing.
+///
+/// The counterpart of [`crate::charges_report::charges_month`]. The two are compared where both
+/// documents are in hand, which is the only check neither reader can make alone — see
+/// `api::io::reconcile_evolute_reimbursement`.
+pub fn report_month(path: &Path) -> Option<Date> {
+    let coverage = report_coverage(path)?;
+    let first = coverage.from.first_of_month();
+    (coverage.from == first && coverage.to == first.last_of_month()).then_some(first)
+}
+
 /// `June_1_2026` as a date.
 fn report_date(s: &str) -> Option<Date> {
     const MONTHS: [&str; 12] = [

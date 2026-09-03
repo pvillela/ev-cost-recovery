@@ -9,6 +9,13 @@
 //! both are column totals. The per-breaker detail is not carried: which breaker drew what is
 //! Evolute's business, and nothing this crate computes is broken down that way.
 //!
+//! **The month comes from the file name**, by [`charges_month`], and every row is checked against
+//! it before anything is summed. A file holding a row that reaches outside its own month is
+//! refused whole. So a [`ChargesReport`] that exists is one whose contents agree with its own
+//! name, and nothing downstream re-establishes that — see
+//! [`charges_report`], and `api::pure::check_same_month` for the one question this cannot answer
+//! alone.
+//!
 //! In production these files sit in the same folder as the session reports.
 
 use crate::{
@@ -37,11 +44,57 @@ const REQUIRED_HEADERS: &[&str] = &["Start_Date", "End_Date", "Bill_Status", "kW
 /// report about EV chargers lands in the first range.
 const DATE_FORMAT: &str = "%d-%b-%y";
 
+/// What sits between the building and the timestamp in a Charges Report's file name.
+const NAME_MARKER: &str = "_charges_";
+
+/// The first day of the calendar month a Charges Report's file name says it covers.
+///
+/// Evolute names these `<building>_charges_<start timestamp>.csv`, as in
+/// `XX-XX_charges_2026-06-01T00_00_00-04_00.csv`. The timestamp is the *start* of the period, so
+/// the month is the one the date part falls in; the time of day and the UTC offset say nothing
+/// about which month it is and are not read. The offset moves with the season — `-04_00` in June,
+/// `-05_00` in January — which is why only the part before the `T` is parsed: everything after it
+/// contains hyphens of its own.
+///
+/// `None` when the name is not of that form. Nothing else about the file is inspected — in
+/// particular, not whether it exists.
+///
+/// A suffix after the timestamp is ignored, for the reason
+/// [`report_coverage`](crate::session::report_coverage) ignores one: a `-bak` or a `-mock` is a
+/// note to a person, and a file marked up by hand still says what it covers. Refusing them would
+/// make the two documents behave differently for no reason.
+///
+/// The counterpart of [`report_month`](crate::session::report_month).
+pub fn charges_month(path: &Path) -> Option<Date> {
+    let stem = path.file_stem()?.to_str()?;
+    let (_building, rest) = stem.split_once(NAME_MARKER)?;
+    // The date, then whatever the rest of the timestamp and any hand-added suffix hold. Splitting
+    // at the `T` is what separates them: the date's own separators are hyphens, and so is the
+    // sign of the UTC offset, so no hyphen split can tell the two apart.
+    let date = rest.split('T').next()?;
+    let [year, month, day] = date.split('-').collect::<Vec<_>>()[..] else {
+        return None;
+    };
+    // `Date::new` rather than a panicking constructor: a file name is input, and a name carrying
+    // `2026-06-31` is one to reject rather than to crash on.
+    Date::new(year.parse().ok()?, month.parse().ok()?, day.parse().ok()?)
+        .ok()
+        .map(|d| d.first_of_month())
+}
+
 /// One month's Charges Report, summed.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ChargesReport {
     /// The file this was read from.
     pub path: PathBuf,
+    /// The first day of the calendar month this report covers, read from [`Self::path`] by
+    /// [`charges_month`].
+    ///
+    /// The month comes from the *name*, never from the rows. The rows are then checked against it,
+    /// and a file holding a row outside it is refused whole — see
+    /// [`ChargesReportError::RowsOutsideMonth`]. So a `ChargesReport` that exists is one whose rows
+    /// agree with its own name, and nothing downstream has to re-establish that.
+    pub month: Date,
     /// Earliest `Start_Date` on any row.
     ///
     /// The envelope of [`Self::spans`], not a period the file declares. The report states no span
@@ -59,45 +112,10 @@ pub struct ChargesReport {
     /// who joins mid-month produces a row that differs from its neighbours, and refusing such a
     /// file would refuse a correct one.
     ///
-    /// Whether a span is acceptable is not this reader's question: it depends on the month being
-    /// reconciled, which comes from the session report. See
-    /// [`charges_notes`](crate::api::pure::charges_notes).
+    /// Every span is inside [`Self::month`], because a file holding one that is not was refused
+    /// rather than read. What is *not* required is that they agree with each other — see
+    /// [`Self::partial_spans`].
     pub spans: BTreeMap<(Date, Date), Vec<usize>>,
-    /// The `kWh` column, totalled over every row.
-    pub total_kwh: f64,
-    /// The `Cost` column, totalled over every row, in dollars.
-    pub total_amount: f64,
-    /// How many rows were summed.
-    pub rows: usize,
-    /// Every distinct `Bill_Status` seen, and how many rows carried it.
-    ///
-    /// Every row is counted towards the totals whatever its status. The statuses are reported
-    /// rather than acted on because only `Issued` has ever been seen, and dropping a row on a
-    /// status this code has never met would be a guess that quietly changes a figure. A reader who
-    /// sees an unfamiliar status here knows to ask.
-    ///
-    /// Reaches the reader through [`ChargesNotes`], which the reconciliation prints and logs. It
-    /// was collected and read by nothing for months, which made it a warning channel with no exit.
-    pub statuses: BTreeMap<String, usize>,
-}
-
-/// What a reconciliation should say about the Charges Report it drew on.
-///
-/// The third of the three notes types, beside [`SessionNotes`](crate::session::SessionNotes) and
-/// [`MeterNotes`](crate::green_button::MeterNotes), and kept apart from them for the same reason
-/// they are kept apart from each other: a session anomaly is looked up in a session report by row,
-/// a meter anomaly in an export by hour, and one of these in a Charges Report by row and column.
-///
-/// Nothing here stops a reconciliation. What stops one is an unreadable file, a cell that will not
-/// parse, or a row whose span leaves the month — all errors, raised before this is built. These
-/// are the findings that leave the figures standing and still want a reader.
-#[derive(Debug, Clone, Default)]
-pub struct ChargesNotes {
-    /// The report the figures came from. `None` only for a default-constructed value.
-    pub source: Option<PathBuf>,
-    /// Every distinct `Bill_Status` seen, and how many rows carried it. Copied from
-    /// [`ChargesReport::statuses`].
-    pub statuses: BTreeMap<String, usize>,
     /// Spans that lie inside the month but do not cover the whole of it, and the rows carrying
     /// each.
     ///
@@ -105,83 +123,66 @@ pub struct ChargesNotes {
     /// columns this is what a mid-month join or leave looks like, and it is ordinary; under the
     /// other reading it should never occur. Reported either way, because the two readings are not
     /// yet told apart — see `docs/Questions_for_Evolute.md`.
+    ///
+    /// A finding rather than a refusal, and the only one this document produces. A span that
+    /// *leaves* the month is the refusal.
     pub partial_spans: Vec<((Date, Date), Vec<usize>)>,
+    /// The `kWh` column, totalled over every row.
+    pub total_kwh: f64,
+    /// The `Cost` column, totalled over every row, in dollars.
+    pub total_amount: f64,
+    /// How many rows were summed.
+    ///
+    /// Every row counts towards both totals whatever its `Bill_Status`. That column is required —
+    /// a file without it is not a Charges Report — and deliberately not read: only `Issued` has
+    /// ever been seen, and this software has no rule that would treat any other value differently.
+    /// Should one turn up and need one, it is written here then.
+    pub rows: usize,
 }
 
-impl ChargesNotes {
+impl ChargesReport {
     /// Whether there is nothing worth a reader's attention.
     ///
-    /// A tally of nothing but `Issued` is not a finding: it is what every report seen so far says,
-    /// and printing it as a warning would train the reader to skip the section that matters.
+    /// A report every row of which covers the whole month is what every one seen so far looks
+    /// like, and saying so as a warning would train the reader to skip the section that matters.
     pub fn is_clean(&self) -> bool {
-        self.partial_spans.is_empty() && self.unfamiliar_statuses().next().is_none()
-    }
-
-    /// The statuses that are not `Issued`, with their counts.
-    ///
-    /// `Issued` is the only value ever seen. Anything else is a value this software has no rule
-    /// for and still counted towards the totals, which is exactly what a reader needs to be told.
-    pub fn unfamiliar_statuses(&self) -> impl Iterator<Item = (&String, &usize)> {
-        self.statuses.iter().filter(|(name, _)| *name != "Issued")
+        self.partial_spans.is_empty()
     }
 
     /// One line per finding, for the run log.
     ///
     /// Shared with [`Self::to_markdown`] so the log and the report cannot say different things
-    /// about one file. The full tally goes in whenever anything else does: a reader looking at an
-    /// unfamiliar status wants to know how many rows carried the familiar one.
+    /// about one file.
     fn findings(&self) -> Vec<String> {
-        let mut out: Vec<String> = Vec::new();
-        for ((from, to), rows) in &self.partial_spans {
-            out.push(format!(
-                "{} row(s) are billed for {from} to {to} rather than the whole month: {}. Their \
-                 kWh and dollars are counted in the totals in full.",
-                rows.len(),
-                row_list(rows)
-            ));
-        }
-        for (status, count) in self.unfamiliar_statuses() {
-            out.push(format!(
-                "{count} row(s) carry Bill_Status `{status}`, which this software has no rule for. \
-                 They are counted towards the totals like any other row, because dropping them \
-                 would be a guess that quietly changes a figure."
-            ));
-        }
-        if !out.is_empty() {
-            out.push(format!("Bill_Status tally: {}.", self.status_tally()));
-        }
-        out
-    }
-
-    /// `Issued 44, Void 3`, in the order [`BTreeMap`] holds them.
-    fn status_tally(&self) -> String {
-        self.statuses
+        self.partial_spans
             .iter()
-            .map(|(name, count)| format!("{name} {count}"))
-            .collect::<Vec<_>>()
-            .join(", ")
+            .map(|((from, to), rows)| {
+                format!(
+                    "{} row(s) are billed for {from} to {to} rather than the whole month: {}. \
+                     Their kWh and dollars are counted in the totals in full.",
+                    rows.len(),
+                    row_list(rows)
+                )
+            })
+            .collect()
     }
 
-    /// The run log for the report these figures came from, unwritten.
-    ///
-    /// `None` when there is no file to sit beside, which only a default-constructed value has.
+    /// The run log for this report, unwritten.
     ///
     /// Unlike the session and meter logs, this one has no per-row anomalies to carry: the Charges
-    /// Report is read all-or-nothing, and everything that can go wrong with a row stops the
-    /// reconciliation instead. What it records is the handful of findings that leave the figures
-    /// standing.
-    pub fn log(&self) -> Option<SourceLog> {
-        let source = self.source.clone()?;
+    /// Report is read all-or-nothing, and everything that can go wrong with a row stops the read
+    /// instead. What it records is the one finding that leaves the figures standing.
+    pub fn log(&self) -> SourceLog {
         let mut log = RunLog::new();
         for line in self.findings() {
             log.note(line);
         }
-        Some(SourceLog {
-            source,
+        SourceLog {
+            source: self.path.clone(),
             suffix: "charges.csv.read",
             operation: "Read Charges Report",
             log,
-        })
+        }
     }
 
     /// Writes the run log beside the report, returning where it went.
@@ -192,36 +193,24 @@ impl ChargesNotes {
     /// # Errors
     ///
     /// Whatever the write failed with, returned rather than swallowed.
-    pub fn write_log(&self) -> Result<Option<PathBuf>, Box<dyn Error>> {
-        self.log().map(|log| log.write()).transpose()
+    pub fn write_log(&self) -> Result<PathBuf, Box<dyn Error>> {
+        self.log().write()
     }
 
     /// Renders the Charges Report side as markdown that also reads as plain text.
-    ///
-    /// Empty when there is nothing to say and no file to name, matching
-    /// [`MeterNotes::to_markdown`](crate::green_button::MeterNotes::to_markdown).
     pub fn to_markdown(&self) -> String {
-        if self.source.is_none() && self.is_clean() {
-            return String::new();
-        }
         let mut out: Vec<String> = Vec::new();
         out.push(h2("Charges Report"));
         out.push(String::new());
-        match &self.source {
-            Some(path) => out.push(format!("- {}", path.display())),
-            None => out.push("- (figures not read from a file)".to_owned()),
-        }
+        out.push(format!("- {}", self.path.display()));
         out.push(String::new());
 
-        if self.is_clean() {
-            out.push(format!("Bill_Status tally: {}.", self.status_tally()));
+        if !self.is_clean() {
+            for line in self.findings() {
+                out.push(wrap(&format!("- {line}"), "  "));
+            }
             out.push(String::new());
-            return out.join("\n");
         }
-        for line in self.findings() {
-            out.push(wrap(&format!("- {line}"), "  "));
-        }
-        out.push(String::new());
         out.join("\n")
     }
 }
@@ -257,6 +246,33 @@ pub enum ChargesReportError {
     /// The file parsed but holds no rows. A month Evolute billed nothing for still has a row per
     /// breaker; an empty file is a truncated download, not a quiet month.
     NoRows { path: PathBuf },
+
+    /// The file name does not state the month the report covers, so there is nothing to check its
+    /// rows against.
+    ///
+    /// Raised before the file is opened, and the one variant here that is. See [`charges_month`]
+    /// for the form expected. A name that says nothing is not distinguishable from a name that
+    /// says the wrong thing, and catching the wrong file is what reading the name is for.
+    UndatedReport { path: PathBuf },
+
+    /// A row is billed for dates that are not entirely inside the month the file name states.
+    ///
+    /// **The whole file is refused**, not the offending rows: nothing is summed and no
+    /// [`ChargesReport`] is produced. Dropping rows would quietly change both totals, and keeping
+    /// them would reconcile a row from outside the month against a month's worth of sessions.
+    ///
+    /// A span *inside* the month but short of it is not this — it is
+    /// [`ChargesReport::partial_spans`], a finding that leaves the figures standing. Whether a row
+    /// can reach outside the month at all is the open question in `docs/Questions_for_Evolute.md`;
+    /// until it is answered, a figure nobody can account for is worse than a file that will not
+    /// read.
+    RowsOutsideMonth {
+        path: PathBuf,
+        /// Each offending span and the rows carrying it, in span order.
+        spans: Vec<((Date, Date), Vec<usize>)>,
+        month_start: Date,
+        month_end: Date,
+    },
 }
 
 impl From<CsvReadError> for ChargesReportError {
@@ -271,7 +287,9 @@ impl ChargesReportError {
     pub fn path(&self) -> &Path {
         match self {
             Self::Csv(cause) => cause.path(),
-            Self::NoRows { path } => path,
+            Self::NoRows { path }
+            | Self::UndatedReport { path }
+            | Self::RowsOutsideMonth { path, .. } => path,
         }
     }
 }
@@ -291,6 +309,31 @@ impl fmt::Display for ChargesReportError {
                 Document::ChargesReport,
                 path.display()
             ),
+            Self::UndatedReport { path } => write!(
+                f,
+                "{} {}: the file name does not say what month the report covers; expected a name \
+                 of the form XX-XX_charges_2026-06-01T00_00_00-04_00.csv",
+                Document::ChargesReport,
+                path.display()
+            ),
+            Self::RowsOutsideMonth {
+                path,
+                spans,
+                month_start,
+                month_end,
+            } => {
+                write!(
+                    f,
+                    "{} {}: the file name says the report covers {month_start} to {month_end}, \
+                     but these rows are billed for dates outside it",
+                    Document::ChargesReport,
+                    path.display()
+                )?;
+                for ((from, to), rows) in spans {
+                    write!(f, "\n  {from} to {to}: {}", row_list(rows))?;
+                }
+                Ok(())
+            }
         }
     }
 }
@@ -299,27 +342,42 @@ impl Error for ChargesReportError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::Csv(cause) => Some(cause),
-            Self::NoRows { .. } => None,
+            Self::NoRows { .. } | Self::UndatedReport { .. } | Self::RowsOutsideMonth { .. } => {
+                None
+            }
         }
     }
 }
 
 /// Reads a Charges Report and totals it.
 ///
-/// Every row counts towards both totals, whatever its `Bill_Status`; see
-/// [`ChargesReport::statuses`].
+/// The month comes from the file name, by [`charges_month`], and every row is checked against it.
+/// A row reaching outside that month refuses the whole file. So a `ChargesReport` handed back is
+/// one whose contents agree with its own name, and no caller has to establish that again.
+///
+/// What this does **not** check is whether that month is the one anybody wanted. Comparing it to
+/// the session report's month needs both documents, and is done where both are in hand — see
+/// `api::io::reconcile_evolute_reimbursement`.
+///
+/// Every row counts towards both totals, whatever its `Bill_Status`; see [`ChargesReport::rows`].
 ///
 /// # Errors
 ///
 /// See [`ChargesReportError`]. Nothing is totalled until every row has been read, so a file with a
 /// bad cell in the middle of it produces an error rather than a partial sum.
 pub fn charges_report(path: &Path) -> Result<ChargesReport, ChargesReportError> {
+    // Before the file is opened: a name that does not say what month it is cannot be checked
+    // against anything, and reading the rows first would only delay the same refusal.
+    let month = charges_month(path).ok_or_else(|| ChargesReportError::UndatedReport {
+        path: path.to_path_buf(),
+    })?;
+    let month_end = month.last_of_month();
+
     let table = Table::read(path, Document::ChargesReport, REQUIRED_HEADERS)?;
 
     let mut spans: BTreeMap<(Date, Date), Vec<usize>> = BTreeMap::new();
     let mut total_kwh = 0.0;
     let mut total_amount = 0.0;
-    let mut statuses: BTreeMap<String, usize> = BTreeMap::new();
     let mut rows = 0;
 
     for i in 0..table.record_count() {
@@ -327,16 +385,13 @@ pub fn charges_report(path: &Path) -> Result<ChargesReport, ChargesReportError> 
 
         let from = parse_date(table.cell(i, "Start_Date"), path, row, "Start_Date")?;
         let to = parse_date(table.cell(i, "End_Date"), path, row, "End_Date")?;
-        // Recorded, not judged. Rows differing from each other is not a fault here; a row whose
-        // span leaves the month being reconciled is, and only the caller knows which month that
-        // is. See the field's own note on `ChargesReport::spans`.
+        // Collected, then judged in one pass below, so the refusal can name every offending span
+        // rather than stopping at the first. Rows differing from *each other* is not a fault; a
+        // row leaving the month is.
         spans.entry((from, to)).or_default().push(row);
 
         total_kwh += number(table.cell(i, "kWh"), path, row, "kWh")?;
         total_amount += money(table.cell(i, "Cost"), path, row, "Cost")?;
-        *statuses
-            .entry(table.cell(i, "Bill_Status").to_owned())
-            .or_default() += 1;
         rows += 1;
     }
 
@@ -345,6 +400,29 @@ pub fn charges_report(path: &Path) -> Result<ChargesReport, ChargesReportError> 
             path: path.to_path_buf(),
         });
     }
+
+    let outside: Vec<((Date, Date), Vec<usize>)> = spans
+        .iter()
+        .filter(|((from, to), _)| *from < month || *to > month_end)
+        .map(|(span, rows)| (*span, rows.clone()))
+        .collect();
+    if !outside.is_empty() {
+        return Err(ChargesReportError::RowsOutsideMonth {
+            path: path.to_path_buf(),
+            spans: outside,
+            month_start: month,
+            month_end,
+        });
+    }
+
+    // Everything left lies within the month. A span shorter than the whole of it is the one thing
+    // worth saying, and it stops nothing.
+    let partial_spans: Vec<((Date, Date), Vec<usize>)> = spans
+        .iter()
+        .filter(|((from, to), _)| *from != month || *to != month_end)
+        .map(|(span, rows)| (*span, rows.clone()))
+        .collect();
+
     // The envelope of the rows, not a span the file declares. `spans` is keyed on `(from, to)` and
     // ordered by it, so the earliest start is the first key; the latest end has to be searched
     // for, since a row starting later may end earlier.
@@ -357,13 +435,14 @@ pub fn charges_report(path: &Path) -> Result<ChargesReport, ChargesReportError> 
 
     Ok(ChargesReport {
         path: path.to_path_buf(),
+        month,
         from,
         to,
         spans,
+        partial_spans,
         total_kwh,
         total_amount,
         rows,
-        statuses,
     })
 }
 
@@ -501,9 +580,7 @@ Start_Date,End_Date,Bill_Status,Cost
 01-Jun-26,30-Jun-26,Issued,$1.00
 ";
         let dir = temp_dir("document_kind");
-        // Named as a session report, to show that the opening comes from the slot the file was
-        // offered to and not from what it is called.
-        let path = dir.join("Session_Report_June.csv");
+        let path = june_path(&dir);
         fs::write(&path, CSV).unwrap();
 
         let err = charges_report(&path).unwrap_err();
@@ -518,13 +595,95 @@ Start_Date,End_Date,Bill_Status,Cost
         fs::remove_dir_all(&dir).ok();
     }
 
+    /// A file named as a session report is refused before it is opened, and in the same voice.
+    ///
+    /// The opening comes from the slot the file was offered to, not from what the file is called —
+    /// which is the point the missing-column test above used to carry on its own, before the name
+    /// became something this reader reads. Handing a session report to this slot now fails here
+    /// rather than on a column, and has to say `Charges Report` just the same.
+    #[test]
+    fn a_file_not_named_as_a_charges_report_is_refused() {
+        let dir = temp_dir("wrong_name");
+        let path = dir.join("Session_Report_June_1_2026-June_30_2026.csv");
+        // Contents that would read perfectly well, so the name is the only thing refusing it.
+        fs::write(
+            &path,
+            "Start_Date,End_Date,Bill_Status,kWh,Cost\n01-Jun-26,30-Jun-26,Issued,10,$1.00\n",
+        )
+        .unwrap();
+
+        let err = charges_report(&path).unwrap_err();
+        assert!(matches!(err, ChargesReportError::UndatedReport { .. }));
+        let message = err.to_string();
+        assert!(
+            message.starts_with(&format!("Charges Report {}: ", path.display())),
+            "{message}"
+        );
+        assert!(
+            message.contains("what month the report covers"),
+            "{message}"
+        );
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    /// A row reaching outside the month the name states refuses the **whole file**: no totals, no
+    /// `ChargesReport`, and the message names every offending span rather than stopping at the
+    /// first.
+    #[test]
+    fn a_row_outside_the_named_month_refuses_the_whole_file() {
+        const CSV: &str = "\
+Start_Date,End_Date,Bill_Status,kWh,Cost
+01-Jun-26,30-Jun-26,Issued,10,$1.00
+20-May-26,30-Jun-26,Issued,20,$2.00
+01-Jun-26,05-Jul-26,Issued,30,$3.00
+";
+        let dir = temp_dir("outside_month");
+        let path = june_path(&dir);
+        fs::write(&path, CSV).unwrap();
+
+        let err = charges_report(&path).unwrap_err();
+        assert!(matches!(err, ChargesReportError::RowsOutsideMonth { .. }));
+        let message = err.to_string();
+        // Both offending spans, not just the first found.
+        assert!(message.contains("2026-05-20"), "{message}");
+        assert!(message.contains("2026-07-05"), "{message}");
+        assert!(message.contains("rows 3"), "{message}");
+        assert!(message.contains("rows 4"), "{message}");
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    /// A span inside the month but short of it is a finding, not a refusal: under the subscription
+    /// reading of the two date columns it is what a mid-month join looks like.
+    #[test]
+    fn a_span_short_of_the_month_is_a_finding_not_a_refusal() {
+        const CSV: &str = "\
+Start_Date,End_Date,Bill_Status,kWh,Cost
+01-Jun-26,30-Jun-26,Issued,10,$1.00
+15-Jun-26,30-Jun-26,Issued,5,$0.50
+";
+        let dir = temp_dir("partial_span");
+        let path = june_path(&dir);
+        fs::write(&path, CSV).unwrap();
+
+        let report = charges_report(&path).unwrap();
+        assert_eq!(report.month, june(1));
+        assert!(!report.is_clean());
+        assert_eq!(report.partial_spans, vec![((june(15), june(30)), vec![3])]);
+        // Counted in full regardless.
+        assert_eq!(report.total_kwh, 15.0);
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
     /// The refusal this reader raises itself opens the same way as the shared ones, so a reader
     /// cannot tell which half of `ChargesReportError` refused the file.
     #[test]
     fn an_empty_report_is_refused_in_the_same_voice() {
         const CSV: &str = "Start_Date,End_Date,Bill_Status,kWh,Cost\n";
         let dir = temp_dir("no_rows");
-        let path = dir.join("charges.csv");
+        let path = june_path(&dir);
         fs::write(&path, CSV).unwrap();
 
         let err = charges_report(&path).unwrap_err();
@@ -608,9 +767,10 @@ Start_Date,End_Date,Bill_Status,Cost
         date(2026, 6, day)
     }
 
-    /// Rows carrying different spans are read, not refused. Which spans are acceptable is settled
-    /// against the month being reconciled, which this reader does not know — see
-    /// `api::pure::charges_notes`.
+    /// Rows carrying different spans are read, not refused, as long as each lies inside the month
+    /// the file name states. Agreeing with *each other* is not required: under the subscription
+    /// reading of the two date columns a mid-month join produces a row differing from its
+    /// neighbours in a perfectly correct file.
     #[test]
     fn rows_that_disagree_about_their_span_are_all_read() {
         const CSV: &str = "\
@@ -620,7 +780,7 @@ Start_Date,End_Date,Bill_Status,kWh,Cost
 15-Jun-26,30-Jun-26,Issued,5,$0.50
 ";
         let dir = temp_dir("mixed_spans");
-        let path = dir.join("charges.csv");
+        let path = june_path(&dir);
         fs::write(&path, CSV).unwrap();
 
         let report = charges_report(&path).unwrap();
@@ -649,7 +809,7 @@ Start_Date,End_Date,Bill_Status,kWh,Cost
 01-Jun-26,20-Jun-26,Issued,1,$0.10
 ";
         let dir = temp_dir("envelope");
-        let path = dir.join("charges.csv");
+        let path = june_path(&dir);
         fs::write(&path, CSV).unwrap();
 
         let report = charges_report(&path).unwrap();
@@ -668,5 +828,75 @@ Start_Date,End_Date,Bill_Status,kWh,Cost
         let dir = env::temp_dir().join(format!("ev_charges_{}_{tag}", process::id()));
         fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    /// A path in `dir` named the way Evolute names a June 2026 Charges Report.
+    ///
+    /// Every fixture below carries June dates, and the reader now reads the month off the name, so
+    /// the name is part of the fixture rather than an arbitrary label.
+    fn june_path(dir: &Path) -> PathBuf {
+        dir.join("XX-XX_charges_2026-06-01T00_00_00-04_00.csv")
+    }
+
+    /// The name Evolute gives its exports, which is the only form this reads. The building prefix
+    /// varies, and the timestamp's time of day and offset say nothing about the month.
+    #[test]
+    fn a_charges_report_name_states_its_month() {
+        assert_eq!(
+            charges_month(Path::new(
+                "data/evolute/XX-XX_charges_2026-06-01T00_00_00-04_00.csv"
+            )),
+            Some(june(1))
+        );
+        // A different building, and the winter offset.
+        assert_eq!(
+            charges_month(Path::new("Bldg7_charges_2026-01-01T00_00_00-05_00.csv")),
+            Some(date(2026, 1, 1))
+        );
+    }
+
+    /// The month is the one the date falls in, whatever the day. Evolute stamps the start of the
+    /// period, so for a calendar month that is the first — but the reader normalises rather than
+    /// insisting, because the day is not what the check is about.
+    #[test]
+    fn a_day_other_than_the_first_still_names_its_month() {
+        assert_eq!(
+            charges_month(Path::new("XX-XX_charges_2026-06-15T09_30_00-04_00.csv")),
+            Some(june(1))
+        );
+    }
+
+    /// A suffix is a note to a person, so it is ignored rather than allowed to hide what the file
+    /// covers — the same tolerance `session::report_coverage` extends to session reports, which
+    /// `data/evolute/` relies on for its `-mock` and `-bak` copies.
+    #[test]
+    fn a_marked_up_name_still_states_its_month() {
+        for name in [
+            "XX-XX_charges_2026-06-01T00_00_00-04_00-bak.csv",
+            "XX-XX_charges_2026-06-01T00_00_00-04_00-mock.csv",
+            "XX-XX_charges_2026-06-01T00_00_00-04_00 (1).csv",
+            // The date alone, with no time after it. A narrower name than Evolute writes, and it
+            // states its month unambiguously; insisting on the `T` would be a rule about a form
+            // seen in exactly one file.
+            "XX-XX_charges_2026-06-01.csv",
+        ] {
+            assert_eq!(charges_month(Path::new(name)), Some(june(1)), "{name}");
+        }
+    }
+
+    /// Anything else is refused rather than guessed at, because a guess would then be compared
+    /// against the session report's month and could pass.
+    #[test]
+    fn a_name_that_does_not_state_its_month_is_refused() {
+        for name in [
+            "charges.csv",
+            "Charges_Report_June.csv",
+            "Session_Report_June_1_2026-June_30_2026.csv",
+            "XX-XX_charges_June_2026.csv",
+            // June has 30 days, so this is a name to reject rather than a date to build.
+            "XX-XX_charges_2026-06-31T00_00_00-04_00.csv",
+        ] {
+            assert_eq!(charges_month(Path::new(name)), None, "{name}");
+        }
     }
 }

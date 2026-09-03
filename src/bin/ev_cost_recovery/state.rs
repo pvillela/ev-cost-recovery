@@ -553,9 +553,13 @@ impl ReimbursementState {
                     self.error = Some(format!("cannot write the run log: {e}"));
                     return;
                 }
-                // The Charges Report has notes of its own. It carries no per-row anomalies -- it
+                // The Charges Report has a log of its own. It carries no per-row anomalies -- it
                 // is read all-or-nothing -- so its log holds only what leaves the figures standing.
-                if let Err(e) = reconciliation.charges.write_log() {
+                // Always `Some` on this path, which reads the file; the `None` case is a
+                // reconciliation built from bare figures.
+                if let Some(charges) = &reconciliation.charges
+                    && let Err(e) = charges.write_log()
+                {
                     self.error = Some(format!("cannot write the run log: {e}"));
                     return;
                 }

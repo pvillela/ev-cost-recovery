@@ -147,7 +147,7 @@ Below the headline, in the sections:
 |:---|:---|
 | *Energy variance* | `1330.30` kWh on the Charges Report against `1315.73` priced, a variance of `14.57` — the two come from different documents and are not expected to agree exactly |
 | *Sessions needing a look* | Two rows, both `DuplicateId`, both session `S37487` |
-| *Charges Report* | `Bill_Status tally: Issued 38.` |
+| *Charges Report* | The file it was read from, and nothing more — every row of June's report covers the whole month, which is the clean case |
 
 Worth trying:
 
@@ -155,7 +155,8 @@ Worth trying:
 |:---|:---|
 | Type `0` into **Reimbursement** | Both variances negative — `-246.26` and `-114.67` — and "sent less than its own Charges Report" |
 | Clear **Reimbursement** and run | `the reimbursement amount is blank` — a blank field is refused, because zero is a real answer and has to be meant |
-| Pick the **May** session report against the same Charges Report | `no row of the Charges Report falls in 2026-05-01 to 2026-05-31, which is the month the session report is for; its rows cover 2026-06-01 to 2026-06-30. This is usually the wrong file.` |
+| Pick the **May** session report against the same Charges Report | `this Charges Report is named for the month starting 2026-06-01, but the session report is for the month starting 2026-05-01. This is usually the wrong file.` |
+| Rename the Charges Report to anything without `_charges_<date>` in it | `the file name does not say what month the report covers` — the reader will not open a file it cannot date |
 
 ## Convert to workbook
 

@@ -429,9 +429,10 @@ pub fn reconcile_evolute_reimbursement(
     let sessions = read_sessions(&[session_csv])?;
 
     // Before the reconciliation rather than inside it, because it is the one question that needs
-    // both documents in hand and `pure` is handed only their figures. It both refuses a report
-    // that does not belong to the month and collects what should be said about one that does.
-    let charges_notes = pure::charges_notes(&sessions, &charges)?;
+    // both documents in hand and `pure` is handed only their figures. Each file has already been
+    // checked against its own name by the reader that produced it, so all that is left is whether
+    // the two are for the same month.
+    pure::check_same_month(&sessions, &charges)?;
 
     Ok(pure::reconcile_evolute_reimbursement(
         &sessions,
@@ -440,7 +441,7 @@ pub fn reconcile_evolute_reimbursement(
         reimbursed,
         cost_recovery_rates,
     )?
-    .with_charges_notes(charges_notes))
+    .with_charges_report(charges))
 }
 
 // --------------------------------------------------------------------------------------------
