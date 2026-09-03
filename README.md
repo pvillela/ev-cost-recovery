@@ -125,7 +125,9 @@ When an input file is ingested by the software, any problems are reported on-scr
 
 Some problems are temporary, e.g., due to an oversight by the user. Such cases may just merit an on-screen message.
 
-Serious errors block the performance of the desired function. Less severe anomalies do not block function execution, but must still be reported on-screen and logged for the user's awareness. Certain anomalies are additionally included in the functional reports (as opposed to error reports) produced by the software functions.
+Serious errors block the performance of the desired function. Less severe anomalies do not block function execution, but must still be reported on-screen and logged for the user's awareness. Some of those anomalies change the figures a function produces -- by leaving a session out of them, for instance -- while others leave every figure standing. Certain anomalies are additionally included in the functional reports (as opposed to error reports) produced by the software functions.
+
+Every message the app can show or log is described in [docs/ERRORS.md](docs/ERRORS.md), grouped by what happened to your work, with what each one means and what to do about it.
 
 ## License
 
@@ -153,6 +155,7 @@ Unless you explicitly state otherwise, any contribution intentionally submitted 
 Much, but not all, of this documentation pertains to software structure or electrotechnical concerns. Some portions are useful to end-users and administrators.
 
 - [docs/app-cheat-sheet.md](docs/app-cheat-sheet.md) -- Steps for trying the app against data files in `data/` directory (not available in the repo): which to pick, what to expect, and the errors worth provoking.
+- [docs/ERRORS.md](docs/ERRORS.md) -- Every error and anomaly the app reports on-screen or logs: what each message means, and what to do about it.
 - [docs/historic-feature.md](docs/historic-feature.md) -- Describes the "historic" cargo feature.
 - [docs/maintenance-manual.md](docs/maintenance-manual.md) -- What to check before changing a constant, how to regenerate the golden files, the invariants nothing enforces.
 - [docs/Questions_for_Evolute.md](docs/Questions_for_Evolute.md) -- Questions to ask Evolute;  answers may result in software changes.
@@ -167,6 +170,7 @@ Much, but not all, of this documentation pertains to software structure or elect
 - [docs/session/transformer-glossary.md](docs/session/transformer-glossary.md) -- Glossary of electrotechnical terms related to transformers.
 - [docs/session/time-reporting-uncertainty.md](docs/session/time-reporting-uncertainty.md) --  The impact of the truncation of reported session start and end times.
 - [docs/session/Evolute-Simultaneous_Charging.pdf](docs/session/Evolute-Simultaneous_Charging.pdf) -- Evolute technical documentation about simultaneous charging limits in terms of voltages, currents, kW, kVA, transformer parameters, and number of charging stations.
+- [docs/green_button/README.md](docs/green_button/README.md) -- What the meter export is, when a reading is treated as an anomaly, and when a billing period counts as complete.
 - [docs/green_button/Notes_on_Green_Button_data.md](docs/green_button/Notes_on_Green_Button_data.md) -- Brief notes about Green Button data.
 - [docs/green_button/Toronto_Hydro_Object_Model.md](docs/green_button/Toronto_Hydro_Object_Model.md) -- The conceptual domain model for the Green Button ESPI XML feed.
 - [docs/time/README.md](docs/time/README.md) -- Date-time-related functions and constants, the time grid, the DST fold and how it is resolved.

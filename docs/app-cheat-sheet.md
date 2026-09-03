@@ -183,14 +183,9 @@ In each tab, pressing the **Save** button saves the displayed report.
 
 ### Logs
 
-Each run rewrites a log beside each file it reads, named after the file with the kind of read appended:
+Each run rewrites a log beside each file it reads. Which tab writes which log, what a log holds, and
+how it is named are in [ERRORS.md](ERRORS.md#the-run-logs).
 
-| Tab | Logs written |
-|:---|:---|
-| Cost recovery | `*.session.csv.read.log` beside each of the two session reports, and `*.meter.xml.read.log` beside the Green Button export |
-| Evolute reimbursement | `*.session.csv.read.log` beside the session report, and `*.charges.csv.read.log` beside the Charges Report |
-| Convert to workbook | The workbook itself, and `*.session.convert.log` or `*.meter.convert.log` beside the source |
-
-Every one of those timestamps should move on the run that reads the file, whether or not you save
-anything.
+What to check here is that the timestamps move: every log a tab writes should be rewritten on the
+run that reads the file, whether or not you save anything.
 

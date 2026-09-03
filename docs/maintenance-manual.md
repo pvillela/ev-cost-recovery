@@ -19,6 +19,7 @@ Titles are stable; if one changes, the citation fails to find it and says so.
 
 - Golden files
 - Which constants are free, and which are derived
+- Messages the user sees
 - Boundaries and the time grid
 - A generated workbook is not byte-reproducible
 
@@ -30,6 +31,7 @@ Titles are stable; if one changes, the citation fails to find it and says so.
 
 ### Green Button
 
+- Adding an `Anomaly`
 - Invariants nothing enforces
 - What would force a re-check of the TOU rules
 - The Ontario holiday calendar is not the ESA list
@@ -230,6 +232,41 @@ changing.
 Anything failing that is not a golden-file comparison is a test that has acquired a dependency on
 the value, and should be reformulated rather than updated.
 
+## Messages the user sees
+
+
+Every message the `ev_cost_recovery` app can put on screen or write to a log is catalogued in
+`docs/ERRORS.md`, quoted as the code builds it. **Changing a user-visible message means changing
+that file in the same commit.** Adding, removing or rewording an error variant's `Display`, an
+anomaly's prose, or a message assembled in `src/bin/ev_cost_recovery/` all count.
+
+Only the anomaly tokens are covered by a test — `tests/docs_errors.rs`, which asserts that every
+`AnomalyKind::as_str` and `Anomaly::as_str` has an entry. The error variants are not, because their
+`Display` output carries placeholders and a test over fragments of it would fail on innocent
+rewording. Re-derive that half by hand:
+
+```sh
+grep -rn 'impl fmt::Display for' src/ --include=*.rs
+grep -rn 'error_block\|self.error = Some' src/bin/ev_cost_recovery/
+```
+
+**Two families are deliberately absent, and `docs/ERRORS.md` does not say so.** A reader looking up
+a message should not find a paragraph explaining why some other message is missing, so the reason is
+recorded here instead:
+
+- **Field validation** — a blank rate, `cannot read "x" as the off-peak rate`, not a finite number,
+  cannot be negative, a blank amount. Six messages, in `src/bin/ev_cost_recovery/state.rs`.
+- **File-choice refusals that state their whole remedy in their own text** —
+  `ConversionError::OutputExists` and `OutputWouldBeInput`, the undated-session-report and
+  undated-Charges-Report refusals, `ReimbursementError::NotACalendarMonth` and
+  `ChargesReportIsForAnotherMonth`.
+
+Also absent: the `widgets::note` text that describes a rule rather than a finding, the overwrite
+confirmation on the Convert tab, and variants no route through the GUI can reach —
+`GbReadError::BillEndDayOutOfRange`, `ReimbursementError::NotOneSessionReport`,
+`PeakPowerError::ValuesAreForAnotherPeriod`. A change that makes one of those reachable from the app
+brings it into the document.
+
 ## Boundaries and the time grid
 
 
@@ -298,8 +335,8 @@ That still holds for the figures. It does not hold for the file.
 ## Adding an `AnomalyKind`
 
 
-`AnomalyKind` in `src/session/common.rs` classifies rows that need review. Adding a variant touches three
-things, and deliberately not a fourth.
+`AnomalyKind` in `src/session/common.rs` classifies rows that need review. Adding a variant touches four
+things, and deliberately not a fifth.
 
 **The wire format.** `as_str` writes the variant name into the workbook's `anomalies` column, and
 `from_token` reads it back. These are a **stable wire format**, not display text: a workbook
@@ -310,7 +347,12 @@ makes every workbook already written unreadable.
 **The prose.** `fmt::Display` carries the human wording, and it is free-form: reword it whenever it
 reads badly. It is deliberately distinct from `as_str` for exactly that reason. The report's
 glossary is generated from `Display`, so there is one wording to maintain rather than a second copy
-in `report.rs`.
+in `report.rs`. `Anomaly`'s own `Display` writes the token *and* the prose, so the run log and the
+Convert tab's list carry both without a second wording either.
+
+**The entry in `docs/ERRORS.md`.** Under *Changes the figures* or *Worth knowing*, headed by the
+token, quoting the prose. `tests/docs_errors.rs` fails until it is there. See "Messages the user
+sees" for what that document is and what is deliberately left out of it.
 
 **Whether it excludes.** `AnomalyKind::excludes_session` names the kinds that remove a session from
 the estimates, and the buckets are sorted on it in `Sessions::from_session_lists`. Three do today:
@@ -390,6 +432,36 @@ disagree. Anything that made the tab compute would break both properties at once
 ---
 
 # Green Button
+
+## Adding an `Anomaly`
+
+
+`Anomaly` in `src/green_button/common.rs` classifies readings that need review. It is the meter-side
+counterpart of `AnomalyKind`, and the split between wire format and prose is the same — but the
+places to change are not, so the two sections do not share one procedure.
+
+**The wire format.** `as_str` and `from_token`, spelled identically. A workbook cell holds the token
+and is read back by it, so a rename invalidates every workbook already written. Add freely; never
+rename.
+
+**The prose.** `description` — one clause, for a report's glossary. Free-form, reword at will.
+
+**Not `Display`.** Unlike `AnomalyKind`, this type's `Display` writes the bare token, because a
+workbook cell holds what `Display` produces and a cell full of prose would not survive the round
+trip. Put the wording in `description` and leave `Display` alone.
+
+**The entry in `docs/ERRORS.md`,** headed by the token and quoting `description`.
+`tests/docs_errors.rs` fails until it is there.
+
+**The domain rule** behind the new kind goes in `docs/green_button/README.md`, which is where a
+reader asking *why is this an anomaly at all* looks. `docs/ERRORS.md` says what the message means;
+that document says what the data has to be like for it to arise.
+
+**There is deliberately no DST kind, and a new one is not the place to add one.** The feed timestamps
+every reading as an absolute UTC instant on a fixed grid, so neither the spring-forward gap nor the
+fall-back fold can produce an ambiguous or missing record. DST is a rendering concern in the
+local-time column and nothing more. The three DST kinds on the session side exist because Evolute
+reports wall times.
 
 ## Invariants nothing enforces
 

@@ -148,6 +148,8 @@ The above-mentioned [electrotechnical document](site-model-marcus.md) derives ev
 
 #### Other
 
+This section says why each anomaly exists. What the user is shown when one is raised, and where, is in [docs/ERRORS.md](../ERRORS.md).
+
 - Each session is checked for internal consistency. `docs/session/time-reporting-uncertainty.md` carries the derivation; its **Result** section states the three checks together, and `duration_is_consistent` in `src/session/common.rs` is the one place they appear in code. Any failure raises the anomaly:
 
   ```
