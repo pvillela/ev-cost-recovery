@@ -561,8 +561,8 @@ taken on trust.
 What each of these means for the meter data is in
 [docs/green_button/README.md](green_button/README.md).
 
-These are counted in the run log and, on the Convert tab, listed as `<token> x<count>`. In the
-workbook they are highlighted against the readings they concern.
+These are counted in the run log and, on the Convert tab, listed as `<token> x<count>`. In a
+generated workbook they are highlighted against the readings they concern.
 
 ### `DuplicateInterval`
 

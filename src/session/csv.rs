@@ -112,7 +112,7 @@ impl Error for SessionCsvError {
 ///
 /// The domain rules — the UTC conversion and its DST policy, the definitions of `adj_conn_end` and
 /// `adj_conn_duration`, and the treatment of zero-`Energy_Use` sessions — are specified in
-/// `docs/time/README.md` under "Time zone" and in `docs/session/README.md` under "Other".
+/// `docs/time/README.md` under "Time zone" and in `docs/session/README.md` under "Anomalies".
 ///
 /// The records are sorted into the three buckets of [`Sessions`] by
 /// `Sessions::from_session_lists`, which carries the rules. Every session in the file reaches one

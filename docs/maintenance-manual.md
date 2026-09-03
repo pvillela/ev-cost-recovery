@@ -338,11 +338,17 @@ That still holds for the figures. It does not hold for the file.
 `AnomalyKind` in `src/session/common.rs` classifies rows that need review. Adding a variant touches four
 things, and deliberately not a fifth.
 
-**The wire format.** `as_str` writes the variant name into the workbook's `anomalies` column, and
-`from_token` reads it back. These are a **stable wire format**, not display text: a workbook
-written by one version is read by another, and an unrecognised token is a hard error rather than a
-shrug. Add the variant to both, spelled identically, and never rename an existing one — a rename
-makes every workbook already written unreadable.
+**The wire format.** `as_str` writes the variant name into a generated workbook's `anomalies` column,
+and `from_token` reads it back. These are a wire format, not display text, and should preferably
+stay stable: a workbook written by one version is read by another, and an unrecognised token is a
+hard error rather than a shrug. Add the variant to both, spelled identically.
+
+Preferably rather than must, because the reader is `session::excel::historic` and nothing else — it
+is behind the `historic` feature, so a default `cargo build` produces no code that reads a token
+back at all. A rename leaves workbooks already written spelling the kind one way and the code
+spelling it another. That costs whoever reads an old sheet by eye, and it makes an old workbook a
+hard error for anyone building with `--features historic`; it costs the default build nothing. Weigh
+a rename rather than ruling it out.
 
 **The prose.** `fmt::Display` carries the human wording, and it is free-form: reword it whenever it
 reads badly. It is deliberately distinct from `as_str` for exactly that reason. The report's
@@ -360,7 +366,7 @@ the estimates, and the buckets are sorted on it in `Sessions::from_session_lists
 instant at all — `FellInDstGap` and `DstUnresolvable`, which `leaves_no_instant` names and which
 `excludes_session` defers to. Everything else is informational: the session still counts towards
 every figure. If a new kind should exclude, that is a decision to make explicitly and to record in
-README's "Other" section — not something that follows from adding the variant.
+README's "Anomalies" section — not something that follows from adding the variant.
 
 A kind that means *no instant could be assigned* belongs in `leaves_no_instant` as well. That
 predicate is what the workbook reader recognises such a row by, since the writer leaves every cell
@@ -440,15 +446,22 @@ disagree. Anything that made the tab compute would break both properties at once
 counterpart of `AnomalyKind`, and the split between wire format and prose is the same — but the
 places to change are not, so the two sections do not share one procedure.
 
-**The wire format.** `as_str` and `from_token`, spelled identically. A workbook cell holds the token
-and is read back by it, so a rename invalidates every workbook already written. Add freely; never
-rename.
+**The wire format.** `as_str` and `from_token`, spelled identically. The token is what marks the
+reading wherever it is carried out of the module — the `anomalies` column of a generated workbook,
+the run log, the Convert tab.
+
+Add variants freely. Renaming one costs less here than the phrase "wire format" suggests: nothing
+outside `from_token`'s own round-trip test reads a green_button token back, and the only reader of
+either vocabulary is `session::excel::historic`, behind the `historic` feature. What a rename
+actually does is leave workbooks already written spelling the kind one way while the code spells it
+another, which is a problem for whoever reads an old sheet by eye or revives a reader — not for
+anything that runs today. Worth a moment's thought, not a prohibition.
 
 **The prose.** `description` — one clause, for a report's glossary. Free-form, reword at will.
 
 **Not `Display`.** Unlike `AnomalyKind`, this type's `Display` writes the bare token, because a
-workbook cell holds what `Display` produces and a cell full of prose would not survive the round
-trip. Put the wording in `description` and leave `Display` alone.
+generated workbook's cell holds what `Display` produces and a cell full of prose would not survive
+the round trip. Put the wording in `description` and leave `Display` alone.
 
 **The entry in `docs/ERRORS.md`,** headed by the token and quoting `description`.
 `tests/docs_errors.rs` fails until it is there.

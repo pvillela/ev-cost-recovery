@@ -768,7 +768,7 @@ pub enum AnomalyKind {
     /// record's own fields disagree by more than the reporting can explain, neither its duration
     /// nor the span the estimating logic would place it on can be relied on.
     ///
-    /// See `docs/session/time-reporting-uncertainty.md` and docs/session/README.md, "Other".
+    /// See `docs/session/time-reporting-uncertainty.md` and docs/session/README.md, "Anomalies".
     InconsistentDuration,
     /// The start fell in the DST fold and both offsets reproduce the reported end,
     /// so the record was duplicated. See docs/time/README.md, "Time zone".
@@ -789,16 +789,19 @@ pub enum AnomalyKind {
     /// A reported wall time fell in the DST fold, and no combination of the readings at either end
     /// satisfies `duration_is_consistent`.
     ///
-    /// A wall time in the repeated hour names two instants an hour apart. `Conn_Duration` is what
-    /// ordinarily says which: the true combination has the reported start, the reported end and the
-    /// elapsed time agreeing, and a mismatched one is out by a whole hour. When *no* combination
-    /// agrees, that evidence has failed — whatever `Conn_Duration` measures on this row, it is not
-    /// the elapsed time the inference assumes it to be — and there is nothing else to choose with.
+    /// A wall time in the repeated hour can be read under either offset, so a record with one such
+    /// end yields two candidate combinations and one with both yields four. `Conn_Duration` is what
+    /// ordinarily says which: the true combination is the one whose elapsed time agrees with the
+    /// reported duration. When *no* combination agrees, that evidence has failed — whatever
+    /// `Conn_Duration` measures on this row, it is not the elapsed time the inference assumes it to
+    /// be — and there is nothing else to choose with.
     ///
-    /// **No instant is assigned**, for the same reason as [`Self::FellInDstGap`]: the record names
-    /// two candidates and cannot pick, so picking one would be a guess. See
-    /// [`Self::leaves_no_instant`]. [`Self::InconsistentDuration`] accompanies it, since a record
-    /// whose fields agree under no reading is inconsistent however it is read.
+    /// **No instant is assigned**: the record names candidates and nothing picks between them, so
+    /// picking one would be a guess. The outcome is [`Self::FellInDstGap`]'s and the predicate
+    /// naming both is [`Self::leaves_no_instant`], but the reason is not shared — there a wall time
+    /// names no instant at all, where here it names several and the evidence that would choose has
+    /// failed. [`Self::InconsistentDuration`] accompanies it, since a record whose fields agree
+    /// under no reading is inconsistent however it is read.
     ///
     /// Distinct from `InconsistentDuration` alone, which is the same disagreement on a date with
     /// only one reading to test. Keeping them apart is what says *why* the record could not be
@@ -929,7 +932,12 @@ impl AnomalyKind {
 
     /// The variant name, as written to the workbook's `anomalies` column. Deliberately distinct
     /// from [`fmt::Display`], which is free-form prose for humans and may be reworded at will;
-    /// this is a wire format and must stay stable.
+    /// this is a wire format and should preferably stay stable.
+    ///
+    /// Preferably rather than must: the only thing reading a token back is
+    /// `session::excel::historic`, behind the `historic` feature. A rename leaves workbooks already
+    /// written spelling the kind one way and the code spelling it another, which costs whoever
+    /// reads an old sheet or revives that reader — not anything on the default build.
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::ZeroActiveChargeTime => "ZeroActiveChargeTime",
@@ -1081,12 +1089,12 @@ pub struct Sessions {
     /// track the same thing to within about a second and are not measured separately, so a zero
     /// beside a non-zero `Energy_Use` is a contradiction in the report rather than an event. See
     /// `Questions_for_Evolute.md`, "Answers received". [`Session::avg_kw`] substitutes a finite
-    /// figure so the row can still be listed. See docs/session/README.md, "Other".
+    /// figure so the row can still be listed. See docs/session/README.md, "Anomalies".
     pub spikes: Vec<RSession>,
     /// Sessions that cannot be placed on a timeline — every kind [`AnomalyKind::excludes_session`]
     /// names. Either the reported start, end and duration contradict each other, or a reported wall
     /// time names no instant at all and none was assigned. Excluded from the estimates and returned
-    /// only for review. See docs/session/README.md, "Other".
+    /// only for review. See docs/session/README.md, "Anomalies".
     pub excluded: Vec<RSession>,
     /// Anomalies that are not properties of any single record, and so are not reachable through
     /// [`Session::anomalies`]. Currently [`AnomalyKind::DuplicateId`], plus

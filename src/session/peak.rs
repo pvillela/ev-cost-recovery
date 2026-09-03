@@ -111,7 +111,7 @@ pub(crate) fn estimates_from_sessions(
     // Spikes take part in the estimates on the same footing as any other session. A spike's raw
     // energy over charge time is infinite or NaN, either of which would swamp or poison any
     // segment it entered, and [`Session::avg_kw`] substitutes a finite figure for exactly that
-    // reason — so nothing has to be done to a spike here. See docs/session/README.md, "Other".
+    // reason — so nothing has to be done to a spike here. See docs/session/README.md, "Anomalies".
     let rsessions: Vec<RSession> = sessions
         .sessions
         .iter()
@@ -136,7 +136,7 @@ pub(crate) fn estimates_from_sessions(
         session_anomalies,
         // `excluded` sessions contradict themselves and take no part in any estimate, but they are
         // still reported: a caller judging an estimate needs to know what was left out. See
-        // docs/session/README.md, "Other".
+        // docs/session/README.md, "Anomalies".
         excluded_sessions: sessions.excluded.clone(),
         logs: sessions.logs.clone(),
     }

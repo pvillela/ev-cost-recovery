@@ -146,7 +146,8 @@ const COLUMNS: &[(&str, Source)] = &[
 /// domain rules — the UTC conversion and its DST policy, the definitions of `adj_conn_end` and
 /// `adj_conn_duration`, and the treatment of zero-`Energy_Use` sessions — are specified in
 /// `docs/time/README.md` under "Time zone" and in `docs/session/README.md` under "Excel workbook"
-/// and "Other". They are shared with the peak power contribution logic and are not restated here.
+/// and "Anomalies". They are shared with the peak power contribution logic and are not restated
+/// here.
 ///
 /// What this function adds on top of those rules:
 ///
@@ -1669,7 +1670,7 @@ CKT-7,,Toronto,,Station-7,Evolute Inc.,FLO,G5,S00002,,2026-06-03 10:00,2026-06-0
         );
 
         // A zero-Energy_Use session with a real charge time is an ordinary session: its average
-        // power is legitimately zero and it still occupies a breaker. See docs/session/README.md, "Other".
+        // power is legitimately zero and it still occupies a breaker. See docs/session/README.md, "Anomalies".
         assert!(report.spikes.is_empty());
         assert!(report.excluded.is_empty());
         assert_eq!(report.sessions.len(), 2);

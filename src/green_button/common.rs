@@ -61,9 +61,11 @@ impl Reading {
 /// A row or period that needs review. Never fatal: the workbook is still written and the figures
 /// are still produced.
 ///
-/// The `as_str` tokens are a **stable wire format**. These sheets are meant to be read back by
-/// column name, so renaming a variant silently invalidates every workbook already written. Add
-/// variants freely; never rename one.
+/// The `as_str` tokens are a wire format, and should preferably stay stable. Preferably rather than
+/// must: nothing outside [`Self::from_token`]'s own round-trip test reads a token back on this side,
+/// and the only reader of either anomaly vocabulary is `session::excel::historic`, behind the
+/// `historic` feature. A rename leaves workbooks already written spelling the kind one way and the
+/// code spelling it another. Add variants freely; weigh a rename rather than ruling it out.
 ///
 /// There is deliberately no DST variant. The feed timestamps every reading as an absolute UTC
 /// epoch on a fixed grid, so neither the spring-forward gap nor the fall-back fold can produce an
