@@ -1,17 +1,14 @@
 # `green_button` module
 
-What the meter export is, when a reading is treated as an anomaly, and when a billing period counts
-as complete.
+This module contains functionality related to Toronto Hydro's Green Button export, an ESPI XML feed of hourly meter readings. Notably, it computes the intervals that maximise the building's kW, kVA, and 7-7 kW during a billing period.
 
-The counterpart on the session side is [docs/session/README.md](../session/README.md). The messages
-these rules produce, and where they appear, are in [docs/ERRORS.md](../ERRORS.md).
+This document provides an overview of what the meter export is, when a reading is treated as an anomaly, and when a billing period counts as complete.
 
-See also:
+**See also:**
 
-- [Notes_on_Green_Button_data.md](Notes_on_Green_Button_data.md) — two facts about the data that
-  everything here rests on.
-- [Toronto_Hydro_Object_Model.md](Toronto_Hydro_Object_Model.md) — the ESPI feed's own structure,
-  and how a reading is reached through it.
+- [Notes_on_Green_Button_data.md](Notes_on_Green_Button_data.md) — two facts about the data that everything here rests on.
+- [Toronto_Hydro_Object_Model.md](Toronto_Hydro_Object_Model.md) — the ESPI feed's own structure, and how a reading is reached through it.
+- [docs/ERRORS.md](../ERRORS.md) -- contains the error messages associated with this module's functionality and where they appear.
 
 ## What a reading is
 
@@ -19,21 +16,17 @@ The export carries three series — kWh, kW and kVA — each timestamped in UTC 
 kW and kVA figures are not hourly averages: each is the highest 15-minute interval within its hour.
 
 Timestamps are absolute instants, so DST costs nothing here. The clocks going forward or back is a
-question for the local-time column the workbook renders, and not for the readings themselves. That
-is why there is no DST anomaly in this vocabulary, where the session side has three.
+question for the local-time column a generated workbook renders, and not for the readings themselves. That is why there is no DST anomaly in this vocabulary, where the session side has three.
 
-An hour is **aligned** when it starts on a whole hour. Only aligned hours can be a reported peak,
-which is what lets the workbook's TOU column hold a single value: Ontario's price-period boundaries
-all fall on the hour, and its UTC offsets are whole hours in both seasons, so an aligned hour cannot
-straddle two bands.
+An hour is **aligned** when it starts on a whole hour. Only aligned hours can be a reported peak. Toronto Hydro's price-period boundaries all fall on the hour, and their UTC offsets are whole hours in both seasons.
 
 ## Anomalies
 
-None of these is fatal. The workbook is still written and the figures are still produced; an anomaly
+None of these is fatal. A generated workbook is still written and the figures are still produced; an anomaly
 says a reading needed review, not that the run failed.
 
 Each is recorded three ways: counted in the run log, listed on the Convert tab as `<token> x<count>`,
-and highlighted in the workbook against the reading it concerns.
+and highlighted in the generated workbook against the reading it concerns.
 
 | Token | What it says |
 | --- | --- |
@@ -59,9 +52,7 @@ plausible size the gap is recorded and left as a gap.
 
 ### The tokens are a wire format
 
-`Anomaly::as_str` is what a workbook cell holds, and what is read back from one. Renaming a variant
-silently invalidates every workbook already written. Add variants freely; never rename one. The
-prose in the table above is `Anomaly::description`, which is free to be reworded.
+`Anomaly::as_str` is what a generated workbook cell holds, and what is read back from one. Renaming a variant silently makes every workbook already written deviate from the new naming.
 
 ## When a period is complete
 

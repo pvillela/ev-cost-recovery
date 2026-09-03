@@ -125,7 +125,7 @@ When an input file is ingested by the software, any problems are reported on-scr
 
 Some problems are temporary, e.g., due to an oversight by the user. Such cases may just merit an on-screen message.
 
-Serious errors block the performance of the desired function. Less severe anomalies do not block function execution, but must still be reported on-screen and logged for the user's awareness. Some of those anomalies change the figures a function produces -- by leaving a session out of them, for instance -- while others leave every figure standing. Certain anomalies are additionally included in the functional reports (as opposed to error reports) produced by the software functions.
+Serious errors block the performance of the desired function. Less severe anomalies do not block function execution, but must still be reported on-screen and logged for the user's awareness. Some of those anomalies change the figures a function produces -- by leaving a session out of them, for instance -- while others do not impact the calculations. Certain anomalies are additionally included in the functional reports (as opposed to error reports) produced by the software functions.
 
 Every message the app can show or log is described in [docs/ERRORS.md](docs/ERRORS.md), grouped by what happened to your work, with what each one means and what to do about it.
 

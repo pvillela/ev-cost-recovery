@@ -1,7 +1,6 @@
-# What the app tells you
+# Errors and anomalies
 
-Every error and anomaly the `ev_cost_recovery` app reports on screen or writes to a log, what each
-one means, and what to do about it.
+This document contains every error and anomaly the `ev_cost_recovery` app reports on screen or writes to a log, what each one means, and what to do about it.
 
 To look one up, find the words you can see on screen in the contents below. Messages are quoted as
 the app builds them, with `<the varying part>` in angle brackets where your own file names, dates
