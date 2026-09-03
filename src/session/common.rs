@@ -1025,10 +1025,17 @@ impl fmt::Display for AnomalyKind {
 
 impl fmt::Display for Anomaly {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // The token as well as the prose, in the order the report's glossary uses. A reader who
+        // meets `FellInDstGap` in the workbook's `anomalies` column has no way back to the prose
+        // otherwise: the two surfaces this renders -- the run log and the Convert tab's list --
+        // are where that connection has to be made.
         write!(
             f,
-            "row {} ({}): {}",
-            self.session.row, self.session.id, self.kind
+            "row {} ({}) {}: {}",
+            self.session.row,
+            self.session.id,
+            self.kind.as_str(),
+            self.kind
         )
     }
 }

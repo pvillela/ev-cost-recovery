@@ -11,6 +11,7 @@ use ev_cost_recovery::{
         ReimbursementReconciliation, cost_recovery_surplus, gb_xml_to_xlsx,
         reconcile_evolute_reimbursement, session_csv_to_xlsx,
     },
+    log::SourceLog,
     session::report_coverage,
 };
 use jiff::civil;
@@ -244,6 +245,13 @@ pub struct SurplusState {
     pub rates_at_end: RatesForm,
     pub outcome: Option<SurplusOutcome>,
     pub error: Option<String>,
+    /// Why the run's logs could not be written, if they could not.
+    ///
+    /// Separate from [`Self::error`], and for the same reason [`SessionWorkbook::log_failure`] is
+    /// separate from a conversion's: by the time a log is written the figures are worked out, and
+    /// reporting a missing log as the run's error would say no result was produced when one was.
+    /// One entry per log that failed, since a run writes two.
+    pub log_failures: Vec<String>,
     /// What a picked file was refused for, against the picker it was chosen at. Reported where the
     /// choice was made rather than at the foot of the form.
     pub input_notes: Vec<(Input, String)>,
@@ -349,18 +357,16 @@ impl SurplusState {
 
         match cost_recovery_surplus(&bill, &meter, &csv1, &csv2, start, end) {
             Ok(surplus) => {
-                // Written before the report is shown, so a failure to write one is not buried under it.
-                if let Err(e) = surplus.notes.write_logs() {
-                    self.error = Some(format!("cannot write the run log: {e}"));
-                    return;
-                }
                 // The meter export has notes of its own, kept apart from the session side because
                 // the two are checked against different things. Its log covers the billing period
                 // priced, not the whole export; `MeterNotes::log` says why.
-                if let Err(e) = surplus.meter.write_log() {
-                    self.error = Some(format!("cannot write the run log: {e}"));
-                    return;
-                }
+                //
+                // A log that could not be written is reported above the report rather than in place
+                // of it. Nothing else here touches the disk, so the figures below are the same
+                // figures either way, and withholding them would report a failure that did not
+                // happen.
+                let meter_log = surplus.meter.log();
+                self.log_failures = write_logs(surplus.notes.logs.iter().chain(&meter_log));
                 self.outcome = Some(SurplusOutcome {
                     text: surplus.to_string(),
                     surplus,
@@ -396,7 +402,26 @@ impl SurplusState {
     fn clear_results(&mut self) {
         self.outcome = None;
         self.error = None;
+        self.log_failures.clear();
     }
+}
+
+/// Writes each of a run's logs, collecting a message for every one that did not reach disk.
+///
+/// Per log rather than through `SessionNotes::write_logs`, which stops at the first failure and
+/// returns an error naming no file. A run writes several logs into whatever folders its inputs came
+/// from, and a message that cannot say which one is missing sends the reader to check all of them.
+fn write_logs<'a>(logs: impl IntoIterator<Item = &'a SourceLog>) -> Vec<String> {
+    logs.into_iter()
+        .filter_map(|log| {
+            let e = log.write().err()?;
+            Some(format!(
+                "The figures were worked out, but this run's log was not written.\n{}: {e}\nCheck \
+                 that the folder can be written to and that the disk is not full.",
+                log.path().display()
+            ))
+        })
+        .collect()
 }
 
 /// A path's file name, for a message that has already said which picker it is about.
@@ -445,6 +470,9 @@ pub struct ReimbursementState {
     pub rates: RatesForm,
     pub outcome: Option<ReimbursementOutcome>,
     pub error: Option<String>,
+    /// Why the run's logs could not be written, if they could not. See
+    /// [`SurplusState::log_failures`].
+    pub log_failures: Vec<String>,
     /// What the picked session report was refused for, shown against its picker rather than at the
     /// foot of the form.
     pub input_note: Option<String>,
@@ -548,21 +576,16 @@ impl ReimbursementState {
 
         match reconcile_evolute_reimbursement(&csv, &charges, reimbursed, rates) {
             Ok(reconciliation) => {
-                // As for a surplus. See `SessionNotes::write_logs`.
-                if let Err(e) = reconciliation.notes.write_logs() {
-                    self.error = Some(format!("cannot write the run log: {e}"));
-                    return;
-                }
                 // The Charges Report has a log of its own. It carries no per-row anomalies -- it
                 // is read all-or-nothing -- so its log holds only what leaves the figures standing.
                 // Always `Some` on this path, which reads the file; the `None` case is a
                 // reconciliation built from bare figures.
-                if let Some(charges) = &reconciliation.charges
-                    && let Err(e) = charges.write_log()
-                {
-                    self.error = Some(format!("cannot write the run log: {e}"));
-                    return;
-                }
+                //
+                // As for a surplus, an unwritten log is reported alongside the reconciliation
+                // rather than instead of it.
+                let charges_log = reconciliation.charges.as_ref().map(|c| c.log());
+                self.log_failures =
+                    write_logs(reconciliation.notes.logs.iter().chain(&charges_log));
                 self.outcome = Some(ReimbursementOutcome {
                     text: reconciliation.to_string(),
                     reconciliation,
@@ -588,6 +611,7 @@ impl ReimbursementState {
     fn clear_results(&mut self) {
         self.outcome = None;
         self.error = None;
+        self.log_failures.clear();
     }
 }
 
@@ -645,7 +669,8 @@ impl Conversion for SessionConversion {
         // See `Sessions::logs`.
         let log_failure = report.log.write().err().map(|e| {
             format!(
-                "The workbook was written, but its run log was not.\n{}: {e}",
+                "The workbook was written, but its run log was not.\n{}: {e}\nCheck that the \
+                 folder can be written to and that the disk is not full.",
                 report.log.path().display()
             )
         });
@@ -686,7 +711,8 @@ impl Conversion for GbConversion {
         // As for a session report.
         let log_failure = report.log.write().err().map(|e| {
             format!(
-                "The workbook was written, but its run log was not.\n{}: {e}",
+                "The workbook was written, but its run log was not.\n{}: {e}\nCheck that the \
+                 folder can be written to and that the disk is not full.",
                 report.log.path().display()
             )
         });

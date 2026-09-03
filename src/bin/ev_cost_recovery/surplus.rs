@@ -35,6 +35,13 @@ pub fn ui(ui: &mut egui::Ui, state: &mut SurplusState, working: &mut WorkingDir)
         widgets::error_block(ui, message);
     }
 
+    // Above the report rather than below it: the reader has to meet this before scrolling into
+    // figures that look complete, because on disk they are not recorded at all.
+    for message in &state.log_failures {
+        ui.add_space(8.0);
+        widgets::error_block(ui, message);
+    }
+
     if state.outcome.is_some() {
         ui.add_space(16.0);
         ui.separator();

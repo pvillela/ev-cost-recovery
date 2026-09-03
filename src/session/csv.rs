@@ -273,13 +273,16 @@ fn note_off_grid_rows(rows: &[Row], log: &mut RunLog) {
         .take(3)
         .map(|r| format!("row {} ({})", r.session.row, r.session.id))
         .collect();
+    // Names its own token. Summarised rather than listed, so unlike every other kind it never
+    // passes through `Anomaly`'s `Display`, which is where the rest gain theirs.
     log.note(format!(
-        "{} of {} rows report a start or end that is not a whole multiple of {:?}: {}. The \
+        "{} of {} rows {}: a reported start or end is not a whole multiple of {:?} ({}). The \
          session report's resolution has become finer than this software's time grid. Nothing is \
          wrong with these rows, but the padding and the consistency window are now wider than the \
          data needs — see docs/maintenance-manual.md, \"Boundaries and the time grid\".",
         offenders.len(),
         rows.len(),
+        AnomalyKind::OffGridTimes.as_str(),
         TIME_GRID_STEP,
         examples.join(", ")
     ));

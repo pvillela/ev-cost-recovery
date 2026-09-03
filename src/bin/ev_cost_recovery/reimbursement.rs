@@ -41,6 +41,12 @@ pub fn ui(ui: &mut egui::Ui, state: &mut ReimbursementState, working: &mut Worki
         widgets::error_block(ui, message);
     }
 
+    // As on the Cost recovery tab: above the reconciliation, not below it.
+    for message in &state.log_failures {
+        ui.add_space(8.0);
+        widgets::error_block(ui, message);
+    }
+
     if state.outcome.is_some() {
         ui.add_space(16.0);
         ui.separator();
