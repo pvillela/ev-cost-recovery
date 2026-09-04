@@ -171,7 +171,6 @@ Much, but not all, of this documentation pertains to software structure or elect
 - [docs/session/time-reporting-uncertainty.md](docs/session/time-reporting-uncertainty.md) --  The impact of the truncation of reported session start and end times.
 - [docs/session/Evolute-Simultaneous_Charging.pdf](docs/session/Evolute-Simultaneous_Charging.pdf) -- Evolute technical documentation about simultaneous charging limits in terms of voltages, currents, kW, kVA, transformer parameters, and number of charging stations.
 - [docs/green_button/README.md](docs/green_button/README.md) -- What the meter export is, when a reading is treated as an anomaly, and when a billing period counts as complete.
-- [docs/green_button/Notes_on_Green_Button_data.md](docs/green_button/Notes_on_Green_Button_data.md) -- Brief notes about Green Button data.
 - [docs/green_button/Toronto_Hydro_Object_Model.md](docs/green_button/Toronto_Hydro_Object_Model.md) -- The conceptual domain model for the Green Button ESPI XML feed.
 - [docs/time/README.md](docs/time/README.md) -- Date-time-related functions and constants, the time grid, the DST fold and how it is resolved.
 - [docs/Development_Approach_and_Roles.md](docs/Development_Approach_and_Roles.md) -- How the software was developed.

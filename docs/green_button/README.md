@@ -1,26 +1,42 @@
 # `green_button` module
 
-This module contains functionality related to Toronto Hydro's Green Button export, an ESPI XML feed of hourly meter readings. Notably, it computes the intervals that maximise the building's kW, kVA, and 7-7 kW during a billing period.
+This module contains functionality to:
+- Read downloaded Toronto Hydro Green Button XML files of hourly meter readings.
+- Identify the intervals that maximise the building's kW, kVA, and 7-7 kW during a billing period.
+- Compute total kWh consumed during a billing period (to cross-check with a bill).
+- Convert the downloaded XML data to an Excel workbook.
 
-This document provides an overview of what the meter export is, when a reading is treated as an anomaly, and when a billing period counts as complete.
+## The data
 
-**See also:**
+### The feed
 
-- [Notes_on_Green_Button_data.md](Notes_on_Green_Button_data.md) — two facts about the data that everything here rests on.
-- [Toronto_Hydro_Object_Model.md](Toronto_Hydro_Object_Model.md) — the ESPI feed's own structure, and how a reading is reached through it.
-- [docs/ERRORS.md](../ERRORS.md) -- contains the error messages associated with this module's functionality and where they appear.
+A file downloaded from Toronto Hydro's [Green Button](https://www.torontohydro.com/for-home/green-button) site is a standard [ESPI (Energy Services Provider Interface)](https://www.naesb.org/espi_standards.asp) XML feed of hourly meter readings. The download spans a date range specified by the user.
 
-## What a reading is
+### What a reading is
 
 The export carries three series — kWh, kW and kVA — each timestamped in UTC on a one-hour grid. The
 kW and kVA figures are not hourly averages: each is the highest 15-minute interval within its hour.
 
-Timestamps are absolute instants, so DST costs nothing here. The clocks going forward or back is a
-question for the local-time column a generated workbook renders, and not for the readings themselves. That is why there is no DST anomaly in this vocabulary, where the session side has three.
+Timestamps are UTC instants, so DST has no impact here. The clocks going forward or back is a
+question for the local-time column a generated workbook renders, and not for the readings themselves.
 
-An hour is **aligned** when it starts on a whole hour. Only aligned hours can be a reported peak. Toronto Hydro's price-period boundaries all fall on the hour, and their UTC offsets are whole hours in both seasons.
+An hour is **aligned** when it starts on a whole hour. All intervals in the feed are expected to be aligned. Only aligned hours can be a reported peak. Toronto Hydro's price-period boundaries all fall on the hour, and their UTC offsets are whole hours in both seasons.
+
+### See also
+
+- [Toronto_Hydro_Object_Model.md](Toronto_Hydro_Object_Model.md) — the ESPI feed's structure, and how a reading is reached through it.
+
+## Billing periods
+
+As much of this module's functionality involves billing periods, it is important to characterize billing periods precisely.
+
+A billing period spans 00:00:00 EST (inclusive) on the 24th of a month to 00:00:00 EST (exclusive) on the 23rd of the following month. Notice that billing periods are always defined in terms of EST (Eastern **Standard** Time), which does not change with DST. 
+
+A data feed contains readings for a full billing period when the number of hourly readings inside it equals the number of hours between the billing period boundaries.
 
 ## Anomalies
+
+(See also [docs/ERRORS.md](../ERRORS.md) -- contains the error messages associated with this module's functionality and where they appear.)
 
 None of these is fatal. A generated workbook is still written and the figures are still produced; an anomaly
 says a reading needed review, not that the run failed.
@@ -50,29 +66,22 @@ place a reading thousands of years away, and filling to it would mean millions o
 out-of-memory kill or an apparent hang, neither of which tells anyone what is wrong. Past a
 plausible size the gap is recorded and left as a gap.
 
-### The tokens are a wire format
+### Incomplete periods
 
-`Anomaly::as_str` is what a generated workbook cell holds, and what is read back from one. Renaming a variant silently makes every workbook already written deviate from the new naming.
-
-## When a period is complete
-
-A billing period is complete when the number of hourly readings inside it equals the number of hours
-between its boundaries. The expected count is derived from the boundary instants rather than stated,
-so it stays correct however the boundary is defined — and it is why the periods ending 2026-03-23
-and 2025-11-23 hold 672 and 744 hours, matching the day counts their invoices state, rather than the
-671 and 745 a prevailing-local-midnight boundary produced.
+A billing period is incomplete when the data feed does **not** contains readings for the full billing period.
 
 Two different things follow from an incomplete period, and they are not the same finding:
 
-- **On the Convert tab** it is [worth knowing and nothing more](../ERRORS.md#worth-knowing). An
-  export starts and stops where it starts and stops, so the first and last periods it reaches are
-  ordinarily partial. The workbook marks them in red on `nbr_of_intervals` so a reader does not
-  take their maxima for a whole period's.
 - **When a period is priced** it stops the run. Peak demand is the highest reading in the period,
   and a period missing hours may be missing the highest one, so the figure is refused rather than
   estimated. See
   [the meter data covers only part of the period](../ERRORS.md#the-meter-data-covers-only-part-of-the-period).
+- **On the Convert tab** it is [worth knowing and nothing more](../ERRORS.md#worth-knowing). An
+  export starts and stops where it starts and stops, so the first and last periods it reaches may
+  be incomplete. The workbook marks them in red on `nbr_of_intervals` so a reader does not
+  take their maxima for a whole period's.
 
-A period the export does not reach at all is refused when it is read, rather than returned as a row
-of zeroes: zeroes would read as a month of no consumption, which is a figure someone could go on to
-argue a bill from.
+### The tokens are a wire format
+
+`Anomaly::as_str` is what a generated workbook cell holds, and what is read back from one. Renaming a variant silently makes every workbook already written deviate from the new naming.
+
