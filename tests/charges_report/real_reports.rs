@@ -1,31 +1,59 @@
-//! Slow-tier check against the real Charges Reports in `data/evolute`.
+//! What a Charges Report has to satisfy, checked against real files.
 //!
-//! Ignored by default: those files are not in the repository. Run explicitly with:
+//! Parsing without error is the weaker half. The stronger half is that the file covers the month
+//! its name states, and that the two totals are the ones a person adding the columns by hand would
+//! get -- which is the whole reason to read the file rather than have someone type its totals in.
 //!
-//! ```text
-//! cargo test --test integration -- charges_report::real_reports --ignored --nocapture
-//! ```
+//! Two tiers, and they run the same checks:
 //!
-//! Parsing without error is the weaker half. The stronger half is that the file is one period,
-//! that every row carries a status this code has seen before, and that the two totals are the ones
-//! a person adding the columns by hand would get -- which is the whole reason to read the file
-//! rather than have someone type its totals in.
+//! - The **committed fixture** under `tests/fixtures/charges/`, which CI reads. Five real rows,
+//!   anonymised, under the name the portal writes.
+//! - Every Charges Report in `data/evolute`, which CI does not: those files are not in the
+//!   repository. `#[ignore]`d, and run explicitly with
+//!
+//!   ```text
+//!   cargo test --test integration -- charges_report::real_reports --ignored --nocapture
+//!   ```
+//!
+//! The fixture tier is what keeps the by-hand totalling honest between exports. The `data/evolute`
+//! tier is what notices a shape no fixture has.
 
-use ev_cost_recovery::charges_report::charges_report;
-use std::{fs, path::PathBuf};
+use ev_cost_recovery::charges_report::{charges_report, parse_charges_report_name};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 /// Evolute's own files, both reports, beside each other -- see `crate::charges_report`.
 fn evolute_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("data/evolute")
 }
 
-/// Charges Reports are named `<building>_Charges_<Month Year>-<Month Year>.csv`, matched
-/// case-insensitively as the reader matches it.
-fn is_charges_report(path: &std::path::Path) -> bool {
-    let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+/// Whether the crate would read this file as a Charges Report.
+///
+/// Asked of the parser rather than by matching the name here, so the walk picks up exactly the
+/// files the reader accepts. `data/evolute` still holds exports under the old
+/// `<building>_charges_<ISO timestamp>.csv` name, which is no longer read; those are not Charges
+/// Reports as far as this crate is concerned, and a filter that caught them would fail on a file
+/// nothing is expected to open.
+fn is_charges_report(path: &Path) -> bool {
+    let Some(stem) = path.file_stem().and_then(|n| n.to_str()) else {
         return false;
     };
-    name.to_ascii_lowercase().contains("_charges_") && name.ends_with(".csv")
+    path.extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("csv"))
+        && parse_charges_report_name(stem).is_ok()
+}
+
+/// The committed fixture, checked the same way the real files are.
+///
+/// This is the half CI runs. Without it the by-hand totalling below is dead code between the
+/// occasions someone remembers to pass `--ignored`, and a change that broke it would sit unnoticed.
+#[test]
+fn the_committed_fixture_parses_and_totals_its_own_columns() {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/charges/XX-XX_Charges_June 2026-June 2026.csv");
+    check(&path);
 }
 
 #[test]
@@ -44,69 +72,74 @@ fn every_charges_report_parses_and_totals_its_own_columns() {
     );
 
     for path in &paths {
-        let report = charges_report(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
-
-        println!(
-            "{}\n  {} to {}, {} rows, {:.3} kWh, ${:.2}",
-            path.display(),
-            report.from,
-            report.to,
-            report.rows,
-            report.total_kwh,
-            report.total_amount,
-        );
-        // Printed rather than asserted. Every report seen so far carries one span on every row,
-        // but whether a row may state its breaker's own subscription span is an open question with
-        // Evolute -- see docs/Questions_for_Evolute.md -- so a file with several is not a failure.
-        // This is how a new shape gets noticed.
-        for ((from, to), rows) in &report.spans {
-            println!("  {from} to {to}: {} row(s)", rows.len());
-        }
-
-        assert!(report.rows > 0, "{}: no rows", path.display());
-        assert!(
-            report.from <= report.to,
-            "{}: dates reversed",
-            path.display()
-        );
-
-        // The reader refuses a file whose rows leave the month its name states, so reaching here
-        // is already proof of it. Restated as an assertion because it is the property this whole
-        // walk over the real files exists to confirm: that Evolute's own reports satisfy the rule
-        // the reader now enforces, and no genuine file is being turned away.
-        assert_eq!(
-            report.month,
-            report.from.first_of_month(),
-            "{}: the name's month does not contain the rows",
-            path.display()
-        );
-        assert!(
-            report.from >= report.month && report.to <= report.month.last_of_month(),
-            "{}: rows reach outside the month the name states",
-            path.display()
-        );
-
-        // Totalled against a second, independent pass over the file. Not a tautology: this one is
-        // written the way a person would add the columns up, while the reader accumulates as it
-        // parses and could in principle skip or double-count a row.
-        let (kwh, amount) = totals_by_hand(path);
-        assert!(
-            (report.total_kwh - kwh).abs() < 1e-9,
-            "{}: kWh total {} does not match {kwh}",
-            path.display(),
-            report.total_kwh
-        );
-        assert!(
-            (report.total_amount - amount).abs() < 1e-9,
-            "{}: cost total {} does not match {amount}",
-            path.display(),
-            report.total_amount
-        );
+        check(path);
     }
 }
 
+/// Everything one Charges Report has to satisfy.
+fn check(path: &Path) {
+    let report = charges_report(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+
+    println!(
+        "{}\n  {} to {}, {} rows, {:.3} kWh, ${:.2}",
+        path.display(),
+        report.from,
+        report.to,
+        report.rows,
+        report.total_kwh,
+        report.total_amount,
+    );
+    // Printed rather than asserted. Every report seen so far carries one span on every row,
+    // but whether a row may state its breaker's own subscription span is an open question with
+    // Evolute -- see docs/Questions_for_Evolute.md -- so a file with several is not a failure.
+    // This is how a new shape gets noticed.
+    for ((from, to), rows) in &report.spans {
+        println!("  {from} to {to}: {} row(s)", rows.len());
+    }
+
+    assert!(report.rows > 0, "{}: no rows", path.display());
+    assert!(
+        report.from <= report.to,
+        "{}: dates reversed",
+        path.display()
+    );
+
+    // The reader refuses a file whose rows leave the month its name states, so reaching here
+    // is already proof of it. Restated as an assertion because it is the property this whole
+    // walk over the real files exists to confirm: that Evolute's own reports satisfy the rule
+    // the reader now enforces, and no genuine file is being turned away.
+    assert_eq!(
+        report.month,
+        report.from.first_of_month(),
+        "{}: the name's month does not contain the rows",
+        path.display()
+    );
+    assert!(
+        report.from >= report.month && report.to <= report.month.last_of_month(),
+        "{}: rows reach outside the month the name states",
+        path.display()
+    );
+
+    // Totalled against a second, independent pass over the file. Not a tautology: this one is
+    // written the way a person would add the columns up, while the reader accumulates as it
+    // parses and could in principle skip or double-count a row.
+    let (kwh, amount) = totals_by_hand(path);
+    assert!(
+        (report.total_kwh - kwh).abs() < 1e-9,
+        "{}: kWh total {} does not match {kwh}",
+        path.display(),
+        report.total_kwh
+    );
+    assert!(
+        (report.total_amount - amount).abs() < 1e-9,
+        "{}: cost total {} does not match {amount}",
+        path.display(),
+        report.total_amount
+    );
+}
+
 /// The two column totals, read straight out of the text.
-fn totals_by_hand(path: &std::path::Path) -> (f64, f64) {
+fn totals_by_hand(path: &Path) -> (f64, f64) {
     let text = fs::read_to_string(path).expect("a readable CSV");
     let mut lines = text.lines();
     let header = cells(lines.next().expect("a header row"));
