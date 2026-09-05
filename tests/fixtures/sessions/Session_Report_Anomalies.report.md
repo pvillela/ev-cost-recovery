@@ -10,10 +10,10 @@ Estimates
 
 | Estimate     | Unit |  Value | Segment |
 |:-------------|:-----|-------:|:--------|
-| Energy-based | kW   | 20.608 | 17:15   |
-| Energy-based | kVA  | 21.105 | 17:15   |
-| Count-based  | kW   | 21.387 | 17:15   |
-| Count-based  | kVA  | 21.893 | 17:15   |
+| Energy-based | kW   | 19.080 | 17:15   |
+| Energy-based | kVA  | 19.560 | 17:15   |
+| Count-based  | kW   | 17.841 | 17:15   |
+| Count-based  | kVA  | 18.309 | 17:15   |
 
 "Energy-based" is derived from the sessions' own consumption, "Count-based"
 from how many of them were charging and the per-EV rating of the
@@ -39,8 +39,8 @@ Segments
 | Segment | Count-based | Energy-based |
 |:--------|------------:|-------------:|
 | 17:00   |       0.333 |        2.000 |
-| 17:15   |       3.200 |       20.314 |
-| 17:30   |       1.133 |        6.879 |
+| 17:15   |       2.667 |       18.800 |
+| 17:30   |       1.000 |        6.000 |
 | 17:45   |       0.000 |        0.000 |
 
 Times are local, on the zone the Interval line above names, and each segment
@@ -60,7 +60,7 @@ Sessions by segment
 
 - 17:00 - N1
 - 17:15 - N1, N2, EXCESS, SPIKE
-- 17:30 - N1, N2, SPIKE
+- 17:30 - N1, N2
 - 17:45 - none
 
 

@@ -1,6 +1,5 @@
 use super::Session;
-use crate::time::{Interval, Tou, tou_partition};
-use jiff::Timestamp;
+use crate::time::{Interval, Tou, tou_of, tou_partition};
 use std::{ops::Deref, time::Duration};
 
 /// Energy split across the three Ontario time-of-use bands, in kilowatt-hours.
@@ -52,30 +51,30 @@ pub fn tou_kwh(time_range: Interval, sessions: &[impl Deref<Target = Session>]) 
     let mut off_peak_kwh = 0.0;
 
     for s in sessions {
-        // A record naming the same instant for its start and its end has no span to divide by, and
-        // dividing by it would give an infinite rate that poisons every bucket it touched. The
-        // energy is still energy, so it is filed whole under the band its one instant falls in.
-        //
-        // Reachable, and it was not before: while reported times were truncated to the minute the
-        // span was padded out to a whole grid step and was never empty. Such a record is consistent
-        // -- start + 0 == end -- so nothing excludes it, and its energy has to reach a band the way
-        // every other session's does.
-        //
-        // `sub_second_span` stands a second in for the missing span, so the arithmetic below runs
-        // unchanged: the rate is the energy over that second and the overlap is that second, so the
-        // whole of the energy lands in whichever band it falls in. Ontario's price-period
-        // boundaries are all on the hour, so one second never straddles two of them.
-        let conn_span = s.conn_span();
-        let session_interval = match conn_span.is_zero() {
-            true => sub_second_span(s.conn_start),
-            false => Interval::new(s.conn_start, conn_span),
-        };
-        let conn_span = session_interval.duration;
-        let kwh_per_sec = s.energy_use / conn_span.as_secs_f64();
+        // A session reported to start and end at the same instant has no span to prorate over.
+        // `Session::interval_kwh` carries that rule -- all of the energy is inside if the instant
+        // is -- and it is applied here to the whole range rather than band by band, because a
+        // session of no duration cannot straddle a boundary.
+        if s.conn_span().is_zero() {
+            let kwh = s.interval_kwh(&time_range);
+            if kwh == 0.0 {
+                continue;
+            }
+            // One second at the instant, only to name the band. Ontario's price periods all change
+            // on the hour, so a second lies in exactly one of them.
+            let probe = Interval::new(s.conn_start, Duration::from_secs(1));
+            match tou_of(probe).expect("a one-second interval lies in a single price period") {
+                Tou::OnPeak => on_peak_kwh += kwh,
+                Tou::MidPeak => mid_peak_kwh += kwh,
+                Tou::OffPeak => off_peak_kwh += kwh,
+            }
+            continue;
+        }
+
+        let session_interval = Interval::new(s.conn_start, s.conn_span());
         let overlap = session_interval.intersection(&time_range);
-        let partition = tou_partition(overlap);
-        for (tou, itvl) in partition {
-            let tou_kwh = kwh_per_sec * itvl.duration.as_secs_f64();
+        for (tou, itvl) in tou_partition(overlap) {
+            let tou_kwh = s.interval_kwh(&itvl);
             match tou {
                 Tou::OnPeak => on_peak_kwh += tou_kwh,
                 Tou::MidPeak => mid_peak_kwh += tou_kwh,
@@ -91,15 +90,6 @@ pub fn tou_kwh(time_range: Interval, sessions: &[impl Deref<Target = Session>]) 
     }
 }
 
-/// The one-second span standing in for a session reported to start and end at the same instant.
-///
-/// A stand-in for the arithmetic only. It is never widened into a claim about how long the session
-/// ran: the whole of the energy lands in it either way, because the rate is the energy divided by
-/// this second and the overlap is this second.
-fn sub_second_span(at: Timestamp) -> Interval {
-    Interval::new(at, Duration::from_secs(1))
-}
-
 // cargo test --lib -- session::energy::test
 #[cfg(test)]
 mod test {
@@ -109,9 +99,9 @@ mod test {
     /// A record naming one instant for both its ends still contributes all of its energy, under
     /// the band that instant falls in.
     ///
-    /// The padding used to give such a record a minute to be spread over. Without it there is no
-    /// span, but the energy is not thereby less real — dropping it would take kilowatt-hours out of
-    /// a total silently, which is the one thing a figure drawn from these sessions must not do.
+    /// There is no span to spread it over, but the energy is not thereby less real — dropping it
+    /// would take kilowatt-hours out of a total silently, which is the one thing a figure drawn
+    /// from these sessions must not do.
     #[test]
     fn a_zero_length_session_contributes_all_its_energy() {
         // 02:00 EDT on 10 June, off-peak, reported as a single instant.

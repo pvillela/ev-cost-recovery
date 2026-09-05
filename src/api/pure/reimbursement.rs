@@ -33,13 +33,10 @@ pub use crate::{
 ///
 /// One variant, settled from the month given and the rates given, before anything is summed.
 ///
-/// It was five. The other four were about the session report's *name* — that there was exactly one,
-/// that it stated its dates, that those dates were a whole calendar month, and that the month
-/// matched the Charges Report's. None of them can be asked here any more: the month comes from the
-/// Charges Report, and whether the session reports reach across it is
+/// Nothing here asks about the session reports. The month comes from the Charges Report, and
+/// whether the session reports reach across it is
 /// [`check_reports_cover`](super::check_reports_cover)'s question, asked by the caller that holds
-/// the paths. The portal exports any date range, so requiring a month-aligned session report was
-/// requiring something a user may never have.
+/// the paths.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ReimbursementError {
     /// The rates given had not taken effect by the first day of the month.
@@ -581,10 +578,8 @@ mod test {
     /// Rates beginning after the month does would price only part of it, so the call is refused
     /// before anything is summed.
     ///
-    /// The only refusal left here. Whether the session reports reach across the month is
-    /// `check_reports_cover`'s question now, asked by the caller that holds the paths — this
-    /// function is handed the month and a set of sessions and asks nothing about where they came
-    /// from. Three refusals about the session report's own name went with that change.
+    /// The only refusal here: this function is handed the month and a set of sessions, and asks
+    /// nothing about where they came from.
     #[test]
     fn rates_that_begin_after_the_month_are_refused() {
         let one = vec![session(JUNE, 2, "S1", "2026-06-10T06:00:00Z", 60, 10.0)];
@@ -656,10 +651,9 @@ mod test {
     /// The month the reconciliation prices comes from the Charges Report, and the session reports
     /// are checked to cover it.
     ///
-    /// This replaces a check that the two documents named the *same* month. That check needed the
-    /// session report to be a whole calendar month, and the portal exports any range — a user may
-    /// simply never hold a month-aligned one. Coverage asks the question that actually matters, and
-    /// takes any number of reports.
+    /// Coverage rather than an equality of months: the portal exports any date range, so a user
+    /// may never hold a month-aligned session report, and any number of reports may be needed to
+    /// span the month between them.
     #[test]
     fn the_session_reports_must_cover_the_charges_month() {
         let june_files = [

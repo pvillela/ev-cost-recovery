@@ -11,7 +11,7 @@
 
 use crate::{
     hydro_bill::{NotABillingPeriodEnding, billing_period_dates},
-    session::{report_coverage, reports_cover},
+    session::{SessionReportNameError, parse_session_report_name, reports_cover},
 };
 use jiff::civil::Date;
 use std::{
@@ -33,9 +33,14 @@ pub enum CoverageError {
     NotABillingPeriodEnding(NotABillingPeriodEnding),
 
     /// A session report's file name does not state the dates it covers, so it cannot be checked
-    /// against the billing period. See
-    /// [`report_coverage`](crate::session::report_coverage).
-    UndatedSessionReport { path: PathBuf },
+    /// against the billing period.
+    ///
+    /// The cause says which of the ways it failed, and carries the expected form. Stated there
+    /// rather than here so there is one wording of it in the crate.
+    UndatedSessionReport {
+        path: PathBuf,
+        cause: SessionReportNameError,
+    },
 
     /// The session reports given do not cover the whole billing period between them.
     ///
@@ -58,12 +63,11 @@ impl fmt::Display for CoverageError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::NotABillingPeriodEnding(e) => e.fmt(f),
-            Self::UndatedSessionReport { path } => write!(
-                f,
-                "{}: the file name does not say what the report covers; expected a name of the \
-                 form Session_Report_June_1_2026-June_30_2026.csv",
-                path.display()
-            ),
+            // The cause states the form expected and which way this name failed, so repeating
+            // either here would print it twice.
+            Self::UndatedSessionReport { path, cause } => {
+                write!(f, "{}: {cause}", path.display())
+            }
             Self::PeriodNotCovered {
                 period_start,
                 period_ending,
@@ -87,6 +91,7 @@ impl Error for CoverageError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::NotABillingPeriodEnding(e) => Some(e),
+            Self::UndatedSessionReport { cause, .. } => Some(cause),
             _ => None,
         }
     }
@@ -133,8 +138,20 @@ pub fn check_reports_cover(
     let coverage = report_paths
         .iter()
         .map(|path| {
-            report_coverage(path).ok_or_else(|| CoverageError::UndatedSessionReport {
+            let stem = path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or_default();
+            let (from, to) = parse_session_report_name(stem).map_err(|cause| {
+                CoverageError::UndatedSessionReport {
+                    path: path.to_path_buf(),
+                    cause,
+                }
+            })?;
+            Ok::<_, CoverageError>(SessionReportCoverage {
                 path: path.to_path_buf(),
+                from,
+                to,
             })
         })
         .collect::<Result<Vec<_>, _>>()?;

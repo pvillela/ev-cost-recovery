@@ -256,6 +256,11 @@ impl Interval {
         self.start + self.duration
     }
 
+    /// Whether `at` lies inside, counting the start and excluding the end as everything here does.
+    pub fn contains(&self, at: Timestamp) -> bool {
+        self.start <= at && at < self.end()
+    }
+
     pub fn is_empty(&self) -> bool {
         self.duration == Duration::ZERO
     }

@@ -57,9 +57,9 @@ pub struct PowerEstimates {
 /// One demand-priced delivery line's interval of interest, and the EV estimate over it.
 ///
 /// The estimate is kept whole rather than reduced to the one figure the charge was computed from.
-/// That figure is the mid-point of an energy-based bracket over the
-/// [`Segment`](crate::session::Segment) within the interval that maximizes it, and which interval,
-/// which segment and which sessions reached it are not recoverable from an `f64`.
+/// That figure is the energy-based estimate over the [`Segment`](crate::session::Segment) within
+/// the interval that maximizes it, and which interval, which segment and which sessions reached it
+/// are not recoverable from an `f64`.
 ///
 /// Two maxima, not one, and they are found from different sources: which interval is the one the
 /// *building* peaked in, read from the meter export, while which segment within it is the one the
@@ -94,13 +94,13 @@ pub struct DeliveryCost {
     /// `'Transmission Network Charge' / 'Adj. Peak kW 7-7'` from bill.
     pub blended_transmission_network_rate: f64,
 
-    /// Mid-point of energy-based bracket of EV kVA from sessions
+    /// Energy-based estimate of EV kVA from sessions
     /// for Demand kVA interval of interest.
     pub demand_kva: f64,
-    /// Mid-point of energy-based bracket of EV kW from sessions
+    /// Energy-based estimate of EV kW from sessions
     /// for Demand kW interval of interest.
     pub demand_kw: f64,
-    /// Mid-point of energy-based bracket of EV kW from sessions
+    /// Energy-based estimate of EV kW from sessions
     /// for Peak 7-7 kW interval of interest.
     pub peak_7_7_kw: f64,
 
@@ -627,12 +627,11 @@ impl fmt::Display for DeliveryCost {
             f,
             "{}\n",
             wrap(
-                "Each EV demand is a single figure taken from a range: the mid-point of the \
-                 \"Energy-based\" range for the 15-minute segment that charge was priced on. It \
-                 is the energy-based estimate in every case, never the count-based one. The \
-                 figure is a range to begin with because the reported session times are stated \
-                 only to the minute. The ranges themselves, and the interval each was drawn from, \
-                 are in the peak power detail report for that charge.",
+                "Each EV demand is the \"Energy-based\" figure for the 15-minute segment that \
+                 charge was priced on -- the energy-based estimate in every case, never the \
+                 count-based one. Each is the energy the chargers put into that segment over the \
+                 segment's length. The figures, and the interval each was drawn from, are in the \
+                 peak power detail report for that charge.",
                 "",
             )
         )?;
@@ -642,10 +641,6 @@ impl fmt::Display for DeliveryCost {
 }
 
 /// One figure off the segment that maximises an interval's energy-based estimate.
-///
-/// The mid-point of the bracket, because the reported session times are stated only to the minute
-/// and the overlap they imply is a range. A bill needs one number, and the mid-point is the only
-/// choice that does not systematically over- or under-state the share.
 ///
 /// Both units are read off the one segment [`IntervalEstimates`] already chose, which is the
 /// selector's reason for existing: the choice is made on energy-based kW, and the load model is

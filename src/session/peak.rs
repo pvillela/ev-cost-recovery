@@ -58,10 +58,6 @@ pub struct IntervalEstimates {
 /// Two derivations times two units. The energy-based pair reads the sessions' own consumption; the
 /// count-based pair reads how many of them were charging against the per-EV rating of the
 /// infrastructure.
-///
-/// Each was a bracket while reported session times were truncated to the minute and the overlap
-/// they implied was a range. The portal states seconds, the overlap is exact, and so is each figure
-/// here.
 #[derive(Debug)]
 pub struct EstimateSet {
     pub energy_based_kw: f64,
@@ -96,10 +92,11 @@ pub(crate) fn estimates_from_sessions(
     sources: Vec<PathBuf>,
     sessions: &Sessions,
 ) -> IntervalEstimates {
-    // Spikes take part in the estimates on the same footing as any other session. A spike's raw
-    // energy over charge time is infinite or NaN, either of which would swamp or poison any
-    // segment it entered, and [`Session::avg_kw`] substitutes a finite figure for exactly that
-    // reason — so nothing has to be done to a spike here. See docs/session/README.md, "Anomalies".
+    // Spikes take part in the estimates on the same footing as any other session, and need no
+    // special handling: what a session contributes is its energy prorated over its connection span,
+    // and a spike has both. Zero `Active_Charge_Time` says the charger reported no charging time,
+    // which is worth flagging and does not bear on how much energy reached the segment. See
+    // docs/session/README.md, "Anomalies".
     let rsessions: Vec<RSession> = sessions
         .sessions
         .iter()
@@ -300,28 +297,72 @@ mod test {
         Interval::from_start_end(ts("2026-06-15T20:00:00Z"), ts("2026-06-15T21:00:00Z"))
     }
 
-    /// A session spanning `[start, end)` exactly, drawing `kw` on average.
+    /// A session spanning `[start, end)` exactly, drawing `kw` evenly across it.
     ///
-    /// The reported end *is* the end of the span: reported times are taken at face value, so there
-    /// is nothing to work backwards through. The helper used to subtract a grid step to invert the
-    /// padding on the reported end, and that padding is gone.
+    /// `energy_use` is `kw` times the *span* in hours, which is what makes the session contribute
+    /// `kw` to any segment it covers end to end: the estimate prorates energy over the span. Sizing
+    /// it against `charge_time` instead would mean a three-hour session stated as drawing `kw`
+    /// contributing a third of it.
     ///
-    /// `charge_time` and `energy_use` are chosen so that `avg_kw()` returns `kw`.
+    /// `charge_time` matches the span, so the record is self-consistent and `avg_kw()` also returns
+    /// `kw`. Nothing in the estimate reads it.
     fn session(id: &str, start: &str, end: &str, kw: f64) -> RSession {
         let conn_start = ts(start);
         let conn_end = ts(end);
-        let charge_time = Duration::from_secs(3600);
+        let span = conn_end.duration_since(conn_start).unsigned_abs();
         Rc::new(Session {
             path: Rc::new(PathBuf::from("Session_Report_Test.csv")),
             row: 2,
             id: id.to_owned(),
             conn_start,
             conn_end,
-            conn_duration: conn_end.duration_since(conn_start).unsigned_abs(),
-            charge_time,
-            energy_use: kw * charge_time.as_secs_f64() / 3600.0,
+            conn_duration: span,
+            charge_time: span,
+            energy_use: kw * span.as_secs_f64() / 3600.0,
             anomalies: Vec::new(),
         })
+    }
+
+    /// A session reported to start and end at the same instant puts all of its energy into the
+    /// segment holding that instant, and none into the others.
+    ///
+    /// The case with no span to prorate over, and the one an intersection test alone gets wrong:
+    /// such a session has no width, so it would reach no segment and its energy would vanish from
+    /// every demand figure. `Session::intersects` answers for it specially.
+    #[test]
+    fn a_zero_span_session_gives_all_its_energy_to_one_segment() {
+        // 20:20Z is inside the second quarter of the 20:00-21:00 hour.
+        let at = ts("2026-06-15T20:20:00Z");
+        let instant = Rc::new(Session {
+            path: Rc::new(PathBuf::from("Session_Report_Test.csv")),
+            row: 2,
+            id: "INSTANT".to_owned(),
+            conn_start: at,
+            conn_end: at,
+            conn_duration: Duration::ZERO,
+            charge_time: Duration::ZERO,
+            energy_use: 3.0,
+            anomalies: vec![AnomalyKind::ZeroActiveChargeTime],
+        });
+
+        let segments = segments_for_ioi(hour(), &[instant]);
+        let kwh: Vec<f64> = segments
+            .iter()
+            .map(|seg| {
+                seg.sessions.iter().fold(0.0, |acc, s| {
+                    acc + s.interval_kwh(&Interval::new(seg.start(), SEGMENT_DURATION))
+                })
+            })
+            .collect();
+        assert_eq!(kwh, vec![0.0, 3.0, 0.0, 0.0], "{kwh:?}");
+
+        // And as power: 3 kWh in a quarter hour is 12 kW.
+        let (second, _) = (&segments[1], ());
+        assert!(
+            (second.agg_kw() - 12.0).abs() < TOLERANCE,
+            "{}",
+            second.agg_kw()
+        );
     }
 
     // -----------------------------------------------------------------------

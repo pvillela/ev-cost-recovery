@@ -10,8 +10,8 @@ Estimates
 
 | Estimate     | Unit |  Value | Segment |
 |:-------------|:-----|-------:|:--------|
-| Energy-based | kW   | 19.053 | 17:15   |
-| Energy-based | kVA  | 19.533 | 17:15   |
+| Energy-based | kW   | 17.751 | 17:15   |
+| Energy-based | kVA  | 18.218 | 17:15   |
 | Count-based  | kW   | 20.500 | 17:15   |
 | Count-based  | kVA  | 20.996 | 17:15   |
 
@@ -34,10 +34,10 @@ Segments
 
 | Segment | Count-based | Energy-based |
 |:--------|------------:|-------------:|
-| 17:00   |       2.467 |       15.293 |
-| 17:15   |       3.067 |       18.773 |
-| 17:30   |       2.867 |       17.867 |
-| 17:45   |       1.467 |        8.847 |
+| 17:00   |       2.467 |       14.553 |
+| 17:15   |       3.067 |       17.482 |
+| 17:30   |       2.867 |       16.165 |
+| 17:45   |       1.467 |        8.440 |
 
 Times are local, on the zone the Interval line above names, and each segment
 is 15 minutes long, named by the minute it starts on. That is an hour later

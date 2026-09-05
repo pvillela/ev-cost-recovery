@@ -12,7 +12,7 @@ use ev_cost_recovery::{
         reconcile_evolute_reimbursement, session_csv_to_xlsx,
     },
     log::SourceLog,
-    session::report_coverage,
+    session::parse_session_report_name,
 };
 use jiff::civil;
 use std::path::{Path, PathBuf};
@@ -264,15 +264,12 @@ impl SurplusState {
     /// the file dialog is still fresh in mind.
     pub fn select(&mut self, which: Input, path: PathBuf) {
         self.input_notes.retain(|(w, _)| *w != which);
-        if which.is_session_report() && report_coverage(&path).is_none() {
-            self.input_notes.push((
-                which,
-                format!(
-                    "\"{}\" does not say what it covers. Expected a name like \
-                     Session_Report_June_1_2026-June_30_2026.csv.",
-                    file_name(&path)
-                ),
-            ));
+        if which.is_session_report()
+            && let Err(e) = parse_session_report_name(&file_stem(&path))
+        {
+            // The error's own wording, which states the form expected. Writing it out here again
+            // would be a second copy to keep in step with the parser.
+            self.input_notes.push((which, e.to_string()));
         }
         let slot = match which {
             Input::Bill => &mut self.bill,
@@ -306,10 +303,10 @@ impl SurplusState {
     /// none of them refused.
     ///
     /// **The second session report is optional.** A billing period runs from the 24th to the 23rd,
-    /// so it usually takes two monthly exports — but the portal exports any date range, and one
-    /// file covering the whole period is as good as two. Whether the reports actually reach across
-    /// the period is `api::pure::check_reports_cover_period`'s question, asked when the run starts:
-    /// two files that leave a gap are refused there, which a count could never catch.
+    /// so it usually takes two monthly exports, but one file covering the whole period is as good
+    /// as two. Whether the reports actually reach across the period is
+    /// `api::pure::check_reports_cover_period`'s question, asked when the run starts — which also
+    /// catches two files that leave a gap, as a count never could.
     pub fn can_run(&self) -> bool {
         self.bill.is_some()
             && self.meter.is_some()
@@ -441,13 +438,6 @@ fn write_logs<'a>(logs: impl IntoIterator<Item = &'a SourceLog>) -> Vec<String> 
         .collect()
 }
 
-/// A path's file name, for a message that has already said which picker it is about.
-pub fn file_name(path: &Path) -> String {
-    path.file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_else(|| path.display().to_string())
-}
-
 fn file_stem(path: &Path) -> String {
     path.file_stem()
         .map(|n| n.to_string_lossy().into_owned())
@@ -499,28 +489,17 @@ impl ReimbursementState {
     /// Takes the session report.
     ///
     /// The name is checked here rather than at run time, for the reason
-    /// [`SurplusState::select`] checks its own: the file name is the only thing that says which
-    /// month the report holds, and a name that does not say is worth catching while the dialog is
-    /// still fresh in mind. A whole calendar month is wanted, not merely a dated span — half a
-    /// month reconciled against a full month's payment is a variance that means nothing.
+    /// [`SurplusState::select`] checks its own: the file name is the only thing that says what the
+    /// report holds, and a name that does not say is worth catching while the dialog is still fresh
+    /// in mind.
+    ///
+    /// **Only that the name reads.** Whether the report covers the month being reconciled is
+    /// decided at run time, against the month the Charges Report names — which is not known yet
+    /// here. This used to demand a whole calendar month, which the portal may never export.
     pub fn select(&mut self, path: PathBuf) {
-        self.input_note = match report_coverage(&path) {
-            None => Some(format!(
-                "\"{}\" does not say what it covers. Expected a name like \
-                 Session_Report_June_1_2026-June_30_2026.csv.",
-                file_name(&path)
-            )),
-            Some(c) if c.from != c.from.first_of_month() || c.to != c.from.last_of_month() => {
-                Some(format!(
-                    "\"{}\" covers {} to {}, which is not a whole calendar month. A \
-                     reimbursement settles one month.",
-                    file_name(&path),
-                    c.from,
-                    c.to
-                ))
-            }
-            Some(_) => None,
-        };
+        self.input_note = parse_session_report_name(&file_stem(&path))
+            .err()
+            .map(|e| e.to_string());
         self.sessions = Some(path);
         self.clear_results();
     }
@@ -1079,10 +1058,8 @@ mod test {
     /// Nothing runs until the bill, the meter export and one session report are in hand. The
     /// second session report is optional.
     ///
-    /// It was all four. A billing period usually takes two monthly exports, but the portal exports
-    /// any date range and one file covering the whole period is as good as two — so a count is the
-    /// wrong test. Whether the reports actually reach across the period is checked when the run
-    /// starts, which catches two files that leave a gap as well.
+    /// A count is the wrong test: what matters is whether the reports reach across the period,
+    /// which is checked when the run starts and also catches two files that leave a gap.
     #[test]
     fn the_run_needs_one_session_report_not_two() {
         let required = [Input::Bill, Input::Meter, Input::Sessions1];
@@ -1110,43 +1087,40 @@ mod test {
         }
     }
 
-    /// A session report is taken only when its name says it holds a whole calendar month. Both
-    /// refusals are made at pick time, while the dialog is still fresh in mind.
+    /// A session report is taken when its name reads, whatever range it states.
+    ///
+    /// It used to be refused unless the name stated a whole calendar month. The portal exports any
+    /// range, so that was a requirement a user may never be able to satisfy; whether the reports
+    /// cover the month being reconciled is settled at run time, against the month the Charges
+    /// Report names.
     #[test]
-    fn the_reimbursement_tab_refuses_a_report_that_is_not_a_whole_month() {
+    fn the_reimbursement_tab_takes_any_range_whose_name_reads() {
         let mut state = ReimbursementState::default();
-        // Chosen first so that `can_run` below turns on the session report's name alone. Whether
-        // the Charges Report is for the same month is settled from inside it, at run time.
+        // Chosen first so that `can_run` below turns on the session report's name alone.
         state.select_charges(PathBuf::from("/data/XX-XX_Charges_June 2026-June 2026.csv"));
 
-        state.select(PathBuf::from(
+        for name in [
             "/data/Session_Report_June_1_2026-June_30_2026.csv",
-        ));
-        assert!(state.input_note.is_none(), "{:?}", state.input_note);
-        assert!(state.can_run());
-
-        state.select(PathBuf::from(
+            // Half a month, and a range straddling two: both are names the portal writes.
             "/data/Session_Report_June_1_2026-June_15_2026.csv",
-        ));
-        assert!(
-            state
-                .input_note
-                .as_deref()
-                .is_some_and(|n| n.contains("not a whole calendar month")),
-            "{:?}",
-            state.input_note
-        );
-        assert!(!state.can_run(), "a refused report does not run");
+            "/data/Session_Report_May_20_2026-July_5_2026.csv",
+        ] {
+            state.select(PathBuf::from(name));
+            assert!(state.input_note.is_none(), "{name}: {:?}", state.input_note);
+            assert!(state.can_run(), "{name}");
+        }
 
+        // A name that does not read at all is still refused, in the parser's own words.
         state.select(PathBuf::from("/data/sessions.csv"));
         assert!(
             state
                 .input_note
                 .as_deref()
-                .is_some_and(|n| n.contains("does not say what it covers")),
+                .is_some_and(|n| n.contains("is not a session report")),
             "{:?}",
             state.input_note
         );
+        assert!(!state.can_run(), "a refused report does not run");
     }
 
     /// A blank figure is refused rather than read as zero. Zero is a real answer -- Evolute paid

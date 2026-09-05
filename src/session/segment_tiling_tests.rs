@@ -131,9 +131,7 @@ fn each_quarter_holds_the_sessions_that_meet_it() {
 /// overlapping it, and the count says so exactly.
 ///
 /// `D` and `E` end at 16:34, `F` starts at 16:34. All three are in the 16:30 quarter because each
-/// meets it, but the shared instant belongs to neither's overlap twice: spans are half-open. This
-/// was a bracket while reported times were truncated to the minute and the shared minute could
-/// have held any of them.
+/// meets it, but the shared instant belongs to `F` alone: spans are half-open.
 #[test]
 fn a_shared_instant_is_counted_once() {
     let report = estimates();

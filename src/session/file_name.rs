@@ -41,8 +41,11 @@ pub struct SessionReportCoverage {
 /// Typed rather than an `Option`, because the reasons are not interchangeable and each one tells a
 /// user something different to do: a file that is not a session report at all was picked in the
 /// wrong slot, a file whose dates will not parse has been renamed by hand, and an inverted range is
-/// a name to correct. Three callers used to write their own message from a bare `None`, and each
-/// spelled the expected form out again.
+/// a name to correct.
+///
+/// Its `Display` is what every caller shows. `api::pure::CoverageError::UndatedSessionReport` and
+/// both of the desktop app's file pickers defer to it, so `NAME_FORM` is written once rather than
+/// in each of their messages.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SessionReportNameError {
     /// The name does not begin `Session_Report_`, or has no readable stem.

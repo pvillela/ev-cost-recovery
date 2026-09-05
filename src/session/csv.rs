@@ -313,8 +313,8 @@ struct CsvSession {
 /// One output row, one per CSV record.
 ///
 /// Carries a whole [`Session`] rather than loose timestamps, so that every derived column is
-/// computed by the same methods the estimating logic uses. When they were separate fields the
-/// write path had its own definition of the session's end, and it was wrong.
+/// computed by the same methods the estimating logic uses. Separate fields let the write path grow
+/// its own definition of the session's end, which was wrong.
 ///
 /// The pass-through CSV columns are not part of a `Session` and never should be, so the row keeps
 /// an index back into the records instead — see [`SessionRows::field`].
@@ -539,8 +539,7 @@ mod test {
     }
 
     /// A reported wall time is read at the fixed offset in every month, so a June record lands five
-    /// hours behind UTC and not four. This is the change the portal confirmed: the same row that
-    /// used to resolve to 20:22Z now resolves to 21:22Z.
+    /// hours behind UTC and not four — not the prevailing four that the date would suggest.
     #[test]
     fn utc_conversion_uses_the_fixed_offset_in_june() {
         let rows =
@@ -573,8 +572,8 @@ mod test {
         assert!(timing_anomalies(&rows[0].session.anomalies).is_empty());
     }
 
-    /// A reported boundary carrying seconds is ordinary now: the portal states seconds, and no
-    /// allowance is made for truncation any more.
+    /// A reported boundary carrying seconds is ordinary: the portal states seconds, and no
+    /// allowance is made for truncation.
     #[test]
     fn a_boundary_carrying_seconds_is_sound() {
         let rows = session("2026-06-10 02:00:30", "2026-06-10 03:00:00", "0:59:30")
@@ -699,10 +698,10 @@ mod test {
             bad
         );
 
-        // An inversion. No separate check names it any more -- the implied end is a minute past
-        // the reported one, far outside the tolerance -- but it is the case that matters most,
-        // because letting the row through panics `Session::intersects` downstream. The zero
-        // duration an inversion of this shape forces brings `ZeroActiveChargeTime` with it.
+        // An inversion, which the tolerance catches without a check of its own: the implied end
+        // is a minute past the reported one. It matters most of the cases here, because letting
+        // the row through panics `Session::intersects` downstream. The zero duration an inversion
+        // of this shape forces brings `ZeroActiveChargeTime` with it.
         assert_eq!(
             kinds("2026-06-01 10:01:00", "2026-06-01 10:00:00", "0:00:00"),
             vec![

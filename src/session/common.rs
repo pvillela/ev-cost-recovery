@@ -58,15 +58,10 @@ pub const BREAKER_MAX_NORMAL_KW: f64 =
 /// One check: `conn_start + conn_duration` must land within [`DURATION_TOLERANCE`] of `conn_end`,
 /// either side. Any failure raises [`AnomalyKind::InconsistentDuration`].
 ///
-/// This was three checks while reported times were truncated to the minute and had to be given a
-/// window a whole step wide. The portal states seconds and the invariant
-/// `Conn_DateTime_Start + Conn_Duration == Conn_DateTime_End` is meant to hold, so what remains is
-/// that equality with the second of measured slack [`DURATION_TOLERANCE`] documents.
-///
-/// The old check 1, `conn_start <= conn_end`, is subsumed rather than dropped. `conn_duration` is
-/// unsigned, so `conn_start + conn_duration` is never before `conn_start`; an inverted span puts
-/// `conn_end` more than a second below it and fails. That matters because [`Session::intersects`]
-/// panics on an inverted span and names exclusion by this test as the reason it cannot happen.
+/// An inversion is caught without a check of its own. `conn_duration` is unsigned, so
+/// `conn_start + conn_duration` is never before `conn_start`; a record whose end precedes its start
+/// therefore misses by the whole inversion. That matters because [`Session::intersects`] panics on
+/// an inverted span and names exclusion by this test as the reason it cannot happen.
 pub(crate) fn duration_is_consistent(
     conn_start: Timestamp,
     conn_end: Timestamp,
@@ -132,7 +127,12 @@ pub struct Session {
 }
 
 impl Session {
-    /// Whether the session overlaps with an interval.
+    /// Whether the session meets an interval.
+    ///
+    /// A session reported to start and end at the same instant meets the interval containing that
+    /// instant. It has no width to intersect with, so an intersection test alone would answer
+    /// `false` everywhere and the session would reach no segment — and its energy would be missing
+    /// from every demand figure.
     ///
     /// # Panics
     ///
@@ -150,7 +150,10 @@ impl Session {
     /// purpose — asks [`Self::lenient_intersects`] instead.
     pub(crate) fn intersects(&self, interval: &Interval) -> bool {
         let sess_itvl = Interval::from_start_end(self.conn_start, self.conn_end);
-        !sess_itvl.intersection(interval).is_empty()
+        match sess_itvl.is_empty() {
+            true => interval.contains(self.conn_start),
+            false => !sess_itvl.intersection(interval).is_empty(),
+        }
     }
 
     /// [`Self::intersects`], but answering for a session whose span is inverted rather than
@@ -201,22 +204,21 @@ impl Session {
         duration(self.conn_start, self.conn_end)
     }
 
-    /// Average power draw in kW: [`Self::energy_use`] / ([`Self::charge_time`] in hours).
+    /// What the record says about its own average power: [`Self::energy_use`] over
+    /// [`Self::charge_time`] in hours.
     ///
-    /// Non-finite results (a spike) are substituted: `0.0` for zero energy,
-    /// [`BREAKER_RATING_KW`] otherwise.
+    /// **A statement about the record, not an input to any estimate.** The only things that read it
+    /// are the [`AnomalyKind::ExcessiveAvgKw`] test and the figure the report prints beside that
+    /// flag. What a session contributes to a 15-minute average is the crate-private `interval_kw`,
+    /// which
+    /// prorates energy over the connection span and never divides by charge time.
+    ///
+    /// Non-finite when `charge_time` is zero, and left that way: inventing a figure for a record
+    /// that states none would put it in front of a reader as though the record had said it.
+    /// `ExcessiveAvgKw` is never raised on such a record — the reader tests it only when charge
+    /// time is non-zero — so nothing formats an infinity.
     pub fn avg_kw(&self) -> f64 {
-        let kw = self.energy_use / self.charge_time.as_secs_f64() * 3600.0;
-        match kw.is_finite() {
-            true => kw,
-            false => {
-                if self.energy_use == 0.0 {
-                    0.0
-                } else {
-                    BREAKER_RATING_KW
-                }
-            }
-        }
+        self.energy_use / self.charge_time.as_secs_f64() * 3600.0
     }
 
     /// Whether two records sharing an `id` describe *different* sessions.
@@ -240,23 +242,51 @@ impl Session {
 
     /// How long the session and the interval overlap, zero when they do not meet.
     ///
-    /// Exact. Reported times are stated to the second and taken at face value, so an overlap has
-    /// one width rather than a range. It was a pair of brackets while the times were truncated to
-    /// the minute and either edge could lie anywhere in the minute it named.
+    /// Exact: reported times are stated to the second and taken at face value.
     pub(crate) fn interval_overlap(&self, interval: &Interval) -> Duration {
         let sess_itvl = Interval::from_start_end(self.conn_start, self.conn_end);
         sess_itvl.intersection(interval).duration
     }
 
-    /// The duration of the session's overlap with `interval` divided by `interval`'s
-    /// duration.
+    /// How much of `interval` the session covers, as a fraction of the interval.
+    ///
+    /// A session count weighted by presence: one covering the whole interval contributes 1, one
+    /// covering half contributes 0.5. This is what [`Segment::agg_count`] sums, and it is about
+    /// *the interval* — how much of it was occupied.
     pub(crate) fn interval_overlap_ratio(&self, interval: &Interval) -> f64 {
         self.interval_overlap(interval).as_secs_f64() / interval.duration.as_secs_f64()
     }
 
-    /// Average power (in kW) of this session over `interval`.
-    pub(crate) fn interval_avg_kw(&self, interval: &Interval) -> f64 {
-        self.interval_overlap_ratio(interval) * self.avg_kw()
+    /// The energy the session drew inside `interval`, in kWh.
+    ///
+    /// The session's energy prorated over its own span, which is the only assumption the data
+    /// supports: a report states energy and a span and nothing about how the draw was shaped in
+    /// between. A session half inside contributes half its energy. This is about *the session* —
+    /// how much of it happened here — and is the counterpart of [`Self::interval_overlap_ratio`],
+    /// which asks the other question.
+    ///
+    /// The same rule [`super::tou_kwh`] applies when it cuts a session at a price-period boundary,
+    /// so the energy side of a report and its demand side agree about where a session's energy went.
+    pub(crate) fn interval_kwh(&self, interval: &Interval) -> f64 {
+        let span = self.conn_span();
+        if span.is_zero() {
+            // Nothing to prorate over: the session is one instant. All of its energy is inside if
+            // that instant is, and none of it otherwise.
+            return match interval.contains(self.conn_start) {
+                true => self.energy_use,
+                false => 0.0,
+            };
+        }
+        self.energy_use * self.interval_overlap(interval).as_secs_f64() / span.as_secs_f64()
+    }
+
+    /// The session's contribution to `interval`'s average power, in kW.
+    ///
+    /// The energy it drew inside the interval, over the interval's length. Nothing here divides by
+    /// `Active_Charge_Time`: the figure wanted is an average over a fixed window, and a session
+    /// contributes to it in proportion to the energy it put into that window.
+    pub(crate) fn interval_kw(&self, interval: &Interval) -> f64 {
+        self.interval_kwh(interval) / (interval.duration.as_secs_f64() / 3600.0)
     }
 }
 
@@ -420,9 +450,7 @@ impl Segment {
     /// Sessions weighted by how much of the segment each covered.
     ///
     /// `fold` from an explicit `0.0` rather than `sum`: std seeds `Sum for f64` with `-0.0`, so an
-    /// empty segment summed with `sum()` renders as `-0.000` in the report. The bracket type this
-    /// replaced had a `Sum` of its own that seeded from `Default`, which is why the negative zero
-    /// only appeared once the brackets went.
+    /// empty segment summed with `sum()` renders as `-0.000` in the report.
     pub fn agg_count(&self) -> f64 {
         self.sessions
             .iter()
@@ -433,7 +461,7 @@ impl Segment {
     pub fn agg_kw(&self) -> f64 {
         self.sessions
             .iter()
-            .fold(0.0, |acc, s| acc + s.interval_avg_kw(&self.interval))
+            .fold(0.0, |acc, s| acc + s.interval_kw(&self.interval))
     }
 
     /// Site load implied by how many vehicles were connected over the segment.
@@ -576,10 +604,6 @@ impl AnomalyKind {
     /// One kind does. [`Self::InconsistentDuration`] means start, end and duration contradict each
     /// other, so neither the duration nor the span the estimating logic would place the record on
     /// can be relied on.
-    ///
-    /// It was three until session times were confirmed to be stated on a fixed offset. The other
-    /// two were the daylight-saving pair, where a reported wall time named no instant or two; at a
-    /// fixed offset every wall time names exactly one, so neither case arises.
     ///
     /// This is what [`Sessions::from_session_lists`] sorts on.
     pub fn excludes_session(&self) -> bool {
