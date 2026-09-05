@@ -84,7 +84,6 @@ Properties of the reporting grid rather than of the site:
 - `src/session/common.rs:46` — `TIME_GRID_STEP`, 60 seconds, the resolution session timestamps are
   truncated to.
 - `src/session/common.rs:59` — `SEGMENT_DURATION`, 15 minutes.
-- `src/session/ioi.rs:31` — `LEGAL_START_MINUTES`.
 - Spreadsheet cosmetics in `src/green_button/excel.rs` and `src/session/excel.rs`: fonts, column
   widths, number formats.
 

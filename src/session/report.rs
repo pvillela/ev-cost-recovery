@@ -94,9 +94,9 @@ fn in_interval(session: &Session, ioi: &Interval) -> String {
 /// figure is written into it.
 ///
 /// The value lives here rather than on [`AnomalyKind`], which stays a plain classification. That
-/// keeps the workbook's `anomalies` column a list of bare variant names that
-/// [`AnomalyKind::from_token`] can read back, and keeps the glossary below the table explaining
-/// each kind once rather than once per session.
+/// keeps the workbook's `anomalies` column a list of bare variant names, matching
+/// `AnomalyKind::as_str`, and keeps the glossary below the table explaining each kind once rather
+/// than once per session.
 fn anomaly_cell(kind: AnomalyKind, avg_kw: f64) -> String {
     match kind {
         AnomalyKind::ExcessiveAvgKw => format!("{}({avg_kw:.3})", kind.as_str()),

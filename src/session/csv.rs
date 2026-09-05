@@ -102,13 +102,9 @@ impl Error for SessionCsvError {
 /// Reads the session report CSV at `path` and returns the charging sessions it describes, ready
 /// for the peak power contribution logic.
 ///
-/// The counterpart of `excel::historic::xlsx_to_sessions`, and the way to reach the sessions
-/// without a workbook in between — which is the route the API takes, the workbook reader being
-/// behind the `historic` feature. The two agree on every figure — the workbook writer and this
-/// function are the same parse — but they differ in what they can tell you afterwards. A workbook
-/// has stored
-/// derived columns that may have been edited, so reading one compares them against the recomputed
-/// values and logs any disagreement. A CSV has nothing to compare against: it is the source.
+/// The only way in. A CSV is the source, so there is nothing to compare its derived values
+/// against; the workbook this crate writes is a rendering of what this function produced, and is
+/// never read back.
 ///
 /// The domain rules — the UTC conversion and its DST policy, the definitions of `adj_conn_end` and
 /// `adj_conn_duration`, and the treatment of zero-`Energy_Use` sessions — are specified in
@@ -435,22 +431,10 @@ impl CsvSession {
     /// record cannot say which of the repeated hours it belongs to — see docs/time/README.md,
     /// "Time zone", for why duplication is the policy and why the copies get distinct ids.
     ///
-    /// # Not the same problem as [`crate::time::map_local`]
-    ///
-    /// Both resolve an ambiguous local time, and the two must **not** be merged. They share the
-    /// probe that enumerates the readings, [`crate::time::local_readings`], and differ in what they
-    /// do with more than one of them:
-    ///
-    /// - `map_local` is asked *"what could this wall time mean?"* by a user picking an interval of
-    ///   interest. It has nothing but the wall time, so it returns every reading and makes the
-    ///   caller choose, or say `EST`/`EDT`.
-    /// - This is asked *"which reading was this session actually at?"* and has evidence the other
-    ///   lacks: `Conn_Duration`, untruncated elapsed time. Every start-end combination is tested
-    ///   with [`duration_is_consistent`], and duplication is the fallback for when more than one
-    ///   survives.
-    ///
-    /// Giving this one `map_local`'s behaviour would throw away the duration evidence; giving
-    /// `map_local` this one's would have it invent evidence it does not have.
+    /// The question asked here is *"which reading was this session actually at?"*, and the record
+    /// carries evidence for it: `Conn_Duration`, an untruncated elapsed time. Every start-end
+    /// combination is tested with [`duration_is_consistent`], and duplication is the fallback for
+    /// when more than one survives.
     fn resolve(&self, source: &Rc<PathBuf>, row: usize) -> Vec<Row> {
         // Kinds known before the DST branch runs. They describe the record itself, so on
         // duplication both copies inherit them.
@@ -1102,9 +1086,9 @@ mod test {
         assert!(kinds("2026-06-01 10:00", "2026-06-01 10:30", "0:29:01").is_empty());
     }
 
-    /// The sessions reach the peak power contribution logic straight from the CSV, bucketed the
-    /// same way `excel::historic::xlsx_to_sessions` buckets them out of a workbook — one row per
-    /// bucket here, so all three rules are exercised.
+    /// The sessions reach the peak power contribution logic straight from the CSV, sorted into the
+    /// three buckets `Sessions::from_session_lists` defines — one row per bucket here, so all three
+    /// rules are exercised.
     #[test]
     fn csv_sessions_buckets_straight_from_the_csv() {
         const CSV: &str = "\

@@ -156,7 +156,6 @@ Much, but not all, of this documentation pertains to software structure or elect
 
 - [docs/app-cheat-sheet.md](docs/app-cheat-sheet.md) -- Steps for trying the app against data files in `data/` directory (not available in the repo): which to pick, what to expect, and the errors worth provoking.
 - [docs/ERRORS.md](docs/ERRORS.md) -- Every error and anomaly the app reports on-screen or logs: what each message means, and what to do about it.
-- [docs/historic-feature.md](docs/historic-feature.md) -- Describes the "historic" cargo feature.
 - [docs/maintenance-manual.md](docs/maintenance-manual.md) -- What to check before changing a constant, how to regenerate the golden files, the invariants nothing enforces.
 - [docs/Questions_for_Evolute.md](docs/Questions_for_Evolute.md) -- Questions to ask Evolute;  answers may result in software changes.
 - [docs/site-specific-constants.md](docs/site-specific-constants.md) -- Constants specific to this site at the present time. Other sites using this repo's code will likely need to change some of them.
@@ -243,23 +242,12 @@ The software is structured as top-level library modules, each of which may have 
 
 ```sh
 cargo build --release      # the desktop app, ev_cost_recovery -- and nothing else
-cargo test                 # the default build
-cargo test --features historic   # and the legacy workbook-reading half
+cargo test                 # everything
 ```
 
-Two of the binaries and one example sit behind the `historic` feature, so `cargo build --release`
-does not produce them and `cargo test` does not compile them. That is deliberate — see
-[`docs/historic-feature.md`](docs/historic-feature.md) — and it is why the tests are two commands:
-neither covers the other.
-
-```sh
-cargo build --features historic --bin ev_peak_cli --bin ev_peak_gui
-cargo run --features historic --example sessions -- <workbook.xlsx>
-```
-
-The command-line tools are `ev_csv_to_xlsx` (session report to workbook), `ev_peak_cli` (estimate
-over an interval, `historic`), `gb_peak_values` (Green Button feed to workbook) and
-`hydro_bill_dump` (a bill PDF's figures). Each prints its usage when run with no arguments.
+The command-line tools are `ev_csv_to_xlsx` (session report to workbook), `gb_peak_values` (Green
+Button feed to workbook) and `hydro_bill_dump` (a bill PDF's figures). Each prints its usage when
+run with no arguments.
 
 Six more report on one billing period. `peak_power_cli` gives the kW and kVA peaks, estimated from
 a Green Button export and the two session reports spanning the period. `energy_cli` gives the

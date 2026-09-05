@@ -19,9 +19,8 @@ use std::path::{Path, PathBuf};
 
 /// Which document is on screen.
 ///
-/// One run produces the first two, so unlike `ev_peak_gui` there is no landing screen: the app
-/// opens on the tab where the work is asked for. [`Tab::Detail`] holds nothing until that run has
-/// succeeded.
+/// One run produces the first two, so there is no landing screen: the app opens on the tab where
+/// the work is asked for. [`Tab::Detail`] holds nothing until that run has succeeded.
 ///
 /// [`Tab::Reimbursement`] answers a different question against a different counterparty over a
 /// different calendar, and shares nothing with the other two but the folder the file dialogs open

@@ -81,8 +81,7 @@ that of the libraries that read CSV, XML and PDF files. Those entries say so and
 - [the run's log was not written](#the-runs-log-was-not-written)
 - [the workbook was written, but its run log was not](#the-workbook-was-written-but-its-run-log-was-not)
 - Session report: [`DstAmbiguousDuplicated`](#dstambiguousduplicated),
-  [`ExcessiveAvgKw`](#excessiveavgkw), [`OffGridTimes`](#offgridtimes),
-  [`WorkbookDiscrepancy`](#workbookdiscrepancy)
+  [`ExcessiveAvgKw`](#excessiveavgkw), [`OffGridTimes`](#offgridtimes)
 
 ---
 
@@ -736,16 +735,6 @@ Nothing is wrong with the data. It says that an allowance this software makes ha
 it needs to be, which is a thing for the maintainer to know about and not something to act on now.
 
 `src/session/csv.rs:278-288`
-
-### `WorkbookDiscrepancy`
-
-> a stored column in the workbook disagrees with what this software recomputes from the row, so the
-> sheet is stale or was edited; the recomputed value is the one used
-
-Raised when a workbook is read back rather than when one is written. The recomputed value always
-wins, so no figure changes — this only says the stored one no longer matches.
-
-`src/session/common.rs:1017-1020`
 
 ---
 

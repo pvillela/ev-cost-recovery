@@ -193,24 +193,13 @@ Truncation is always **backwards**, including before 1970. The implementation us
 rather than `%` for that reason: `%` gives a negative remainder for a negative timestamp, which
 would round towards zero — forwards — and break the bound above.
 
-## Two resolvers, deliberately
+## One resolver, and where the labour divides
 
-Two functions resolve an ambiguous local time, and they must not be merged. They **share the probe**
-that enumerates the readings, `local_readings`, and differ in what they do with more than one of
-them, because they are asked different questions:
+`CsvSession::resolve` (`session::csv`) is the only caller of the probe. It is asked *which reading
+was this session actually at?*, and the record carries evidence for it: `Conn_Duration`, an
+untruncated elapsed time. That usually settles the question; duplication and the sentinels are the
+fallbacks when it does not.
 
-- **`map_local`** (`time::dst`) is asked *what could this wall time mean?* by a user choosing an
-  interval of interest. It has nothing but the wall time, so it reports every reading and lets the
-  caller choose, or name `EST`/`EDT`. `session::ioi` is its only caller, which is why it is gated
-  behind `historic`.
-- **`CsvSession::resolve`** (`session::csv`) is asked *which reading was this session actually
-  at?* and has evidence the other lacks: `Conn_Duration`, untruncated elapsed time. That usually
-  settles it; duplication and the sentinels are the fallbacks when it does not.
-
-Their tie-breaks differ for the same reason. Giving the first the second's behaviour would have it
-invent evidence it does not have; giving the second the first's would throw evidence away.
-
-They sit in the same module so that this warning is read where both of them are. The split of labour
-is the other thing to keep: `time::dst` owns the zone arithmetic and knows nothing about sessions,
-while `session::csv` owns the policy — which reading the record's own fields support, which
-`AnomalyKind` to raise, and what a record gets when no reading fits.
+The split of labour is the thing to keep: `time::dst` owns the zone arithmetic and knows nothing
+about sessions, while `session::csv` owns the policy — which reading the record's own fields
+support, which `AnomalyKind` to raise, and what a record gets when no reading fits.

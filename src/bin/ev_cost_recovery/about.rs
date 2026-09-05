@@ -1,8 +1,5 @@
 //! The About window: what this program is, and the terms the code inside it arrives under.
 //!
-//! Copied from `ev_peak_gui`; see `widgets.rs` for why. The two windows have since parted company
-//! in two places: this one draws its own [`APP_NAME`], and this one can copy the notices.
-//!
 //! The notices are embedded rather than shipped beside the binary because the app is downloaded
 //! as a single file. A copy that travels in the archive can be deleted; a copy inside the
 //! executable cannot, and the licences of the crates linked into it require that their notices

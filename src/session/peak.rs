@@ -2,7 +2,7 @@ use super::{
     Anomaly, AnomalyKind, Bracket, RSegment, RSession, SEGMENT_DURATION, Segment, Sessions,
 };
 use crate::{log::SourceLog, time::Interval};
-use std::{error::Error, path::PathBuf, rc::Rc};
+use std::{path::PathBuf, rc::Rc};
 
 /// Estimates for an interval of interest.
 ///
@@ -55,19 +55,6 @@ pub struct IntervalEstimates {
     pub logs: Vec<SourceLog>,
 }
 
-impl IntervalEstimates {
-    /// Writes each source's log beside it, returning where they went.
-    ///
-    /// For a binary. See [`Sessions::write_logs`], which this is the report-side counterpart of.
-    ///
-    /// # Errors
-    ///
-    /// The first write that fails, with none of the later ones attempted.
-    pub fn write_logs(&self) -> Result<Vec<PathBuf>, Box<dyn Error>> {
-        self.logs.iter().map(SourceLog::write).collect()
-    }
-}
-
 /// The four estimates for one [`Segment`].
 ///
 /// Two derivations times two units. The energy-based pair reads the sessions' own consumption; the
@@ -96,10 +83,10 @@ impl EstimateSet {
 
 /// The estimate proper, once the sessions have been read.
 ///
-/// Separate from any one reader because there is more than one way to arrive at a [`Sessions`]:
-/// [`crate::peak_power`] merges the two monthly CSVs a billing period spans, and
-/// `excel::historic::xlsx_to_interval_estimates` reads one workbook. All of them must produce the
-/// same figures from the same sessions, which they do by coming through here.
+/// Separate from the reader because a [`Sessions`] can be assembled several ways —
+/// [`crate::peak_power`] merges the CSVs a billing period spans, and a caller outside the crate can
+/// build one with `Sessions::from_session_lists`. All of them must produce the same figures from
+/// the same sessions, which they do by coming through here.
 ///
 /// Takes the report by reference so one set of sessions can feed several intervals of interest
 /// without being read again — `peak_power` estimates over two.
@@ -151,9 +138,9 @@ pub(crate) fn estimates_from_sessions(
 /// precondition [`SEGMENT_DURATION`] states, and it is checked rather than accommodated.
 ///
 /// The panic is the precondition [`SEGMENT_DURATION`] states; its doc carries the rounding
-/// argument. The legal interval lengths are 15 minutes and an hour, so nothing coming through
-/// `ioi::checked_interval` can trip it. The core stays permissive about *when* an interval
-/// starts — which exploratory callers and tests rely on — but never about how long one may be.
+/// argument. Every interval the API builds is 15 minutes or an hour, so nothing it produces can
+/// trip it. The core stays permissive about *when* an interval starts — which exploratory callers
+/// and tests rely on — but never about how long one may be.
 fn segments_for_ioi(ioi: Interval, sessions: &[RSession]) -> Vec<RSegment> {
     let (ioi_secs, seg_secs) = (ioi.duration.as_secs(), SEGMENT_DURATION.as_secs());
     assert!(

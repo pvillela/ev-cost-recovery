@@ -62,9 +62,8 @@ impl Reading {
 /// are still produced.
 ///
 /// The `as_str` tokens are a wire format, and should preferably stay stable. Preferably rather than
-/// must: nothing outside [`Self::from_token`]'s own round-trip test reads a token back on this side,
-/// and the only reader of either anomaly vocabulary is `session::excel::historic`, behind the
-/// `historic` feature. A rename leaves workbooks already written spelling the kind one way and the
+/// must: nothing outside [`Self::from_token`]'s own round-trip test reads a token back, on this side
+/// or the session side. A rename leaves workbooks already written spelling the kind one way and the
 /// code spelling it another. Add variants freely; weigh a rename rather than ruling it out.
 ///
 /// There is deliberately no DST variant. The feed timestamps every reading as an absolute UTC

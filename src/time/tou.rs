@@ -51,12 +51,10 @@ impl Tou {
     /// [`crate::green_button::Anomaly::as_str`], and should preferably stay stable: these sheets are
     /// meant to be read back by column name.
     ///
-    /// Preferably rather than must, and rather more weakly here than for `Anomaly`. Nothing reads a
-    /// `Tou` token back — [`Self::from_token`] has only its own round-trip test — and the one
-    /// workbook reader in the crate, `session::excel::historic`, is behind the `historic` feature
-    /// and reads the session sheet, whose headers these are not. A rename leaves workbooks already
-    /// written spelling the band one way and the code spelling it another, which costs a reader of
-    /// an old sheet and nothing else.
+    /// Preferably rather than must. Nothing reads a `Tou` token back — [`Self::from_token`] has
+    /// only its own round-trip test — and this crate reads no workbook at all. A rename leaves
+    /// workbooks already written spelling the band one way and the code spelling it another, which
+    /// costs a reader of an old sheet and nothing else.
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::OnPeak => "OnPeak",

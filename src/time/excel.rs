@@ -52,29 +52,6 @@ pub fn serial_of_duration(d: Duration) -> f64 {
     d.as_secs() as f64 / SECS_PER_DAY
 }
 
-/// Inverse of [`serial_of_instant`].
-///
-/// Rounds to the nearest second rather than truncating: the writer stores whole seconds, and
-/// truncating what floating point hands back would turn `20:22:00` into `20:21:59`.
-///
-/// Gated because reading a serial back is only done by the workbook reader, which is `historic`.
-/// The writing direction, which the API uses, is not.
-#[cfg(any(test, feature = "historic"))]
-pub fn instant_of_serial(serial: f64) -> Result<Timestamp, jiff::Error> {
-    Timestamp::from_second((serial * SECS_PER_DAY).round() as i64 + EXCEL_EPOCH_UNIX_SECS)
-}
-
-/// Inverse of [`serial_of_duration`], rounded to the nearest second for the same reason.
-///
-/// A negative serial clamps to zero. Excel has no unsigned cell, so a corrupt or hand-edited
-/// duration cell can be negative, and no duration in this crate can be.
-///
-/// `historic`, for the reason [`instant_of_serial`] gives.
-#[cfg(any(test, feature = "historic"))]
-pub fn duration_of_serial(days: f64) -> Duration {
-    Duration::from_secs((days * SECS_PER_DAY).round().max(0.0) as u64)
-}
-
 /// Reads a local wall time as though it were UTC, so that two of them can be subtracted to give the
 /// wall-clock distance between them.
 ///
@@ -148,28 +125,5 @@ mod test {
     fn a_duration_is_a_fraction_of_a_day() {
         assert_eq!(serial_of_duration(Duration::from_secs(43_200)), 0.5);
         assert_eq!(serial_of_duration(Duration::ZERO), 0.0);
-    }
-
-    /// Both round trips hold to the second, which is the resolution the writer stores.
-    #[test]
-    fn the_inverses_round_trip_to_the_second() {
-        for s in [
-            "2026-06-15T20:22:00Z",
-            "2026-11-01T05:30:37Z",
-            "1970-01-01T00:00:00Z",
-        ] {
-            let ts: Timestamp = s.parse().unwrap();
-            assert_eq!(instant_of_serial(serial_of_instant(ts)).unwrap(), ts, "{s}");
-        }
-        for secs in [0u64, 1, 59, 3600, 86_399, 400_000] {
-            let d = Duration::from_secs(secs);
-            assert_eq!(duration_of_serial(serial_of_duration(d)), d, "{secs}");
-        }
-    }
-
-    /// A negative duration serial clamps rather than wrapping. Excel has no unsigned cell.
-    #[test]
-    fn a_negative_duration_serial_clamps_to_zero() {
-        assert_eq!(duration_of_serial(-0.5), Duration::ZERO);
     }
 }

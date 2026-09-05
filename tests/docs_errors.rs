@@ -29,7 +29,6 @@ fn session_tokens() -> Vec<(AnomalyKind, &'static str)> {
         ExcessiveAvgKw,
         DuplicateId,
         OffGridTimes,
-        WorkbookDiscrepancy,
     ]
     .into_iter()
     .map(|kind| {
@@ -42,7 +41,6 @@ fn session_tokens() -> Vec<(AnomalyKind, &'static str)> {
             ExcessiveAvgKw => "ExcessiveAvgKw",
             DuplicateId => "DuplicateId",
             OffGridTimes => "OffGridTimes",
-            WorkbookDiscrepancy => "WorkbookDiscrepancy",
         };
         (kind, expected)
     })

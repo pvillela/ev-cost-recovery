@@ -4,14 +4,8 @@
 //   `pub(crate) use`     also reachable as `crate::session::X` from elsewhere in the crate
 //   `pub use`            also reachable as `ev_cost_recovery::session::X` from outside
 //
-// What belongs in the public tier is settled by `docs/public-surface-usage.md`, which records what
-// the binaries, examples and integration tests actually name -- plus whatever `api` re-exports,
-// since that publishes a type by a second route.
-//
-// A fourth tier sits below those: `#[cfg(feature = "historic")] pub use`, for what is reached only
-// by targets that themselves carry `required-features = ["historic"]`. Everything left in the
-// plain public tier is named by the API, by the desktop app, by `tests/`, or by an ungated binary
-// or example.
+// What belongs in the public tier is settled by what the binaries and integration tests actually
+// name -- plus whatever `api` re-exports, since that publishes a type by a second route.
 
 mod common;
 use common::*;
@@ -28,12 +22,6 @@ mod csv;
 mod file_name;
 
 mod excel;
-
-// What makes an interval of interest *legal*. Behind the feature with the two front-ends that ask:
-// nothing else in the crate calls it, and the API takes the interval it is given. Its ten tests go
-// behind the gate with it, which is the cost -- see `docs/historic-feature.md`.
-#[cfg(feature = "historic")]
-mod ioi;
 
 mod peak;
 mod report;
@@ -60,22 +48,6 @@ pub use common::{AnomalyKind, BREAKER_MAX_NORMAL_KW, BREAKER_RATING_KW, RSession
 pub use energy::TouKwh;
 pub use file_name::SessionReportCoverage;
 pub use peak::EstimateSet;
-
-// --- Behind `historic` ---------------------------------------------------------------------------
-//
-// Here the items are gated, not just the re-exports: `mod ioi` above carries the same `#[cfg]`, and
-// `excel::historic` is a gated module. So these names do not exist in a default build.
-//
-// Named by `ev_peak_cli`, `ev_peak_gui` and `examples/sessions.rs`, all three of which carry
-// `required-features` -- and by nothing else: not by the API, not by the desktop app, not by
-// `tests/`. The workbook round-trip is one half of that; the rules that decide whether an interval
-// of interest is legal are the other, since only a front-end that lets someone *choose* an interval
-// has to ask. See `docs/historic-feature.md`.
-
-#[cfg(feature = "historic")]
-pub use excel::historic::{xlsx_to_interval_estimates, xlsx_to_sessions};
-#[cfg(feature = "historic")]
-pub use ioi::{HourEntry, IoiLength, LEGAL_START_MINUTES, checked_interval, hours_of};
 
 // --- Named elsewhere inside the crate ----------------------------------------------------------
 

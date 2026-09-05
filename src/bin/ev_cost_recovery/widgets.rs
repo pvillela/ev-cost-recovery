@@ -1,8 +1,7 @@
 //! Small pieces of chrome the tabs share.
 //!
-//! Copied from `ev_peak_gui` rather than shared. Two binaries in one crate cannot import each
-//! other, and lifting window chrome into the library would put `egui` in its public surface. The
-//! duplication ends when that app is retired.
+//! Kept in the binary rather than the library: lifting window chrome into the library would put
+//! `egui` in its public surface, and this is the only app that draws any.
 
 use crate::{
     state::{RatesForm, Section, WorkingDir},

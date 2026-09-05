@@ -187,9 +187,4 @@ Excluded sessions get a section of their own in the report, listing **every** on
 - **`OffGridTimes`** — a reported start or end does not land on a whole `R`. Informational: the session takes part in every estimate, and nothing is wrong with the record. What it says is that the report's resolution has become finer than the time grid, so the padding and the consistency window described in [Boundaries and the time grid](#boundaries-and-the-time-grid) are now wider than the data needs — a session gets a padded end it does not need, and the consistency window admits records it should reject. Nothing crashes and no figure looks odd, which is exactly why it needs saying.
 
   - Expect it on every row or on none. A report that has switched resolution has switched it throughout, so it is summarised once per file in the run log rather than listed per row, and it is the one anomaly never shown on screen.
-- **`WorkbookDiscrepancy`** — a stored column in a generated workbook disagrees with what the `Session` methods recompute from that row, or does not hold a value of the right kind at all. The sheet is stale or was edited. The recomputed value always wins and no figure changes; this only says the stored one no longer matches.
-
-  - A fact about the sheet rather than about the session — the CSV it was written from disagrees with nothing — so it lives on `Sessions::anomalies`, where findings that belong to a file rather than to a record go.
-  - It can only arise when a workbook is read back, which only `session::excel::historic` does, behind the `historic` feature. A default build never raises it.
-
 Not an anomaly, but easily mistaken for one: a session with zero `Energy_Use` and non-zero `Active_Charge_Time` is an ordinary record. It does not contribute to `energy_based_kw` or `energy_based_kva`, and it does contribute to `count_based_kw` and `count_based_kva`.

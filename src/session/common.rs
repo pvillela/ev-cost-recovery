@@ -33,9 +33,8 @@ use std::{
 /// move the grid.
 ///
 /// The constraint lifts once every report in scope reports seconds. 1 second is a legal grid — it
-/// divides [`SEGMENT_DURATION`], and `ioi::LEGAL_START_MINUTES` still
-/// lands on it — so from then on the change is available, though it moves every figure in the
-/// golden files.
+/// divides [`SEGMENT_DURATION`] — so from then on the change is available, though it moves every
+/// figure in the golden files.
 ///
 /// Every allowance the software makes for the reporting's truncation is this one value:
 ///
@@ -57,9 +56,8 @@ pub const TIME_GRID_STEP: Duration = Duration::from_secs(60);
 /// down would leave part of it unestimated. Neither error would show in any figure the report
 /// prints, which is why the check is an assertion rather than an accommodation.
 ///
-/// The two legal interval lengths — 15 minutes and 1 hour — are both multiples, so nothing coming
-/// through `ioi::checked_interval` can trip it. A plain code span, not a link: that function is
-/// behind the `historic` feature, so a link to it would resolve in one build and not the other.
+/// The two interval lengths the API builds — 15 minutes and 1 hour — are both multiples, so
+/// nothing it produces can trip it.
 pub const SEGMENT_DURATION: Duration = Duration::from_mins(15);
 
 /// Continuous use breaker kW rating.
@@ -841,26 +839,6 @@ pub enum AnomalyKind {
     /// Expect it on every row or on none. A report that has switched resolution has switched it
     /// throughout, so whatever renders these should say how many rather than list them all.
     OffGridTimes,
-
-    /// A workbook column disagrees with what the [`Session`] methods recompute from it, or does not
-    /// hold a value of the right kind at all.
-    ///
-    /// The sheet is stale or was edited. The recomputed value always wins and no figure changes;
-    /// this only says the stored one no longer matches.
-    ///
-    /// A fact about the workbook rather than about the session: the CSV that workbook was written
-    /// from disagrees with nothing, and a second workbook of the same sessions need not disagree
-    /// either. So it lives on [`Sessions::anomalies`], where the findings that belong to a file
-    /// rather than to a record go.
-    ///
-    /// Says only that a column disagreed. Which one, what it held and what was recomputed are not
-    /// carried: an [`AnomalyKind`] is a bare token, and `Anomaly` is a session and a kind.
-    ///
-    /// Which is why a discrepancy is logged and never changes a figure. Every other kind here
-    /// describes the reported data and one of them removes the session from every estimate; if a
-    /// stale cell could do the same, editing a workbook would silently change which sessions feed
-    /// an estimate, and the estimate would still look clean.
-    WorkbookDiscrepancy,
 }
 
 impl AnomalyKind {
@@ -879,8 +857,7 @@ impl AnomalyKind {
     ///
     /// The rest do not. [`Self::ZeroActiveChargeTime`] and [`Self::ExcessiveAvgKw`] are about
     /// power, which is not what is summed; [`Self::DstAmbiguousDuplicated`] is a fold already
-    /// resolved; [`Self::OffGridTimes`] and [`Self::WorkbookDiscrepancy`] are facts about the file
-    /// rather than the session.
+    /// resolved; [`Self::OffGridTimes`] is a fact about the file rather than about the session.
     ///
     /// The demand side reports every kind instead, since an estimate over a single hour turns on
     /// each session's power and on exactly which records touch that hour.
@@ -934,10 +911,9 @@ impl AnomalyKind {
     /// from [`fmt::Display`], which is free-form prose for humans and may be reworded at will;
     /// this is a wire format and should preferably stay stable.
     ///
-    /// Preferably rather than must: the only thing reading a token back is
-    /// `session::excel::historic`, behind the `historic` feature. A rename leaves workbooks already
-    /// written spelling the kind one way and the code spelling it another, which costs whoever
-    /// reads an old sheet or revives that reader — not anything on the default build.
+    /// Preferably rather than must: nothing reads a token back any more. A rename leaves workbooks
+    /// already written spelling the kind one way and the code spelling it another, which costs
+    /// whoever opens an old sheet and nothing else.
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::ZeroActiveChargeTime => "ZeroActiveChargeTime",
@@ -948,12 +924,16 @@ impl AnomalyKind {
             Self::ExcessiveAvgKw => "ExcessiveAvgKw",
             Self::DuplicateId => "DuplicateId",
             Self::OffGridTimes => "OffGridTimes",
-            Self::WorkbookDiscrepancy => "WorkbookDiscrepancy",
         }
     }
 
     /// Inverse of [`AnomalyKind::as_str`]. `None` for an unrecognised token.
-    pub fn from_token(s: &str) -> Option<Self> {
+    ///
+    /// Test-only since the workbook reader went: the writer still fills the `anomalies` column,
+    /// and `test_support::timing_anomalies_in_cell` reads it back to check that what was written
+    /// is a token at all. Nothing in a release build parses one.
+    #[cfg(test)]
+    pub(crate) fn from_token(s: &str) -> Option<Self> {
         Some(match s {
             "ZeroActiveChargeTime" => Self::ZeroActiveChargeTime,
             "InconsistentDuration" => Self::InconsistentDuration,
@@ -963,7 +943,6 @@ impl AnomalyKind {
             "ExcessiveAvgKw" => Self::ExcessiveAvgKw,
             "DuplicateId" => Self::DuplicateId,
             "OffGridTimes" => Self::OffGridTimes,
-            "WorkbookDiscrepancy" => Self::WorkbookDiscrepancy,
             _ => return None,
         })
     }
@@ -1022,10 +1001,6 @@ impl fmt::Display for AnomalyKind {
                  the record, but the padding and the consistency window are now wider than the \
                  data needs"
             }
-            Self::WorkbookDiscrepancy => {
-                "a stored column in the workbook disagrees with what this software recomputes from \
-                 the row, so the sheet is stale or was edited; the recomputed value is the one used"
-            }
         };
         f.write_str(s)
     }
@@ -1060,14 +1035,12 @@ impl fmt::Display for Anomaly {
 ///
 /// This is where a finding goes when it is not a property of any one session: a relation between
 /// records, or a fact about the file they were read from. What is true of a record itself goes on
-/// [`Session::anomalies`] instead, and travels with it — including out to a workbook and back
-/// through the `anomalies` column.
+/// [`Session::anomalies`] instead, and travels with it — out to the workbook's `anomalies` column
+/// among other places.
 ///
-/// Returned by both readers — the private `csv::csv_sessions` from the CSV,
-/// and `excel::historic::xlsx_to_sessions` from a workbook written from it — because the grouping
-/// is a property of the sessions, not of the file they were read out of. The workbook reader is
-/// behind the `historic` feature; the CSV one is what the API uses. The writing direction returns
-/// a [`crate::session::SessionWriteReport`] instead.
+/// Returned by the private `csv::csv_sessions`, because the grouping is a property of the sessions
+/// rather than of the file they were read out of. The writing direction returns a
+/// [`crate::session::SessionWriteReport`] instead.
 ///
 /// It was `SessionReport` until this crate had three things called a report: the document a
 /// [`Display`](std::fmt::Display) writes, the CSV Evolute exports, and this. Only the CSV is still
@@ -1097,9 +1070,7 @@ pub struct Sessions {
     /// only for review. See docs/session/README.md, "Anomalies".
     pub excluded: Vec<RSession>,
     /// Anomalies that are not properties of any single record, and so are not reachable through
-    /// [`Session::anomalies`]. Currently [`AnomalyKind::DuplicateId`], plus
-    /// [`AnomalyKind::WorkbookDiscrepancy`] when the `historic` workbook reader produced this
-    /// value.
+    /// [`Session::anomalies`]. Currently [`AnomalyKind::DuplicateId`] alone.
     ///
     /// Separate from the sessions because such an anomaly is a relation between records rather than
     /// a fault in one: an id is a duplicate only relative to another session, and which of the two
@@ -1227,10 +1198,7 @@ impl Sessions {
     /// concatenated: [`AnomalyKind::DuplicateId`] is re-derived from the combined records, which
     /// finds every duplicate the separate reads found and the cross-file ones besides.
     ///
-    /// Re-derivation recovers that kind and no other. [`AnomalyKind::WorkbookDiscrepancy`], which
-    /// the `historic` workbook reader also puts on [`Self::anomalies`], does not survive a merge.
-    /// No caller merges workbook-sourced reports today; a caller that did would have to carry
-    /// those anomalies across itself.
+    /// It is also the only kind on [`Self::anomalies`], so nothing else has to survive a merge.
     ///
     /// `sources` and `logs` are concatenated in the order given.
     pub fn merge(reports: Vec<Self>) -> Self {

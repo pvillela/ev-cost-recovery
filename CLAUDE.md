@@ -6,25 +6,23 @@ Written 2026-08-26, after a hand refactoring left the default build broken, an e
 missing its filename, 29 broken doc links and five stale documents. Every item below is something
 that actually went wrong, not a general principle.
 
-- **Check every feature combination, all targets.**
+- **Check all targets, not just the library.**
 
   ```sh
   cargo check --all-targets
-  cargo check --all-targets --features historic
   ```
 
-  A green `cargo build --release` proves nothing once a feature gates whole targets: the release
-  build and the test build no longer compile the same code. Three separate breaks hid behind that.
+  A green `cargo build --release` proves nothing on its own: the release build and the test build
+  do not compile the same code. Three separate breaks hid behind that.
 
 - **A broken build conceals every failure downstream of it.** Two unit tests were failing on a real
   behaviour change, and could not be seen because the default `cargo test` did not compile at all.
   Fix the build first, then believe the test results.
 
-- **Check doc links in every feature combination too.**
+- **Check doc links too.**
 
   ```sh
   RUSTDOCFLAGS="-D rustdoc::broken_intra_doc_links" cargo doc --no-deps
-  RUSTDOCFLAGS="-D rustdoc::broken_intra_doc_links" cargo doc --no-deps --features historic
   ```
 
   Intra-doc links are the cheapest rename detector this crate has. A link into a feature-gated
@@ -131,11 +129,6 @@ that actually went wrong, not a general principle.
   four `green_button` tests behind `for_test` were re-implementing `read_gb_feed`'s two lines by
   hand, and the export that really held the API open was the unmarked `period_values`. The fix is
   to move the test into `src/` beside what it tests, not to widen the API so it can stay outside.
-
-- **`tests/` should not need `--features historic`.** `grep -rn historic tests/` is expected to find
-  nothing. A test that needs it is either testing the legacy path deliberately, in which case it
-  belongs in `src/` beside that code, or it is taking a shortcut. See
-  [`docs/historic-feature.md`](docs/historic-feature.md).
 
 ## When the user is refactoring code Claude wrote
 

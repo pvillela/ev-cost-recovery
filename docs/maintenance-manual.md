@@ -59,7 +59,7 @@ Regenerating without reading the diff turns them into a rubber stamp.
 The session goldens straddle two targets: the rendered reports are produced by a unit test in
 `src/session/report_rendering_tests.rs` (the renderer's input is crate-internal), while the
 site-load table is pinned from `tests/session/site_load_golden.rs`. The unfiltered `cargo test`
-above runs both. Neither needs `--features historic`.
+above runs both.
 
 Test binaries were consolidated into `tests/integration.rs` when the two projects merged, so
 `--test <file>` no longer selects anything. The form above names the binary and then filters by
@@ -209,15 +209,11 @@ Change one free constant, run the suite, and confirm only the golden-fixture tes
 ```sh
 # In src/session/site_model.rs, temporarily: BREAKER_RATING_A = 40.0 -> 32.0
 cargo test --no-fail-fast
-cargo test --no-fail-fast --features historic
 # Expect failures only from golden-file comparisons:
 #   session::report_rendering_tests::rendered_reports_match_their_golden_files   (--lib)
 #   session::site_load_golden::the_site_load_table_matches_its_golden_file       (--test integration)
 # Then revert.
 ```
-
-Both commands, because `historic` gates whole targets: without the feature the two legacy binaries
-are not compiled, and with it the default build is never exercised.
 
 `--no-fail-fast` matters. Each target — the library, each binary, each file under `tests/` — runs as
 its own executable, and without it the first one to fail hides whatever the others would have said.
@@ -303,8 +299,8 @@ the run log carries one line naming the count and the first three offending rows
 so both say it.
 
 The fix is **not** to set `TIME_GRID_STEP` to one second. Not because one second is an illegal
-grid — it divides 15 minutes and `LEGAL_START_MINUTES` still lands on it — but because this
-constant is global while the reporting resolution belongs to a report. During the changeover,
+grid — it divides 15 minutes — but because this constant is global while the reporting resolution
+belongs to a report. During the changeover,
 minute-resolution and second-resolution reports are processed together, and no single global value
 is right for both; it has to stay at the coarsest resolution in scope. Once every report in scope
 reports seconds, that constraint lifts and moving the grid becomes a real option.
@@ -338,17 +334,14 @@ That still holds for the figures. It does not hold for the file.
 `AnomalyKind` in `src/session/common.rs` classifies rows that need review. Adding a variant touches four
 things, and deliberately not a fifth.
 
-**The wire format.** `as_str` writes the variant name into a generated workbook's `anomalies` column,
-and `from_token` reads it back. These are a wire format, not display text, and should preferably
-stay stable: a workbook written by one version is read by another, and an unrecognised token is a
-hard error rather than a shrug. Add the variant to both, spelled identically.
+**The wire format.** `as_str` writes the variant name into a generated workbook's `anomalies`
+column. It is a wire format, not display text, and should preferably stay stable. Add the variant
+to it and to `from_token`, spelled identically — `from_token` is `#[cfg(test)]` and exists to check
+that what the writer emits is a readable token.
 
-Preferably rather than must, because the reader is `session::excel::historic` and nothing else — it
-is behind the `historic` feature, so a default `cargo build` produces no code that reads a token
-back at all. A rename leaves workbooks already written spelling the kind one way and the code
-spelling it another. That costs whoever reads an old sheet by eye, and it makes an old workbook a
-hard error for anyone building with `--features historic`; it costs the default build nothing. Weigh
-a rename rather than ruling it out.
+Preferably rather than must, because nothing reads a token back in a release build. A rename leaves
+workbooks already written spelling the kind one way and the code spelling it another, which costs
+whoever reads an old sheet by eye and nothing else. Weigh a rename rather than ruling it out.
 
 **The prose.** `fmt::Display` carries the human wording, and it is free-form: reword it whenever it
 reads badly. It is deliberately distinct from `as_str` for exactly that reason. The report's
@@ -451,11 +444,10 @@ reading wherever it is carried out of the module — the `anomalies` column of a
 the run log, the Convert tab.
 
 Add variants freely. Renaming one costs less here than the phrase "wire format" suggests: nothing
-outside `from_token`'s own round-trip test reads a green_button token back, and the only reader of
-either vocabulary is `session::excel::historic`, behind the `historic` feature. What a rename
+outside `from_token`'s own round-trip test reads a token back, in either vocabulary. What a rename
 actually does is leave workbooks already written spelling the kind one way while the code spells it
-another, which is a problem for whoever reads an old sheet by eye or revives a reader — not for
-anything that runs today. Worth a moment's thought, not a prohibition.
+another, which is a problem for whoever reads an old sheet by eye — not for anything that runs
+today. Worth a moment's thought, not a prohibition.
 
 **The prose.** `description` — one clause, for a report's glossary. Free-form, reword at will.
 

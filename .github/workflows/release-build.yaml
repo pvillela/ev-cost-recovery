@@ -67,13 +67,8 @@ jobs:
         with:
           targets: ${{ matrix.target }}
       # Ahead of the build so a failure stops the release before any artifact is uploaded.
-      # Both configurations, because one does not cover the other: `historic` gates whole targets,
-      # so running only with the feature never exercises the default build, and running only
-      # without it never compiles the two historic binaries.
       - name: Run tests
-        run: |
-          cargo test --verbose
-          cargo test --verbose --features historic
+        run: cargo test --verbose
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-about
