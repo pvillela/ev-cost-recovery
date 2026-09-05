@@ -789,7 +789,7 @@ Start_Date,End_Date,Bill_Status,kWh,Cost
 ";
         let dir = temp_dir("document_kind");
         // A Charges Report, named as one, offered to this slot.
-        let csv_path = dir.join("XX-XX_charges_2026-06-01.csv");
+        let csv_path = dir.join("XX-XX_Charges_June 2026-June 2026.csv");
         fs::write(&csv_path, CSV).unwrap();
 
         let err = csv_sessions(&csv_path).unwrap_err();

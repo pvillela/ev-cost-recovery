@@ -108,7 +108,28 @@ pub fn check_reports_cover_period(
     report_paths: &[&Path],
 ) -> Result<Vec<SessionReportCoverage>, CoverageError> {
     let (period_start, period_ending) = billing_period_dates(billing_period_ending)?;
+    check_reports_cover(period_start, period_ending, report_paths)
+}
 
+/// Checks that the named session reports cover `first` to `last` inclusive between them, and
+/// returns what each one covers.
+///
+/// The general form of [`check_reports_cover_period`], for a caller whose span is not a billing
+/// period. The reimbursement reconciliation's is a calendar month, taken from the Charges Report's
+/// own name.
+///
+/// **How many reports there are is not a rule here.** One covering the whole span is as good as
+/// three, and a report reaching outside it neither helps nor blocks. What is refused is a gap.
+///
+/// # Errors
+///
+/// [`CoverageError::UndatedSessionReport`] for a name that does not say what it covers, and
+/// [`CoverageError::PeriodNotCovered`] when the names between them leave any day unaccounted for.
+pub fn check_reports_cover(
+    first: Date,
+    last: Date,
+    report_paths: &[&Path],
+) -> Result<Vec<SessionReportCoverage>, CoverageError> {
     let coverage = report_paths
         .iter()
         .map(|path| {
@@ -118,10 +139,10 @@ pub fn check_reports_cover_period(
         })
         .collect::<Result<Vec<_>, _>>()?;
 
-    if !reports_cover(period_start, period_ending, &coverage) {
+    if !reports_cover(first, last, &coverage) {
         return Err(CoverageError::PeriodNotCovered {
-            period_start,
-            period_ending,
+            period_start: first,
+            period_ending: last,
             coverage,
         });
     }

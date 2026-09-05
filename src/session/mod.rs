@@ -33,7 +33,7 @@ mod site_model;
 
 pub use common::{Segment, Session, Sessions};
 pub use excel::{SessionWriteReport, session_csv_to_xlsx};
-pub use file_name::{report_coverage, report_month};
+pub use file_name::{SessionReportNameError, parse_session_report_name, report_coverage};
 pub use peak::IntervalEstimates;
 pub use report::site_load_report;
 

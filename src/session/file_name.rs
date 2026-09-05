@@ -15,7 +15,16 @@
 //! the two.
 
 use jiff::civil::Date;
-use std::path::{Path, PathBuf};
+use std::{
+    fmt,
+    path::{Path, PathBuf},
+};
+
+/// The prefix every session report name carries.
+const NAME_PREFIX: &str = "Session_Report_";
+
+/// The form a session report name has to take, quoted in every message about one.
+const NAME_FORM: &str = "Session_Report_<Month>_<Day>_<Year>-<Month>_<Day>_<Year>.csv";
 
 /// What a session report's file name says it holds.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -27,39 +36,107 @@ pub struct SessionReportCoverage {
     pub to: Date,
 }
 
-/// The calendar dates a session report's file name says it covers, as in
-/// `Session_Report_June_1_2026-June_30_2026.csv`.
+/// Why a session report's file name could not be read.
 ///
-/// `None` when the name is not of that form. Nothing else about the file is inspected — in
-/// particular, not whether it exists.
-pub fn report_coverage(path: &Path) -> Option<SessionReportCoverage> {
-    let stem = path.file_stem()?.to_str()?;
+/// Typed rather than an `Option`, because the reasons are not interchangeable and each one tells a
+/// user something different to do: a file that is not a session report at all was picked in the
+/// wrong slot, a file whose dates will not parse has been renamed by hand, and an inverted range is
+/// a name to correct. Three callers used to write their own message from a bare `None`, and each
+/// spelled the expected form out again.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SessionReportNameError {
+    /// The name does not begin `Session_Report_`, or has no readable stem.
+    NotAReport { name: String },
+    /// The name begins correctly but does not state two dates separated by `-`.
+    MissingRange { name: String },
+    /// One of the two dates will not read. `text` is the part that failed.
+    BadDate { name: String, text: String },
+    /// The range runs backwards.
+    Inverted { name: String, from: Date, to: Date },
+}
+
+impl fmt::Display for SessionReportNameError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NotAReport { name } => write!(
+                f,
+                "{name} is not a session report: the name must be {NAME_FORM}"
+            ),
+            Self::MissingRange { name } => write!(
+                f,
+                "{name} does not state the dates it covers: the name must be {NAME_FORM}"
+            ),
+            Self::BadDate { name, text } => write!(
+                f,
+                "{name}: {text:?} is not a date this reads. The name must be {NAME_FORM}, with the \
+                 month spelled out in full"
+            ),
+            Self::Inverted { name, from, to } => {
+                write!(f, "{name} covers {from} to {to}, which runs backwards")
+            }
+        }
+    }
+}
+
+impl std::error::Error for SessionReportNameError {}
+
+/// The first and last calendar dates a session report's file name says it covers, as in
+/// `Session_Report_June_1_2026-June_30_2026.csv`. The second is inclusive.
+///
+/// A range, not a month. A report covers whatever dates its name states — the portal exports any
+/// start date and any later end date, and `Session_Report_August_28_2026-September_1_2026.csv` is
+/// as ordinary as a whole month.
+///
+/// Nothing else about the file is inspected — in particular, not whether it exists, and not what is
+/// inside it. Whether the range covers a billing period is a different question, answered by
+/// the crate-private `reports_cover`.
+///
+/// # Errors
+///
+/// [`SessionReportNameError`], which distinguishes a file that is not a session report from one
+/// whose dates will not read.
+pub fn parse_session_report_name(name: &str) -> Result<(Date, Date), SessionReportNameError> {
+    let named = || name.to_owned();
     // Anything after the closing date is ignored, so a file marked up by hand -- a `-mock`, a
     // `-bak`, a `-what-if` -- still says what it covers. The two dates are what is read; a suffix
     // is a note to a person and says nothing about the sessions inside.
-    let mut parts = stem.strip_prefix("Session_Report_")?.split('-');
-    let from = report_date(parts.next()?)?;
-    let to = report_date(parts.next()?)?;
+    let rest = name
+        .strip_prefix(NAME_PREFIX)
+        .ok_or_else(|| SessionReportNameError::NotAReport { name: named() })?;
+    let mut parts = rest.split('-');
+    let (from_text, to_text) = match (parts.next(), parts.next()) {
+        (Some(a), Some(b)) => (a, b),
+        _ => return Err(SessionReportNameError::MissingRange { name: named() }),
+    };
+    let read = |text: &str| {
+        report_date(text).ok_or_else(|| SessionReportNameError::BadDate {
+            name: named(),
+            text: text.to_owned(),
+        })
+    };
+    let (from, to) = (read(from_text)?, read(to_text)?);
+    match from <= to {
+        true => Ok((from, to)),
+        false => Err(SessionReportNameError::Inverted {
+            name: named(),
+            from,
+            to,
+        }),
+    }
+}
+
+/// [`parse_session_report_name`] applied to a path's stem, with the path carried through.
+///
+/// The form the callers that hold a `&Path` want. `None` for a name that will not read, since a
+/// caller reaching for coverage is asking whether this file can take part at all.
+pub fn report_coverage(path: &Path) -> Option<SessionReportCoverage> {
+    let stem = path.file_stem()?.to_str()?;
+    let (from, to) = parse_session_report_name(stem).ok()?;
     Some(SessionReportCoverage {
         path: path.to_path_buf(),
         from,
         to,
     })
-}
-
-/// The first day of the calendar month a session report's file name says it covers.
-///
-/// `None` when the name does not state its dates, or states a span that is not a whole calendar
-/// month. Both are refusals rather than a best guess: a reconciliation is for one calendar month,
-/// and a partial month reconciled against a full month's figures is a variance that means nothing.
-///
-/// The counterpart of [`crate::charges_report::charges_month`]. The two are compared where both
-/// documents are in hand, which is the only check neither reader can make alone — see
-/// `api::io::reconcile_evolute_reimbursement`.
-pub fn report_month(path: &Path) -> Option<Date> {
-    let coverage = report_coverage(path)?;
-    let first = coverage.from.first_of_month();
-    (coverage.from == first && coverage.to == first.last_of_month()).then_some(first)
 }
 
 /// `June_1_2026` as a date.

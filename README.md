@@ -72,8 +72,8 @@ Four files and a rate schedule:
 | :------------------------- | :----------------------------------------------------------- |
 | Toronto Hydro bill         | The PDF invoice for the billing period.                      |
 | Green Button export        | Toronto Hydro's ESPI XML feed of meter readings for a date range. The data must cover at least the full billing period. |
-| Session report 1           | The Evolute monthly Session Report CSV file covering one end of the billing period. |
-| Session report 2           | The Session Report CSV covering the other end of the billing period. |
+| Session report 1           | An Evolute Session Report CSV. The reports given must cover the whole billing period between them, without a gap. |
+| Session report 2           | A second Session Report CSV, if one report does not cover the whole period. Optional. |
 | TOU EV cost-recovery rates | TOU EV cost-recovery rates in effect at the beginning of the billing period. If the cost-recovery rates change during the billing period then a second set of rates also needs to be provided. |
 
 #### Outputs
@@ -88,8 +88,8 @@ Two files, a remittance amount, and a rate schedule:
 
 | Input                      | What it is                                                   |
 | :------------------------- | :----------------------------------------------------------- |
-| Session report             | The Evolute monthly Session Report CSV file for the calendar month. |
-| Charges report             | The Evolute Charges Report CSV file for the calendar month.  |
+| Session report             | An Evolute Session Report CSV covering the calendar month the Charges Report is for. |
+| Charges report             | The Evolute Charges Report CSV file for the calendar month. Its file name is what states the month, and only a single month is accepted. |
 | Remittance                 | The reimbursement received from Evolute for the calendar month. |
 | TOU EV cost-recovery rates | TOU EV cost-recovery rates in effect during the calendar month. |
 
@@ -105,7 +105,7 @@ When converting an Evolute Session Report:
 
 | Input          | What it is                                                   |
 | :------------- | :----------------------------------------------------------- |
-| Session report | The Evolute monthly Session Report CSV file for a calendar month. |
+| Session report | An Evolute Session Report CSV, covering whatever date range its file name states. |
 
 When converting a Green Button export:
 
@@ -249,7 +249,7 @@ Button feed to workbook) and `hydro_bill_dump` (a bill PDF's figures). Each prin
 run with no arguments.
 
 Six more report on one billing period. `peak_power_cli` gives the kW and kVA peaks, estimated from
-a Green Button export and the two session reports spanning the period. `energy_cli` gives the
+a Green Button export and the session reports spanning the period. `energy_cli` gives the
 kilowatt-hours drawn, split by time-of-use band. Two of them price those against a Toronto Hydro
 bill: `energy_cost_cli` for the consumption lines and `peak_power_cost_cli` for the three
 demand-priced delivery lines. Every rate they use is read off the bill; no tariff is assumed.

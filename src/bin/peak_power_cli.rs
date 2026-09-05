@@ -11,14 +11,15 @@ peak_power_cli -- peak power estimates for one billing period.
 Reports the intervals of interest that maximize kW and kVA in the billing period, one report for
 each. A billing period is named by the date it closes on.
 
-Two session reports are asked for because a billing period straddles two calendar months, and an
-Evolute session report covers one. Give the one covering the start of the period first and the one
-covering its end second.
+A billing period straddles two calendar months, so it usually takes two session reports -- but the
+portal exports any date range, and one report covering the whole period is enough on its own. Give
+as many as it takes, in any order. What is refused is a gap: a set of reports whose names leave any
+day of the period unaccounted for.
 
 The reports are written to stdout as markdown that also reads as plain text.
 
 Usage:
-    peak_power_cli <YYYY-MM-DD> <GREEN_BUTTON.XML> <SESSIONS_1.csv> <SESSIONS_2.csv>
+    peak_power_cli <YYYY-MM-DD> <GREEN_BUTTON.XML> <SESSIONS.csv>...
     peak_power_cli --help
 
 Example:
@@ -32,17 +33,17 @@ fn main() -> ExitCode {
         print!("{USAGE}");
         return ExitCode::SUCCESS;
     }
-    let [ending, gb_xml, session_csv1, session_csv2] = args.as_slice() else {
+    let [ending, gb_xml, session_csvs @ ..] = args.as_slice() else {
         eprint!("{USAGE}");
         return ExitCode::FAILURE;
     };
+    if session_csvs.is_empty() {
+        eprint!("{USAGE}");
+        return ExitCode::FAILURE;
+    }
+    let session_csvs: Vec<&Path> = session_csvs.iter().map(Path::new).collect();
 
-    match run(
-        ending,
-        Path::new(gb_xml),
-        Path::new(session_csv1),
-        Path::new(session_csv2),
-    ) {
+    match run(ending, Path::new(gb_xml), &session_csvs) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("error: {e}");
@@ -51,12 +52,7 @@ fn main() -> ExitCode {
     }
 }
 
-fn run(
-    ending: &str,
-    gb_xml: &Path,
-    session_csv1: &Path,
-    session_csv2: &Path,
-) -> Result<(), Box<dyn Error>> {
+fn run(ending: &str, gb_xml: &Path, session_csvs: &[&Path]) -> Result<(), Box<dyn Error>> {
     // The closing date is read before anything else, so omitting it is reported as a date that
     // cannot be read rather than as a missing file. All four arguments are positional and three of
     // them are paths, so a shifted argument list is otherwise hard to tell from a typo.
@@ -69,7 +65,7 @@ fn run(
         kva_estimates,
         notes,
         meter,
-    } = peak_power(billing_period_ending, gb_xml, session_csv1, session_csv2)?;
+    } = peak_power(billing_period_ending, gb_xml, session_csvs)?;
 
     // Written before the reports are printed, so a failure to write one is not buried under them.
     notes.write_logs()?;

@@ -19,12 +19,13 @@ fn evolute_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("data/evolute")
 }
 
-/// Charges Reports are named `<building>_charges_<start timestamp>.csv`.
+/// Charges Reports are named `<building>_Charges_<Month Year>-<Month Year>.csv`, matched
+/// case-insensitively as the reader matches it.
 fn is_charges_report(path: &std::path::Path) -> bool {
     let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
         return false;
     };
-    name.contains("_charges_") && name.ends_with(".csv")
+    name.to_ascii_lowercase().contains("_charges_") && name.ends_with(".csv")
 }
 
 #[test]

@@ -18,14 +18,15 @@ consumption side, see energy_cost_cli.
 
 No closing date is asked for. The bill states which period it covers.
 
-Two session reports are asked for because a billing period straddles two calendar months, and an
-Evolute session report covers one. Give the one covering the start of the period first and the one
-covering its end second.
+A billing period straddles two calendar months, so it usually takes two session reports -- but the
+portal exports any date range, and one report covering the whole period is enough on its own. Give
+as many as it takes, in any order. What is refused is a gap: a set of reports whose names leave any
+day of the period unaccounted for.
 
 The report is written to stdout as markdown that also reads as plain text.
 
 Usage:
-    peak_power_cost_cli <BILL.pdf> <GREEN_BUTTON.XML> <SESSIONS_1.csv> <SESSIONS_2.csv>
+    peak_power_cost_cli <BILL.pdf> <GREEN_BUTTON.XML> <SESSIONS.csv>...
     peak_power_cost_cli --help
 
 Example:
@@ -40,17 +41,17 @@ fn main() -> ExitCode {
         print!("{USAGE}");
         return ExitCode::SUCCESS;
     }
-    let [bill_pdf, gb_xml, session_csv1, session_csv2] = args.as_slice() else {
+    let [bill_pdf, gb_xml, session_csvs @ ..] = args.as_slice() else {
         eprint!("{USAGE}");
         return ExitCode::FAILURE;
     };
+    if session_csvs.is_empty() {
+        eprint!("{USAGE}");
+        return ExitCode::FAILURE;
+    }
+    let session_csvs: Vec<&Path> = session_csvs.iter().map(Path::new).collect();
 
-    match run(
-        Path::new(bill_pdf),
-        Path::new(gb_xml),
-        Path::new(session_csv1),
-        Path::new(session_csv2),
-    ) {
+    match run(Path::new(bill_pdf), Path::new(gb_xml), &session_csvs) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("error: {e}");
@@ -59,13 +60,8 @@ fn main() -> ExitCode {
     }
 }
 
-fn run(
-    bill_pdf: &Path,
-    gb_xml: &Path,
-    session_csv1: &Path,
-    session_csv2: &Path,
-) -> Result<(), Box<dyn Error>> {
-    let cost = peak_power_cost(bill_pdf, gb_xml, session_csv1, session_csv2)?;
+fn run(bill_pdf: &Path, gb_xml: &Path, session_csvs: &[&Path]) -> Result<(), Box<dyn Error>> {
+    let cost = peak_power_cost(bill_pdf, gb_xml, session_csvs)?;
     // Written before the report is printed, so a failure to write one is not buried under it.
     cost.notes.write_logs()?;
     // The meter export's own log, beside the session ones. Without it a command-line run leaves

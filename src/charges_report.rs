@@ -9,12 +9,15 @@
 //! both are column totals. The per-breaker detail is not carried: which breaker drew what is
 //! Evolute's business, and nothing this crate computes is broken down that way.
 //!
-//! **The month comes from the file name**, by [`charges_month`], and every row is checked against
-//! it before anything is summed. A file holding a row that reaches outside its own month is
-//! refused whole. So a [`ChargesReport`] that exists is one whose contents agree with its own
-//! name, and nothing downstream re-establishes that — see
-//! [`charges_report`], and `api::pure::check_same_month` for the one question this cannot answer
-//! alone.
+//! **The month comes from the file name**, by [`parse_charges_report_name`], and every row is
+//! checked against it before anything is summed. A file holding a row that reaches outside its own
+//! month is refused whole, and so is a name stating more than one month. So a [`ChargesReport`]
+//! that exists is one whose contents agree with its own name and covers exactly one month, and
+//! nothing downstream re-establishes either — see [`charges_report`].
+//!
+//! The one question this cannot answer alone is whether the session reports reach across that
+//! month, which needs both documents in hand:
+//! `api::pure::check_reports_cover`.
 //!
 //! In production these files sit in the same folder as the session reports.
 
@@ -44,42 +47,138 @@ const REQUIRED_HEADERS: &[&str] = &["Start_Date", "End_Date", "Bill_Status", "kW
 /// report about EV chargers lands in the first range.
 const DATE_FORMAT: &str = "%d-%b-%y";
 
-/// What sits between the building and the timestamp in a Charges Report's file name.
+/// What sits between the building and the date range in a Charges Report's file name.
+///
+/// Matched case-insensitively. The portal writes `_Charges_`; files exported before it wrote
+/// `_charges_`, and a person renaming one by hand will not be careful about the capital.
 const NAME_MARKER: &str = "_charges_";
 
-/// The first day of the calendar month a Charges Report's file name says it covers.
+/// The form a Charges Report name has to take, quoted in every message about one.
+const NAME_FORM: &str = "<building>_Charges_<Month Year>-<Month Year>.csv";
+
+/// Month names as the portal spells them in a file name, in full and in order.
+const MONTHS: [&str; 12] = [
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+];
+
+/// Why a Charges Report's file name could not be read.
 ///
-/// Evolute names these `<building>_charges_<start timestamp>.csv`, as in
-/// `XX-XX_charges_2026-06-01T00_00_00-04_00.csv`. The timestamp is the *start* of the period, so
-/// the month is the one the date part falls in; the time of day and the UTC offset say nothing
-/// about which month it is and are not read. The offset moves with the season — `-04_00` in June,
-/// `-05_00` in January — which is why only the part before the `T` is parsed: everything after it
-/// contains hyphens of its own.
+/// Typed for the reason
+/// [`SessionReportNameError`](crate::session::SessionReportNameError) is: the reasons are not
+/// interchangeable, and the caller that would otherwise write its own message from a bare `None`
+/// spells the expected form out again each time.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ChargesReportNameError {
+    /// The name carries no `_Charges_` marker, so it is not a Charges Report.
+    NotAReport { name: String },
+    /// The name carries the marker but does not state two months separated by `-`.
+    MissingRange { name: String },
+    /// One of the two months will not read. `text` is the part that failed.
+    BadMonth { name: String, text: String },
+    /// The range runs backwards.
+    Inverted { name: String, from: Date, to: Date },
+}
+
+impl fmt::Display for ChargesReportNameError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NotAReport { name } => write!(
+                f,
+                "{name} is not a Charges Report: the name must be {NAME_FORM}"
+            ),
+            Self::MissingRange { name } => write!(
+                f,
+                "{name} does not state the months it covers: the name must be {NAME_FORM}"
+            ),
+            Self::BadMonth { name, text } => write!(
+                f,
+                "{name}: {text:?} is not a month this reads. The name must be {NAME_FORM}, with \
+                 the month spelled out in full"
+            ),
+            Self::Inverted { name, from, to } => {
+                write!(f, "{name} covers {from} to {to}, which runs backwards")
+            }
+        }
+    }
+}
+
+impl Error for ChargesReportNameError {}
+
+/// The first and last day of the range a Charges Report's file name says it covers.
 ///
-/// `None` when the name is not of that form. Nothing else about the file is inspected — in
-/// particular, not whether it exists.
+/// The portal names these `<building>_Charges_<Month Year>-<Month Year>.csv`, as in
+/// `123 Foo Bar Road_Charges_November 2026-January 2027.csv`. Both months are inclusive, and the
+/// second date returned is the **last day** of the closing month — `2027-01-31` for that example —
+/// so the pair bounds the whole range rather than naming its two first days.
 ///
-/// A suffix after the timestamp is ignored, for the reason
-/// [`report_coverage`](crate::session::report_coverage) ignores one: a `-bak` or a `-mock` is a
-/// note to a person, and a file marked up by hand still says what it covers. Refusing them would
-/// make the two documents behave differently for no reason.
+/// The marker is found with `rsplit_once` and matched case-insensitively, because a building name
+/// is arbitrary text: it may contain spaces, hyphens, and in principle the marker itself. Taking
+/// the *last* occurrence means only a building whose name ends in something like `_Charges_` could
+/// confuse it, and then the range that follows is what decides.
 ///
-/// The counterpart of [`report_month`](crate::session::report_month).
+/// A range, not a month. Whether a caller will accept a range longer than one month is that
+/// caller's rule, not this function's — see [`charges_report`], which currently will not.
+///
+/// Nothing about the file is inspected: not whether it exists, and not what is inside it.
+///
+/// # Errors
+///
+/// [`ChargesReportNameError`], which distinguishes a file that is not a Charges Report from one
+/// whose months will not read.
+pub fn parse_charges_report_name(name: &str) -> Result<(Date, Date), ChargesReportNameError> {
+    let named = || name.to_owned();
+    let marker_at = name
+        .to_ascii_lowercase()
+        .rfind(NAME_MARKER)
+        .ok_or_else(|| ChargesReportNameError::NotAReport { name: named() })?;
+    let rest = &name[marker_at + NAME_MARKER.len()..];
+
+    let (from_text, to_text) = rest
+        .split_once('-')
+        .ok_or_else(|| ChargesReportNameError::MissingRange { name: named() })?;
+    let read = |text: &str| {
+        month_start(text).ok_or_else(|| ChargesReportNameError::BadMonth {
+            name: named(),
+            text: text.to_owned(),
+        })
+    };
+    let (from, to) = (read(from_text)?, read(to_text)?);
+    match from <= to {
+        true => Ok((from, to.last_of_month())),
+        false => Err(ChargesReportNameError::Inverted {
+            name: named(),
+            from,
+            to,
+        }),
+    }
+}
+
+/// `November 2026` as the first day of that month. `None` for anything else.
+fn month_start(s: &str) -> Option<Date> {
+    let (month, year) = s.trim().split_once(' ')?;
+    let month = MONTHS.iter().position(|m| m.eq_ignore_ascii_case(month))? as i8 + 1;
+    Date::new(year.trim().parse().ok()?, month, 1).ok()
+}
+
+/// The first day of the calendar month a Charges Report covers.
+///
+/// [`parse_charges_report_name`] applied to a path's stem, keeping only the opening month. `None`
+/// for a name that will not read, since a caller reaching for the month is asking whether this file
+/// can take part at all.
 pub fn charges_month(path: &Path) -> Option<Date> {
     let stem = path.file_stem()?.to_str()?;
-    let (_building, rest) = stem.split_once(NAME_MARKER)?;
-    // The date, then whatever the rest of the timestamp and any hand-added suffix hold. Splitting
-    // at the `T` is what separates them: the date's own separators are hyphens, and so is the
-    // sign of the UTC offset, so no hyphen split can tell the two apart.
-    let date = rest.split('T').next()?;
-    let [year, month, day] = date.split('-').collect::<Vec<_>>()[..] else {
-        return None;
-    };
-    // `Date::new` rather than a panicking constructor: a file name is input, and a name carrying
-    // `2026-06-31` is one to reject rather than to crash on.
-    Date::new(year.parse().ok()?, month.parse().ok()?, day.parse().ok()?)
-        .ok()
-        .map(|d| d.first_of_month())
+    parse_charges_report_name(stem).ok().map(|(from, _)| from)
 }
 
 /// One month's Charges Report, summed.
@@ -247,13 +346,24 @@ pub enum ChargesReportError {
     /// breaker; an empty file is a truncated download, not a quiet month.
     NoRows { path: PathBuf },
 
-    /// The file name does not state the month the report covers, so there is nothing to check its
+    /// The file name does not state the months the report covers, so there is nothing to check its
     /// rows against.
     ///
-    /// Raised before the file is opened, and the one variant here that is. See [`charges_month`]
-    /// for the form expected. A name that says nothing is not distinguishable from a name that
-    /// says the wrong thing, and catching the wrong file is what reading the name is for.
-    UndatedReport { path: PathBuf },
+    /// Raised before the file is opened. A name that says nothing is not distinguishable from a
+    /// name that says the wrong thing, and catching the wrong file is what reading the name is for.
+    /// The cause says which of the ways it failed.
+    UndatedReport {
+        path: PathBuf,
+        cause: ChargesReportNameError,
+    },
+
+    /// The file name states a range longer than one calendar month.
+    ///
+    /// The portal exports any number of contiguous months in one file. This reader accepts one,
+    /// because everything downstream reconciles a month's charges against a month's sessions, and a
+    /// three-month file reconciled against one month's sessions is a variance that means nothing.
+    /// The parser reads the range either way — the restriction is here, not there.
+    MultipleMonths { path: PathBuf, from: Date, to: Date },
 
     /// A row is billed for dates that are not entirely inside the month the file name states.
     ///
@@ -288,7 +398,8 @@ impl ChargesReportError {
         match self {
             Self::Csv(cause) => cause.path(),
             Self::NoRows { path }
-            | Self::UndatedReport { path }
+            | Self::UndatedReport { path, .. }
+            | Self::MultipleMonths { path, .. }
             | Self::RowsOutsideMonth { path, .. } => path,
         }
     }
@@ -309,10 +420,16 @@ impl fmt::Display for ChargesReportError {
                 Document::ChargesReport,
                 path.display()
             ),
-            Self::UndatedReport { path } => write!(
+            // The cause states the form expected and which way this name failed, so repeating
+            // either here would print it twice.
+            Self::UndatedReport { path, cause } => {
+                write!(f, "{} {}: {cause}", Document::ChargesReport, path.display())
+            }
+            Self::MultipleMonths { path, from, to } => write!(
                 f,
-                "{} {}: the file name does not say what month the report covers; expected a name \
-                 of the form XX-XX_charges_2026-06-01T00_00_00-04_00.csv",
+                "{} {}: the file name says the report covers {from} to {to}. Only a single \
+                 calendar month is accepted, because the reconciliation prices one month's \
+                 charges against one month's sessions",
                 Document::ChargesReport,
                 path.display()
             ),
@@ -342,7 +459,8 @@ impl Error for ChargesReportError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::Csv(cause) => Some(cause),
-            Self::NoRows { .. } | Self::UndatedReport { .. } | Self::RowsOutsideMonth { .. } => {
+            Self::UndatedReport { cause, .. } => Some(cause),
+            Self::NoRows { .. } | Self::MultipleMonths { .. } | Self::RowsOutsideMonth { .. } => {
                 None
             }
         }
@@ -368,10 +486,25 @@ impl Error for ChargesReportError {
 pub fn charges_report(path: &Path) -> Result<ChargesReport, ChargesReportError> {
     // Before the file is opened: a name that does not say what month it is cannot be checked
     // against anything, and reading the rows first would only delay the same refusal.
-    let month = charges_month(path).ok_or_else(|| ChargesReportError::UndatedReport {
-        path: path.to_path_buf(),
-    })?;
+    let stem = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or_default();
+    let (month, range_end) =
+        parse_charges_report_name(stem).map_err(|cause| ChargesReportError::UndatedReport {
+            path: path.to_path_buf(),
+            cause,
+        })?;
     let month_end = month.last_of_month();
+    // One month only, for now. The name states the whole range and the parser hands it over intact;
+    // refusing a longer one is this reader's rule and is stated here so the parser stays reusable.
+    if range_end != month_end {
+        return Err(ChargesReportError::MultipleMonths {
+            path: path.to_path_buf(),
+            from: month,
+            to: range_end,
+        });
+    }
 
     let table = Table::read(path, Document::ChargesReport, REQUIRED_HEADERS)?;
 
@@ -619,10 +752,7 @@ Start_Date,End_Date,Bill_Status,Cost
             message.starts_with(&format!("Charges Report {}: ", path.display())),
             "{message}"
         );
-        assert!(
-            message.contains("what month the report covers"),
-            "{message}"
-        );
+        assert!(message.contains("is not a Charges Report"), "{message}");
 
         fs::remove_dir_all(&dir).ok();
     }
@@ -830,73 +960,161 @@ Start_Date,End_Date,Bill_Status,kWh,Cost
         dir
     }
 
-    /// A path in `dir` named the way Evolute names a June 2026 Charges Report.
+    /// A path in `dir` named the way the portal names a June 2026 Charges Report.
     ///
-    /// Every fixture below carries June dates, and the reader now reads the month off the name, so
-    /// the name is part of the fixture rather than an arbitrary label.
+    /// Every fixture below carries June dates, and the reader reads the months off the name, so the
+    /// name is part of the fixture rather than an arbitrary label.
     fn june_path(dir: &Path) -> PathBuf {
-        dir.join("XX-XX_charges_2026-06-01T00_00_00-04_00.csv")
+        dir.join("XX-XX_Charges_June 2026-June 2026.csv")
     }
 
-    /// The name Evolute gives its exports, which is the only form this reads. The building prefix
-    /// varies, and the timestamp's time of day and offset say nothing about the month.
+    /// A real Charges Report, read from the committed fixture under its portal name.
+    ///
+    /// The other tests here write their fixtures into a scratch directory, which means nothing in
+    /// CI reads a file that came out of the portal. This one does: five real rows, anonymised, under
+    /// the name the portal writes.
     #[test]
-    fn a_charges_report_name_states_its_month() {
-        assert_eq!(
-            charges_month(Path::new(
-                "data/evolute/XX-XX_charges_2026-06-01T00_00_00-04_00.csv"
-            )),
-            Some(june(1))
-        );
-        // A different building, and the winter offset.
-        assert_eq!(
-            charges_month(Path::new("Bldg7_charges_2026-01-01T00_00_00-05_00.csv")),
-            Some(date(2026, 1, 1))
-        );
-    }
+    fn a_real_charges_report_reads_under_its_portal_name() {
+        let path = crate::golden::fixture("charges/XX-XX_Charges_June 2026-June 2026.csv");
+        let report = charges_report(&path).expect("the committed fixture reads");
 
-    /// The month is the one the date falls in, whatever the day. Evolute stamps the start of the
-    /// period, so for a calendar month that is the first — but the reader normalises rather than
-    /// insisting, because the day is not what the check is about.
-    #[test]
-    fn a_day_other_than_the_first_still_names_its_month() {
-        assert_eq!(
-            charges_month(Path::new("XX-XX_charges_2026-06-15T09_30_00-04_00.csv")),
-            Some(june(1))
+        assert_eq!(report.month, june(1));
+        assert_eq!((report.from, report.to), (june(1), june(30)));
+        assert_eq!(report.rows, 5);
+        // Every row is billed for the whole month, so nothing is short of it.
+        assert!(report.is_clean(), "{:?}", report.partial_spans);
+        assert!(
+            (report.total_kwh - 1.3).abs() < 1e-9,
+            "{}",
+            report.total_kwh
         );
     }
 
-    /// A suffix is a note to a person, so it is ignored rather than allowed to hide what the file
-    /// covers — the same tolerance `session::report_coverage` extends to session reports, which
-    /// `data/evolute/` relies on for its `-mock` and `-bak` copies.
+    /// The name the portal gives its exports. The building prefix is arbitrary text, and the second
+    /// date returned is the **last day** of the closing month rather than its first.
     #[test]
-    fn a_marked_up_name_still_states_its_month() {
+    fn a_charges_report_name_states_the_months_it_covers() {
+        assert_eq!(
+            parse_charges_report_name("XX-XX_Charges_June 2026-June 2026"),
+            Ok((june(1), june(30)))
+        );
+        // A multi-month range, and one crossing the new year: the closing month's last day is what
+        // bounds it, and January 2027 is not January 2026.
+        assert_eq!(
+            parse_charges_report_name("123 Foo Bar Road_Charges_November 2026-January 2027"),
+            Ok((date(2026, 11, 1), date(2027, 1, 31)))
+        );
+    }
+
+    /// A building name is arbitrary, so nothing in it may be mistaken for the marker or the
+    /// separator. `rsplit_once` on the marker is what settles the first; taking the range from
+    /// after the *last* marker settles the second.
+    #[test]
+    fn an_arbitrary_building_name_does_not_confuse_the_parser() {
         for name in [
-            "XX-XX_charges_2026-06-01T00_00_00-04_00-bak.csv",
-            "XX-XX_charges_2026-06-01T00_00_00-04_00-mock.csv",
-            "XX-XX_charges_2026-06-01T00_00_00-04_00 (1).csv",
-            // The date alone, with no time after it. A narrower name than Evolute writes, and it
-            // states its month unambiguously; insisting on the `T` would be a rule about a form
-            // seen in exactly one file.
-            "XX-XX_charges_2026-06-01.csv",
+            // Hyphens and spaces in the building name.
+            "123-A Foo Bar Road_Charges_June 2026-June 2026",
+            // Underscores.
+            "Bldg_7_North_Charges_June 2026-June 2026",
+            // The marker itself, earlier in the name.
+            "The_Charges_Building_Charges_June 2026-June 2026",
         ] {
-            assert_eq!(charges_month(Path::new(name)), Some(june(1)), "{name}");
+            assert_eq!(
+                parse_charges_report_name(name),
+                Ok((june(1), june(30))),
+                "{name}"
+            );
         }
     }
 
-    /// Anything else is refused rather than guessed at, because a guess would then be compared
-    /// against the session report's month and could pass.
+    /// The marker is matched case-insensitively: the portal writes `_Charges_`, files exported
+    /// before it wrote `_charges_`, and a person renaming one by hand will not be careful.
     #[test]
-    fn a_name_that_does_not_state_its_month_is_refused() {
+    fn the_marker_is_matched_whatever_its_case() {
         for name in [
-            "charges.csv",
-            "Charges_Report_June.csv",
-            "Session_Report_June_1_2026-June_30_2026.csv",
-            "XX-XX_charges_June_2026.csv",
-            // June has 30 days, so this is a name to reject rather than a date to build.
-            "XX-XX_charges_2026-06-31T00_00_00-04_00.csv",
+            "XX-XX_Charges_June 2026-June 2026",
+            "XX-XX_charges_June 2026-June 2026",
+            "XX-XX_CHARGES_June 2026-June 2026",
         ] {
-            assert_eq!(charges_month(Path::new(name)), None, "{name}");
+            assert_eq!(
+                parse_charges_report_name(name),
+                Ok((june(1), june(30))),
+                "{name}"
+            );
         }
+    }
+
+    /// Each way a name can fail says which way it failed, so a caller can tell a file picked in the
+    /// wrong slot from one renamed by hand.
+    #[test]
+    fn a_name_that_does_not_state_its_months_says_why() {
+        let kind = |name: &str| parse_charges_report_name(name).unwrap_err();
+
+        // No marker at all: not a Charges Report.
+        for name in ["charges.csv", "Session_Report_June_1_2026-June_30_2026"] {
+            assert!(
+                matches!(kind(name), ChargesReportNameError::NotAReport { .. }),
+                "{name}: {:?}",
+                kind(name)
+            );
+        }
+        // The marker, but no range after it.
+        assert!(matches!(
+            kind("XX-XX_Charges_June 2026"),
+            ChargesReportNameError::MissingRange { .. }
+        ));
+        // A range, but not of months this reads.
+        for name in [
+            "XX-XX_Charges_Jun 2026-Jun 2026",
+            "XX-XX_Charges_2026-06-01T00_00_00",
+        ] {
+            assert!(
+                matches!(kind(name), ChargesReportNameError::BadMonth { .. }),
+                "{name}: {:?}",
+                kind(name)
+            );
+        }
+        // A range that runs backwards.
+        assert!(matches!(
+            kind("XX-XX_Charges_June 2026-May 2026"),
+            ChargesReportNameError::Inverted { .. }
+        ));
+    }
+
+    /// The old ISO-timestamp form is not read. It was the portal's name before the range form, and
+    /// accepting both would mean two code paths and a test matrix twice this size.
+    #[test]
+    fn the_old_timestamp_name_is_no_longer_read() {
+        assert!(parse_charges_report_name("XX-XX_charges_2026-06-01T00_00_00-04_00").is_err());
+    }
+
+    /// A range longer than one month parses, and the reader refuses it. The parser reads what the
+    /// name says; the restriction belongs to the caller that cannot yet use a longer one.
+    #[test]
+    fn a_multi_month_file_parses_but_is_refused_by_the_reader() {
+        let (from, to) =
+            parse_charges_report_name("XX-XX_Charges_June 2026-July 2026").expect("it parses");
+        assert_eq!((from, to), (june(1), date(2026, 7, 31)));
+
+        let dir = temp_dir("multi_month");
+        let path = dir.join("XX-XX_Charges_June 2026-July 2026.csv");
+        fs::write(
+            &path,
+            "Start_Date,End_Date,Bill_Status,kWh,Cost\n01-Jun-26,30-Jun-26,Issued,10,$1.00\n",
+        )
+        .unwrap();
+
+        let err = charges_report(&path).unwrap_err();
+        assert!(
+            matches!(err, ChargesReportError::MultipleMonths { .. }),
+            "{err:?}"
+        );
+        assert!(
+            err.to_string()
+                .contains("single calendar month is accepted"),
+            "{err}"
+        );
+
+        fs::remove_dir_all(&dir).ok();
     }
 }

@@ -1,0 +1,6 @@
+Building,Address,Start_Date,End_Date,Panel,Breaker,Name,Bill_Status,kWh,Cost
+,,01-Jun-26,30-Jun-26,Panel A,2,,Issued,1.3,$0.00
+,,01-Jun-26,30-Jun-26,Panel A,3,,Issued,0,$0.00
+,,01-Jun-26,30-Jun-26,Panel A,4,,Issued,0,$0.00
+,,01-Jun-26,30-Jun-26,Panel A,5,,Issued,0,$0.00
+,,01-Jun-26,30-Jun-26,Panel A,6,,Issued,0,$0.00

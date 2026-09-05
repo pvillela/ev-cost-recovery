@@ -718,7 +718,7 @@ Read Session Report: /data/Session_Report_June_1_2026-June_30_2026.csv
 
 | Tab | Logs |
 | --- | --- |
-| Cost recovery | `<name>.session.csv.read.log` beside each of the two session reports; `<name>.meter.xml.read.log` beside the Green Button export |
+| Cost recovery | `<name>.session.csv.read.log` beside each session report; `<name>.meter.xml.read.log` beside the Green Button export |
 | Peak power detail | none of its own; it reads what the Cost recovery run produced |
 | Evolute reimbursement | `<name>.session.csv.read.log` beside the session report; `<name>.charges.csv.read.log` beside the Charges Report |
 | Convert to workbook | `<name>.session.convert.log` or `<name>.meter.convert.log`, beside the workbook |

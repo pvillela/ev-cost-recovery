@@ -73,7 +73,8 @@ Do not edit the derived values to a literal — `ev_pilot_current_a()`, `ev_appa
 - `src/session/csv.rs:54` — `REQUIRED_HEADERS`, the charger vendor's session-export columns.
 - `src/charges_report.rs:27` — `REQUIRED_HEADERS`, and `DATE_FORMAT = "%d-%b-%y"` on line 33.
 - `src/session/excel.rs:418` — `SESSION_REPORT_PREFIX`, and `src/session/file_name.rs`, which reads
-  `Session_Report_June_1_2026-June_30_2026.csv` with English month names spelled in full.
+  `Session_Report_June_1_2026-June_30_2026.csv` with English month names spelled in full;
+  `src/charges_report.rs` reads `XX-XX_Charges_June 2026-June 2026.csv` the same way.
 - `src/green_button/espi.rs:52` — the unit-of-measure codes 72, 38 and 61 for kWh, kW and kVA.
   Standard ESPI, but a feed that omits kVA changes what can be reported.
 

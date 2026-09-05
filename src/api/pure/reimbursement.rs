@@ -17,11 +17,11 @@
 
 use crate::{
     markdown::{Left, Right, amounts, field, h1, h2, rounding_note, table, wrap},
-    session::{AnomalyKind, SessionNotes, TouKwh, report_coverage, report_month, tou_kwh},
+    session::{AnomalyKind, SessionNotes, TouKwh, tou_kwh},
     time::{Interval, local_midnight},
 };
 use jiff::civil::Date;
-use std::{error::Error, fmt, path::PathBuf};
+use std::{error::Error, fmt};
 
 // Re-exported for the same reason `recovery` re-exports what it takes: a caller should not have to
 // know which module a type comes from in order to spell the call.
@@ -31,46 +31,17 @@ pub use crate::{
 
 /// Why a month's reimbursement cannot be reconciled.
 ///
-/// Every variant is settled from the report's file name and the rates given. Nothing here has
-/// opened anything, and nothing has been summed.
+/// One variant, settled from the month given and the rates given, before anything is summed.
+///
+/// It was five. The other four were about the session report's *name* — that there was exactly one,
+/// that it stated its dates, that those dates were a whole calendar month, and that the month
+/// matched the Charges Report's. None of them can be asked here any more: the month comes from the
+/// Charges Report, and whether the session reports reach across it is
+/// [`check_reports_cover`](super::check_reports_cover)'s question, asked by the caller that holds
+/// the paths. The portal exports any date range, so requiring a month-aligned session report was
+/// requiring something a user may never have.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ReimbursementError {
-    /// The sessions did not come from exactly one session report.
-    ///
-    /// One report is one calendar month, and a calendar month is what Evolute settles on. Two
-    /// reports merged together have no single month to reconcile, and none at all has no month.
-    NotOneSessionReport { sources: Vec<PathBuf> },
-
-    /// The report's file name does not state the dates it covers, so the month cannot be read from
-    /// it. See [`report_coverage`].
-    UndatedSessionReport { path: PathBuf },
-
-    /// The report's file name states a span that is not a whole calendar month.
-    ///
-    /// A partial month reconciled against a full month's reimbursement is a variance that means
-    /// nothing, and looks exactly like Evolute having underpaid.
-    NotACalendarMonth { path: PathBuf, from: Date, to: Date },
-
-    /// The two documents are for different months.
-    ///
-    /// Each month is read from that document's own file name, and each file has already been
-    /// checked against its own name — the session report by
-    /// [`report_month`](crate::session::report_month), the Charges Report by
-    /// [`charges_report`](crate::charges_report::charges_report), which refuses a file whose rows
-    /// leave the month it is named for. So both files are internally sound here; what is wrong is
-    /// the pair.
-    ///
-    /// This is the one check neither reader can make alone, and the slip it catches is the
-    /// ordinary one: both documents are chosen by hand, and picking last month's Charges Report
-    /// produces a variance that means nothing and looks exactly like Evolute having underpaid.
-    ChargesReportIsForAnotherMonth {
-        charges_path: PathBuf,
-        /// The month the Charges Report's file name states.
-        charges_month: Date,
-        /// The month the session report's file name states.
-        session_month: Date,
-    },
-
     /// The rates given had not taken effect by the first day of the month.
     ///
     /// The same refusal [`cost_recovery`](super::recovery::cost_recovery) makes, for the same
@@ -85,41 +56,6 @@ pub enum ReimbursementError {
 impl fmt::Display for ReimbursementError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::NotOneSessionReport { sources } => {
-                write!(
-                    f,
-                    "a reimbursement is reconciled for one calendar month, so exactly one session \
-                     report is expected; {} were given",
-                    sources.len()
-                )?;
-                for path in sources {
-                    write!(f, "\n  {}", path.display())?;
-                }
-                Ok(())
-            }
-            Self::UndatedSessionReport { path } => write!(
-                f,
-                "{}: the file name does not say what the report covers; expected a name of the \
-                 form Session_Report_June_1_2026-June_30_2026.csv",
-                path.display()
-            ),
-            Self::NotACalendarMonth { path, from, to } => write!(
-                f,
-                "{}: the file name says the report covers {from} to {to}, which is not a whole \
-                 calendar month",
-                path.display()
-            ),
-            Self::ChargesReportIsForAnotherMonth {
-                charges_path,
-                charges_month,
-                session_month,
-            } => write!(
-                f,
-                "{}: this Charges Report is named for the month starting {charges_month}, but the \
-                 session report is for the month starting {session_month}. This is usually the \
-                 wrong file.",
-                charges_path.display()
-            ),
             Self::RatesNotYetInEffect {
                 month_start,
                 effective_date,
@@ -208,64 +144,6 @@ impl ReimbursementReconciliation {
     }
 }
 
-/// The calendar month a set of sessions is for, read off the one report's file name.
-///
-/// The sessions themselves are never asked. A quiet month would name a shorter span than it is, or
-/// none at all, and everything downstream would be reconciled against the wrong dates without
-/// anything saying so.
-fn month_of(sessions: &Sessions) -> Result<(Date, Date), ReimbursementError> {
-    let [source] = &sessions.sources[..] else {
-        return Err(ReimbursementError::NotOneSessionReport {
-            sources: sessions.sources.clone(),
-        });
-    };
-
-    // Two readings of the same name, because the two failures are told apart by what each can say.
-    // `report_coverage` yields the dates a name states, which is what `NotACalendarMonth` has to
-    // print; `report_month` answers whether those dates are a whole calendar month, and is the one
-    // statement of that test — the same question `charges_month` answers for the other document.
-    let coverage =
-        report_coverage(source).ok_or_else(|| ReimbursementError::UndatedSessionReport {
-            path: source.clone(),
-        })?;
-    let month = report_month(source).ok_or_else(|| ReimbursementError::NotACalendarMonth {
-        path: source.clone(),
-        from: coverage.from,
-        to: coverage.to,
-    })?;
-    Ok((month, month.last_of_month()))
-}
-
-/// Refuses two documents that are for different months.
-///
-/// The one check neither reader can make alone. Each file has already been checked against its own
-/// name — the session report by [`report_month`], the Charges Report by
-/// [`charges_report`](crate::charges_report::charges_report) — so both are internally sound by the
-/// time they get here, and what is left to test is the pair.
-///
-/// Comparing the two *names* is enough precisely because of that. Neither month is derived from
-/// the rows of anything.
-///
-/// # Errors
-///
-/// [`ReimbursementError::ChargesReportIsForAnotherMonth`] when they disagree, plus
-/// [`ReimbursementError::NotOneSessionReport`], [`ReimbursementError::UndatedSessionReport`] and
-/// [`ReimbursementError::NotACalendarMonth`] about the session report's own name.
-pub fn check_same_month(
-    sessions: &Sessions,
-    charges: &ChargesReport,
-) -> Result<(), ReimbursementError> {
-    let (session_month, _) = month_of(sessions)?;
-    if charges.month != session_month {
-        return Err(ReimbursementError::ChargesReportIsForAnotherMonth {
-            charges_path: charges.path.clone(),
-            charges_month: charges.month,
-            session_month,
-        });
-    }
-    Ok(())
-}
-
 /// What each band recovers: that band's kilowatt-hours at that band's rate, on-peak first.
 ///
 /// One function rather than three expressions, so the total and the table it is shown beside cannot
@@ -291,9 +169,14 @@ fn recovery_by_band(kwh: &TouKwh, rates: &CostRecoveryRates) -> [f64; 3] {
 ///
 /// # Arguments
 ///
-/// - `sessions` - every session from the one report covering the month, as
-///   [`energy`](super::energy::energy) takes them, with the same treatment of duplicates and of
-///   records that contradict themselves.
+/// - `sessions` - every session covering the month, as [`energy`](super::energy::energy) takes
+///   them, with the same treatment of duplicates and of records that contradict themselves. One
+///   report or several: whether they reach across the whole month is
+///   [`check_reports_cover`](super::check_reports_cover)'s question, asked before this is called.
+/// - `month_start` - the first day of the month being reconciled, from the Charges Report's own
+///   file name. Given rather than derived from the sessions, because the Charges Report is the
+///   document the reconciliation is *about* and the session reports need not be month-aligned at
+///   all — the portal exports any range.
 /// - `charges_report_kwh` - the kilowatt-hours Evolute's Charges Report totals for the month.
 ///   Given rather than derived, and it has to be: it comes off the document Evolute billed from,
 ///   which is not the session report. Summing the session report for it would compare that report
@@ -311,12 +194,13 @@ fn recovery_by_band(kwh: &TouKwh, rates: &CostRecoveryRates) -> [f64; 3] {
 /// single session is summed.
 pub fn reconcile_evolute_reimbursement(
     sessions: &Sessions,
+    month_start: Date,
     charges_report_kwh: f64,
     charges_report_amount: f64,
     reimbursed: f64,
     cost_recovery_rates: CostRecoveryRates,
 ) -> Result<ReimbursementReconciliation, ReimbursementError> {
-    let (month_start, month_end) = month_of(sessions)?;
+    let month_end = month_start.last_of_month();
 
     if cost_recovery_rates.effective_date > month_start {
         return Err(ReimbursementError::RatesNotYetInEffect {
@@ -540,11 +424,17 @@ impl fmt::Display for ReimbursementReconciliation {
 mod test {
     use super::*;
     use crate::{
-        api::pure::test_support::{as_report, close},
+        api::pure::{
+            check_reports_cover,
+            test_support::{as_report, close},
+        },
         session::test_support::session,
     };
     use jiff::civil::date;
-    use std::collections::BTreeMap;
+    use std::{
+        collections::BTreeMap,
+        path::{Path, PathBuf},
+    };
 
     const JUNE: &str = "data/Session_Report_June_1_2026-June_30_2026.csv";
 
@@ -565,6 +455,7 @@ mod test {
         let s = session(JUNE, 2, "S1", "2026-06-10T06:00:00Z", 60, 10.0);
         let r = reconcile_evolute_reimbursement(
             &as_report(vec![s]),
+            date(2026, 6, 1),
             10.0,
             5.00,
             5.00,
@@ -595,6 +486,7 @@ mod test {
         let s = session(JUNE, 2, "S1", "2026-06-10T06:00:00Z", 60, 10.0);
         let r = reconcile_evolute_reimbursement(
             &as_report(vec![s]),
+            date(2026, 6, 1),
             12.5,
             0.0,
             0.0,
@@ -620,6 +512,7 @@ mod test {
         let s = session(JUNE, 2, "S1", "2026-07-01T03:00:00Z", 120, 8.0);
         let r = reconcile_evolute_reimbursement(
             &as_report(vec![s]),
+            date(2026, 6, 1),
             8.0,
             0.0,
             0.0,
@@ -650,6 +543,7 @@ mod test {
         let july = session(JUNE, 3, "S2", "2026-07-01T18:00:00Z", 60, 7.0);
         let r = reconcile_evolute_reimbursement(
             &as_report(vec![inside, july]),
+            date(2026, 6, 1),
             10.0,
             0.0,
             0.0,
@@ -665,12 +559,13 @@ mod test {
         );
     }
 
-    /// The month is read from the file name, not from the sessions. A month nobody charged in has
-    /// a reimbursement to reconcile and no session to name itself by.
+    /// The month is given, not derived from the sessions. A month nobody charged in has a
+    /// reimbursement to reconcile and no session to name itself by.
     #[test]
     fn a_month_with_no_sessions_still_names_its_month() {
         let r = reconcile_evolute_reimbursement(
             &Sessions::from_session_lists(vec![Vec::new()], vec![PathBuf::from(JUNE)], Vec::new()),
+            date(2026, 6, 1),
             0.0,
             0.0,
             0.0,
@@ -683,58 +578,20 @@ mod test {
         assert!(close(r.tou_kwh.total_kwh(), 0.0));
     }
 
-    /// Each refusal is made before anything is summed, and names what is wrong with the call.
+    /// Rates beginning after the month does would price only part of it, so the call is refused
+    /// before anything is summed.
+    ///
+    /// The only refusal left here. Whether the session reports reach across the month is
+    /// `check_reports_cover`'s question now, asked by the caller that holds the paths — this
+    /// function is handed the month and a set of sessions and asks nothing about where they came
+    /// from. Three refusals about the session report's own name went with that change.
     #[test]
-    fn what_cannot_be_reconciled_is_refused() {
-        let good = rates(date(2026, 6, 1), 0.11, 0.09, 0.07);
-        let one = || vec![session(JUNE, 2, "S1", "2026-06-10T06:00:00Z", 60, 10.0)];
-
-        // Two reports are two months, and neither is the one to reconcile.
-        let two_files = Sessions::from_session_lists(
-            vec![one()],
-            vec![
-                PathBuf::from(JUNE),
-                PathBuf::from("data/Session_Report_May_1_2026-May_31_2026.csv"),
-            ],
-            Vec::new(),
-        );
-        assert!(matches!(
-            reconcile_evolute_reimbursement(&two_files, 0.0, 0.0, 0.0, good),
-            Err(ReimbursementError::NotOneSessionReport { .. })
-        ));
-
-        // A name that says nothing about what it holds.
-        let undated = as_report(vec![session(
-            "data/sessions.csv",
-            2,
-            "S1",
-            "2026-06-10T06:00:00Z",
-            60,
-            10.0,
-        )]);
-        assert!(matches!(
-            reconcile_evolute_reimbursement(&undated, 0.0, 0.0, 0.0, good),
-            Err(ReimbursementError::UndatedSessionReport { .. })
-        ));
-
-        // A name that says it holds part of a month.
-        let partial = as_report(vec![session(
-            "data/Session_Report_June_1_2026-June_15_2026.csv",
-            2,
-            "S1",
-            "2026-06-10T06:00:00Z",
-            60,
-            10.0,
-        )]);
-        assert!(matches!(
-            reconcile_evolute_reimbursement(&partial, 0.0, 0.0, 0.0, good),
-            Err(ReimbursementError::NotACalendarMonth { .. })
-        ));
-
-        // Rates that begin after the month does price only part of it.
+    fn rates_that_begin_after_the_month_are_refused() {
+        let one = vec![session(JUNE, 2, "S1", "2026-06-10T06:00:00Z", 60, 10.0)];
         assert!(matches!(
             reconcile_evolute_reimbursement(
-                &as_report(one()),
+                &as_report(one),
+                date(2026, 6, 1),
                 0.0,
                 0.0,
                 0.0,
@@ -780,7 +637,7 @@ mod test {
             .map(|(span, rows)| (*span, rows.clone()))
             .collect();
         ChargesReport {
-            path: PathBuf::from("XX-XX_charges_2026-06-01T00_00_00-04_00.csv"),
+            path: PathBuf::from("XX-XX_Charges_June 2026-June 2026.csv"),
             month,
             from: spans.keys().next().expect("at least one span").0,
             to: spans.keys().map(|(_, to)| *to).max().expect("at least one"),
@@ -796,50 +653,37 @@ mod test {
         date(2026, 6, day)
     }
 
-    /// Two documents for the same month pass, and that is all this check does.
+    /// The month the reconciliation prices comes from the Charges Report, and the session reports
+    /// are checked to cover it.
+    ///
+    /// This replaces a check that the two documents named the *same* month. That check needed the
+    /// session report to be a whole calendar month, and the portal exports any range — a user may
+    /// simply never hold a month-aligned one. Coverage asks the question that actually matters, and
+    /// takes any number of reports.
     #[test]
-    fn two_documents_for_the_same_month_are_accepted() {
-        assert!(
-            check_same_month(
-                &june_report(),
-                &charges(june(1), &[((june(1), june(30)), vec![2, 3])])
-            )
-            .is_ok()
-        );
-    }
+    fn the_session_reports_must_cover_the_charges_month() {
+        let june_files = [
+            Path::new("data/Session_Report_June_1_2026-June_30_2026.csv"),
+            // Reaching past the month at both ends is fine: what is refused is a gap.
+            Path::new("data/Session_Report_May_20_2026-July_5_2026.csv"),
+        ];
+        for path in june_files {
+            assert!(
+                check_reports_cover(june(1), june(30), &[path]).is_ok(),
+                "{}",
+                path.display()
+            );
+        }
 
-    /// The slip the check exists for: two internally sound files, for different months. Neither
-    /// reader could have caught it, because neither sees the other document.
-    #[test]
-    fn two_documents_for_different_months_are_refused() {
-        let err = check_same_month(
-            &june_report(),
-            &charges(
-                date(2026, 5, 1),
-                &[((date(2026, 5, 1), date(2026, 5, 31)), vec![2])],
-            ),
-        )
-        .unwrap_err();
-        assert!(matches!(
-            err,
-            ReimbursementError::ChargesReportIsForAnotherMonth { .. }
-        ));
-        let message = err.to_string();
-        assert!(message.contains("wrong file"), "{message}");
-        assert!(message.contains("2026-05-01"), "{message}");
-        assert!(message.contains("2026-06-01"), "{message}");
-    }
+        // Two halves of the month, neither enough alone.
+        let first_half = Path::new("data/Session_Report_June_1_2026-June_15_2026.csv");
+        let second_half = Path::new("data/Session_Report_June_16_2026-June_30_2026.csv");
+        assert!(check_reports_cover(june(1), june(30), &[first_half]).is_err());
+        assert!(check_reports_cover(june(1), june(30), &[first_half, second_half]).is_ok());
 
-    /// The months are compared, not the file names, which differ by construction: the two
-    /// documents are named by different schemes.
-    #[test]
-    fn the_comparison_is_of_months_not_of_names() {
-        let charges = charges(june(1), &[((june(1), june(30)), vec![2])]);
-        assert_ne!(
-            charges.path.file_name(),
-            june_report().sources[0].file_name()
-        );
-        assert!(check_same_month(&june_report(), &charges).is_ok());
+        // The slip the old check existed for: a file for the wrong month entirely.
+        let may = Path::new("data/Session_Report_May_1_2026-May_31_2026.csv");
+        assert!(check_reports_cover(june(1), june(30), &[may]).is_err());
     }
 
     /// The report gains a Charges Report section naming the file. The GUI splits the report on its
@@ -849,6 +693,7 @@ mod test {
     fn the_report_carries_a_charges_report_section() {
         let text = reconcile_evolute_reimbursement(
             &june_report(),
+            june(1),
             0.0,
             0.0,
             0.0,
@@ -866,7 +711,7 @@ mod test {
 
         // Setext-style, as `markdown::h2` writes every other section heading.
         assert!(text.contains("Charges Report\n--------------"), "{text}");
-        assert!(text.contains("_charges_2026-06-01"), "{text}");
+        assert!(text.contains("_Charges_June 2026-June 2026"), "{text}");
         // The one finding the document produces: a row billed for part of the month.
         assert!(text.contains("2026-06-15"), "{text}");
         assert!(text.contains("rows 4"), "{text}");
@@ -878,6 +723,7 @@ mod test {
     fn a_reconciliation_from_bare_figures_carries_no_charges_section() {
         let reconciliation = reconcile_evolute_reimbursement(
             &june_report(),
+            june(1),
             0.0,
             0.0,
             0.0,
@@ -907,7 +753,7 @@ mod test {
         assert!(text.contains("rows 4"), "{text}");
         assert_eq!(
             log.path(),
-            PathBuf::from("XX-XX_charges_2026-06-01T00_00_00-04_00.charges.csv.read.log")
+            PathBuf::from("XX-XX_Charges_June 2026-June 2026.charges.csv.read.log")
         );
     }
 }

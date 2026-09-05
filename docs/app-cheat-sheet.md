@@ -20,7 +20,7 @@ Only the **June 2026** period can be run with the sample data. The sample Green 
 | Toronto Hydro bill | `data/hydro_bills/TH_5728140000_2026_06_29.pdf` |
 | Green Button export | `data/green_button/TH_Electric_Usage_23-11-2024_to_24-06-2026.XML` |
 | Session report 1 | `data/evolute/Session_Report_May_1_2026-May_31_2026-mock.csv` |
-| Session report 2 | `data/evolute/Session_Report_June_1_2026-June_30_2026.csv` |
+| Session report 2 | `data/evolute/Session_Report_June_1_2026-June_30_2026.csv` — optional; leave empty if report 1 covers the whole period |
 
 Then the rates. **Effective from** `2026-05-01`, and `0.1100` / `0.0900` / `0.0700`.
 
@@ -116,7 +116,7 @@ two views of one number.
 | Input field | Value |
 |:---|:---|
 | Evolute Session Report | `data/evolute/Session_Report_June_1_2026-June_30_2026.csv` |
-| Evolute Charges Report | `data/evolute/XX-XX_charges_2026-06-01T00_00_00-04_00.csv` |
+| Evolute Charges Report | `data/evolute/XX-XX_Charges_June 2026-June 2026.csv` |
 | Reimbursement | `246.26` |
 | Rates | **Effective from** `2026-06-01`, and `0.1100` / `0.0900` / `0.0700` |
 
@@ -156,7 +156,8 @@ Worth trying:
 | Type `0` into **Reimbursement** | Both variances negative — `-246.26` and `-114.67` — and "sent less than its own Charges Report" |
 | Clear **Reimbursement** and run | `the reimbursement amount is blank` — a blank field is refused, because zero is a real answer and has to be meant |
 | Pick the **May** session report against the same Charges Report | `this Charges Report is named for the month starting 2026-06-01, but the session report is for the month starting 2026-05-01. This is usually the wrong file.` |
-| Rename the Charges Report to anything without `_charges_<date>` in it | `the file name does not say what month the report covers` — the reader will not open a file it cannot date |
+| Rename the Charges Report to anything without `_Charges_<Month Year>-<Month Year>` in it | `is not a Charges Report`, or `does not state the months it covers` — the reader will not open a file it cannot date |
+| Name a Charges Report for more than one month, e.g. `XX-XX_Charges_June 2026-July 2026.csv` | `Only a single calendar month is accepted` — the reconciliation prices one month against one month |
 
 ## Convert to workbook
 

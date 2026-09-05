@@ -88,7 +88,9 @@ fn inputs(ui: &mut egui::Ui, state: &mut SurplusState, working: &mut WorkingDir)
 
     widgets::note(
         ui,
-        "A billing period runs from the 24th to the 23rd, so it spans two monthly session reports. \
+        "A billing period runs from the 24th to the 23rd, so it usually spans two monthly session \
+         reports. One report covering the whole period is enough on its own, and the second slot \
+         may be left empty. \
          Either order will do — the names say what each holds.",
     );
 }

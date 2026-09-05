@@ -29,7 +29,9 @@ pub(crate) mod test_support;
 // The re-exports below are effectively all the public items in the sub-modules, including
 // sub-module re-exports.
 
-pub use coverage::{CoverageError, SessionReportCoverage, check_reports_cover_period};
+pub use coverage::{
+    CoverageError, SessionReportCoverage, check_reports_cover, check_reports_cover_period,
+};
 pub use energy::{Energy, EnergyCost, EnergyError, HydroBill, Sessions, energy, energy_cost};
 pub use peak_power::{
     DeliveryCost, PeakPowerError, PeriodValues, PowerEstimates, PricedInterval, peak_power,
@@ -41,6 +43,6 @@ pub use recovery::{
     cost_recovery_surplus, /* PeriodValues, HydroBill, Sessions */
 };
 pub use reimbursement::{
-    ChargesReport, ReimbursementError, ReimbursementReconciliation, check_same_month,
+    ChargesReport, ReimbursementError, ReimbursementReconciliation,
     reconcile_evolute_reimbursement, /* CostRecoveryRates, Sessions */
 };

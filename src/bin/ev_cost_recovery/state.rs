@@ -60,7 +60,7 @@ impl AppState {
 
 /// The folder the user is working in, shared by every file dialog in the app.
 ///
-/// A month's bill, its meter export and the two session reports are ordinarily filed together, so
+/// A month's bill, its meter export and its session reports are ordinarily filed together, so
 /// this is one folder for the whole app rather than one per picker. It lasts as long as the app
 /// does and no longer: nothing is written to disk, so a fresh launch starts wherever the system
 /// would have started anyway.
@@ -302,9 +302,28 @@ impl SurplusState {
             .map(|(_, note)| note.as_str())
     }
 
-    /// Whether the run may go ahead: all four files chosen, and none of them refused.
+    /// Whether the run may go ahead: the bill, the meter export, at least one session report, and
+    /// none of them refused.
+    ///
+    /// **The second session report is optional.** A billing period runs from the 24th to the 23rd,
+    /// so it usually takes two monthly exports — but the portal exports any date range, and one
+    /// file covering the whole period is as good as two. Whether the reports actually reach across
+    /// the period is `api::pure::check_reports_cover_period`'s question, asked when the run starts:
+    /// two files that leave a gap are refused there, which a count could never catch.
     pub fn can_run(&self) -> bool {
-        Input::ALL.iter().all(|&w| self.picked(w).is_some()) && self.input_notes.is_empty()
+        self.bill.is_some()
+            && self.meter.is_some()
+            && self.sessions1.is_some()
+            && self.input_notes.is_empty()
+    }
+
+    /// The session reports chosen, in slot order, skipping an empty second slot.
+    fn session_paths(&self) -> Vec<&Path> {
+        [self.sessions1.as_ref(), self.sessions2.as_ref()]
+            .into_iter()
+            .flatten()
+            .map(PathBuf::as_path)
+            .collect()
     }
 
     /// Marks that a rate or the effective date was edited. The figures on screen describe the rates
@@ -338,14 +357,13 @@ impl SurplusState {
     /// Works out the surplus, filling in either the outcome or the error.
     pub fn run(&mut self) {
         self.clear_results();
-        let (Some(bill), Some(meter), Some(csv1), Some(csv2)) = (
-            self.bill.clone(),
-            self.meter.clone(),
-            self.sessions1.clone(),
-            self.sessions2.clone(),
-        ) else {
+        let (Some(bill), Some(meter)) = (self.bill.clone(), self.meter.clone()) else {
             return;
         };
+        let session_csvs = self.session_paths();
+        if session_csvs.is_empty() {
+            return;
+        }
         let (start, end) = match self.schedules() {
             Ok(pair) => pair,
             Err(e) => {
@@ -354,7 +372,7 @@ impl SurplusState {
             }
         };
 
-        match cost_recovery_surplus(&bill, &meter, &csv1, &csv2, start, end) {
+        match cost_recovery_surplus(&bill, &meter, &session_csvs, start, end) {
             Ok(surplus) => {
                 // The meter export has notes of its own, kept apart from the session side because
                 // the two are checked against different things. Its log covers the billing period
@@ -573,7 +591,7 @@ impl ReimbursementState {
             }
         };
 
-        match reconcile_evolute_reimbursement(&csv, &charges, reimbursed, rates) {
+        match reconcile_evolute_reimbursement(&[&csv], &charges, reimbursed, rates) {
             Ok(reconciliation) => {
                 // The Charges Report has a log of its own. It carries no per-row anomalies -- it
                 // is read all-or-nothing -- so its log holds only what leaves the figures standing.
@@ -1058,15 +1076,29 @@ mod test {
         assert!(state.outcome.is_none(), "stale figures survived a new rate");
     }
 
-    /// Nothing runs until all four files are in hand.
+    /// Nothing runs until the bill, the meter export and one session report are in hand. The
+    /// second session report is optional.
+    ///
+    /// It was all four. A billing period usually takes two monthly exports, but the portal exports
+    /// any date range and one file covering the whole period is as good as two — so a count is the
+    /// wrong test. Whether the reports actually reach across the period is checked when the run
+    /// starts, which catches two files that leave a gap as well.
     #[test]
-    fn every_input_is_needed_before_the_run_is_offered() {
+    fn the_run_needs_one_session_report_not_two() {
+        let required = [Input::Bill, Input::Meter, Input::Sessions1];
         let mut state = SurplusState::default();
-        for (i, which) in Input::ALL.into_iter().enumerate() {
-            assert!(!state.can_run(), "offered with {i} of 4 files");
+        for (i, which) in required.into_iter().enumerate() {
+            assert!(!state.can_run(), "offered with {i} of 3 required files");
             state.select(which, PathBuf::from(sample_name(which)));
         }
-        assert!(state.can_run(), "all four are chosen");
+        assert!(state.can_run(), "the second session report is optional");
+
+        // And adding it does not take the offer away.
+        state.select(
+            Input::Sessions2,
+            PathBuf::from(sample_name(Input::Sessions2)),
+        );
+        assert!(state.can_run(), "both session reports are allowed");
     }
 
     fn sample_name(which: Input) -> &'static str {
@@ -1085,7 +1117,7 @@ mod test {
         let mut state = ReimbursementState::default();
         // Chosen first so that `can_run` below turns on the session report's name alone. Whether
         // the Charges Report is for the same month is settled from inside it, at run time.
-        state.select_charges(PathBuf::from("/data/XX-XX_charges_2026-06-01.csv"));
+        state.select_charges(PathBuf::from("/data/XX-XX_Charges_June 2026-June 2026.csv"));
 
         state.select(PathBuf::from(
             "/data/Session_Report_June_1_2026-June_30_2026.csv",
@@ -1155,7 +1187,7 @@ mod test {
         assert!(state.input_note.is_none(), "{:?}", state.input_note);
         assert!(!state.can_run(), "no Charges Report yet");
 
-        state.select_charges(PathBuf::from("/data/XX-XX_charges_2026-06-01.csv"));
+        state.select_charges(PathBuf::from("/data/XX-XX_Charges_June 2026-June 2026.csv"));
         assert!(state.can_run(), "both chosen");
     }
 
@@ -1166,7 +1198,7 @@ mod test {
             error: Some("stale".to_owned()),
             ..Default::default()
         };
-        state.select_charges(PathBuf::from("/data/XX-XX_charges_2026-06-01.csv"));
+        state.select_charges(PathBuf::from("/data/XX-XX_Charges_June 2026-June 2026.csv"));
         assert!(state.error.is_none());
     }
 

@@ -69,7 +69,7 @@ pub use crate::{
 /// Returns peak power estimates for the intervals of interest that maximize kW and kVA in the
 /// specified billing period.
 ///
-/// Reads the meter export and the two session reports, and hands them to
+/// Reads the meter export and the session reports, and hands them to
 /// [`pure::peak_power`](fn@super::pure::peak_power), which states what is done with them and returns
 /// the figures. The two intervals are the hours the *building* peaked in, and each estimate says
 /// how much of that hour's demand the chargers can account for.
@@ -97,16 +97,15 @@ pub use crate::{
 pub fn peak_power(
     billing_period_ending: Date,
     gb_xml: &Path,
-    session_csv1: &Path,
-    session_csv2: &Path,
+    session_csvs: &[&Path],
 ) -> Result<PowerEstimates, ApiError> {
     // First, because it is the one check that costs nothing: it reads the two file *names*, and a
     // caller who has handed in the wrong month finds out before a byte is parsed.
-    pure::check_reports_cover_period(billing_period_ending, &[session_csv1, session_csv2])?;
+    pure::check_reports_cover_period(billing_period_ending, session_csvs)?;
 
     let gb_period_values = read_gb_for_billing_period(gb_xml, billing_period_ending, BILL_END_DAY)
         .map_err(|cause| gb_read_error(gb_xml, cause))?;
-    let sessions = read_sessions(&[session_csv1, session_csv2])?;
+    let sessions = read_sessions(session_csvs)?;
 
     pure::peak_power(billing_period_ending, gb_period_values, &sessions).map_err(|cause| {
         ApiError::PeakPower {
@@ -118,7 +117,7 @@ pub fn peak_power(
 
 /// Returns the delivery cost attributable to EV charging sessions in a billing period.
 ///
-/// Reads the bill, the meter export and the two session reports, and hands them to
+/// Reads the bill, the meter export and the session reports, and hands them to
 /// [`pure::peak_power_cost`](fn@super::pure::peak_power_cost), which states how the figures are
 /// arrived at. Every rate used is the bill's own; nothing here assumes a tariff.
 ///
@@ -148,8 +147,7 @@ pub fn peak_power(
 pub fn peak_power_cost(
     bill_pdf: &Path,
     gb_xml: &Path,
-    session_csv1: &Path,
-    session_csv2: &Path,
+    session_csvs: &[&Path],
 ) -> Result<DeliveryCost, ApiError> {
     // First, because it is what says which period this is about. `peak_power` can open with the
     // free name check instead; here that check has nothing to compare against until the bill is in
@@ -162,11 +160,11 @@ pub fn peak_power_cost(
 
     // Still ahead of both parses: it reads the two file *names*, so the wrong month is caught
     // before a year of meter readings is.
-    pure::check_reports_cover_period(billing_period_ending, &[session_csv1, session_csv2])?;
+    pure::check_reports_cover_period(billing_period_ending, session_csvs)?;
 
     let gb_period_values = read_gb_for_billing_period(gb_xml, billing_period_ending, BILL_END_DAY)
         .map_err(|cause| gb_read_error(gb_xml, cause))?;
-    let sessions = read_sessions(&[session_csv1, session_csv2])?;
+    let sessions = read_sessions(session_csvs)?;
 
     pure::peak_power_cost(&bill, gb_period_values, &sessions).map_err(|cause| ApiError::PeakPower {
         source: gb_source(&cause, Some(bill_pdf), gb_xml),
@@ -177,7 +175,7 @@ pub fn peak_power_cost(
 /// Returns the energy attributable to EV charging sessions in a billing period, split by
 /// time-of-use period.
 ///
-/// Reads the two session reports and hands them to [`pure::energy`](fn@super::pure::energy), which
+/// Reads the session reports and hands them to [`pure::energy`](fn@super::pure::energy), which
 /// states how a session's energy is divided. No meter export and no bill: consumption is billed by
 /// the kilowatt-hour, so neither the hour the site peaked in nor any rate on the bill bears on it.
 ///
@@ -199,13 +197,9 @@ pub fn peak_power_cost(
 /// # Errors
 ///
 /// See [`ApiError`]. Nothing is read until the file names have been checked against the period.
-pub fn energy(
-    billing_period_ending: Date,
-    session_csv1: &Path,
-    session_csv2: &Path,
-) -> Result<Energy, ApiError> {
-    pure::check_reports_cover_period(billing_period_ending, &[session_csv1, session_csv2])?;
-    let sessions = read_sessions(&[session_csv1, session_csv2])?;
+pub fn energy(billing_period_ending: Date, session_csvs: &[&Path]) -> Result<Energy, ApiError> {
+    pure::check_reports_cover_period(billing_period_ending, session_csvs)?;
+    let sessions = read_sessions(session_csvs)?;
     pure::energy(billing_period_ending, &sessions).map_err(|cause| ApiError::Energy {
         source: bill_source(&cause, None),
         cause,
@@ -214,7 +208,7 @@ pub fn energy(
 
 /// Returns the energy cost attributable to EV charging sessions in a billing period.
 ///
-/// Reads the bill and the two session reports, and hands them to
+/// Reads the bill and the session reports, and hands them to
 /// [`pure::energy_cost`](fn@super::pure::energy_cost), which states how the figures are arrived at.
 /// Every rate used is the bill's own; nothing here assumes a tariff.
 ///
@@ -241,11 +235,7 @@ pub fn energy(
 ///
 /// See [`ApiError`]. The bill is read before the check that needs a period, so an unreadable bill is
 /// reported ahead of anything the reports might also be wrong about.
-pub fn energy_cost(
-    bill_pdf: &Path,
-    session_csv1: &Path,
-    session_csv2: &Path,
-) -> Result<EnergyCost, ApiError> {
+pub fn energy_cost(bill_pdf: &Path, session_csvs: &[&Path]) -> Result<EnergyCost, ApiError> {
     // First, because it is what says which period this is about. `energy` can open with the free
     // name check instead; here that check has nothing to compare against until the bill is in hand.
     let bill = hydro_bill_from_pdf(bill_pdf).map_err(|cause| ReadError::Bill {
@@ -253,8 +243,8 @@ pub fn energy_cost(
         cause: Box::new(cause),
     })?;
 
-    pure::check_reports_cover_period(bill.period_end_date(), &[session_csv1, session_csv2])?;
-    let sessions = read_sessions(&[session_csv1, session_csv2])?;
+    pure::check_reports_cover_period(bill.period_end_date(), session_csvs)?;
+    let sessions = read_sessions(session_csvs)?;
 
     pure::energy_cost(&bill, &sessions).map_err(|cause| ApiError::Energy {
         source: bill_source(&cause, Some(bill_pdf)),
@@ -264,7 +254,7 @@ pub fn energy_cost(
 
 /// Returns the cost recovery allocated to a billing period, at the EV cost-recovery rates given.
 ///
-/// Reads the two session reports and hands them to
+/// Reads the session reports and hands them to
 /// [`pure::cost_recovery`](fn@super::pure::cost_recovery), which states how the figures are arrived
 /// at. No bill and no meter export: the rates here are ours rather than Toronto Hydro's, so nothing
 /// on the bill bears on the answer.
@@ -295,13 +285,12 @@ pub fn energy_cost(
 /// the rates are checked against it before the reports are opened for the same reason.
 pub fn cost_recovery(
     billing_period_ending: Date,
-    session_csv1: &Path,
-    session_csv2: &Path,
+    session_csvs: &[&Path],
     recovery_rates_at_start: CostRecoveryRates,
     recovery_rates_at_end: Option<CostRecoveryRates>,
 ) -> Result<CostRecovery, ApiError> {
-    pure::check_reports_cover_period(billing_period_ending, &[session_csv1, session_csv2])?;
-    let sessions = read_sessions(&[session_csv1, session_csv2])?;
+    pure::check_reports_cover_period(billing_period_ending, session_csvs)?;
+    let sessions = read_sessions(session_csvs)?;
     Ok(pure::cost_recovery(
         billing_period_ending,
         &sessions,
@@ -313,7 +302,7 @@ pub fn cost_recovery(
 /// Returns the EV cost-recovery surplus for a billing period: what the rates recover, less what the
 /// chargers' share of the bill cost.
 ///
-/// Reads the bill, the meter export and the two session reports — every source the library has —
+/// Reads the bill, the meter export and the session reports — every source the library has —
 /// and hands them to [`pure::cost_recovery_surplus`](fn@super::pure::cost_recovery_surplus), which
 /// states how the figures are arrived at. The result carries all three parts whole, so the
 /// subtraction can be checked against the reports it came from.
@@ -345,8 +334,7 @@ pub fn cost_recovery(
 pub fn cost_recovery_surplus(
     bill_pdf: &Path,
     gb_xml: &Path,
-    session_csv1: &Path,
-    session_csv2: &Path,
+    session_csvs: &[&Path],
     recovery_rates_at_start: CostRecoveryRates,
     recovery_rates_at_end: Option<CostRecoveryRates>,
 ) -> Result<CostRecoverySurplus, ApiError> {
@@ -357,11 +345,11 @@ pub fn cost_recovery_surplus(
     })?;
     let billing_period_ending = bill.period_end_date();
 
-    pure::check_reports_cover_period(billing_period_ending, &[session_csv1, session_csv2])?;
+    pure::check_reports_cover_period(billing_period_ending, session_csvs)?;
 
     let gb_period_values = read_gb_for_billing_period(gb_xml, billing_period_ending, BILL_END_DAY)
         .map_err(|cause| gb_read_error(gb_xml, cause))?;
-    let sessions = read_sessions(&[session_csv1, session_csv2])?;
+    let sessions = read_sessions(session_csvs)?;
 
     pure::cost_recovery_surplus(
         &bill,
@@ -401,10 +389,13 @@ pub fn cost_recovery_surplus(
 /// - `cost_recovery_rates` - the rates in effect over the month, as values rather than a path, for
 ///   the reason [`cost_recovery`] takes them that way: nothing in this crate writes them down.
 ///
-/// The two files are checked against each other before anything is reconciled: the Charges Report
-/// states the period it covers, and it must be the calendar month the session report's name gives.
-/// Reconciling one month's charges against another month's sessions produces a variance that looks
-/// exactly like an underpayment.
+/// The month is the Charges Report's, read off its own name, and the session reports are checked to
+/// cover it before anything is reconciled. Reconciling one month's charges against sessions that do
+/// not span that month produces a variance that looks exactly like an underpayment.
+///
+/// **One session report or several.** The portal exports any date range, so a month need not arrive
+/// in one file and a file need not be a month. What matters is that the names between them reach
+/// across the whole month without a gap.
 ///
 /// Nothing here writes. The report's `session.csv.read` log comes back unwritten on the result's `notes` --
 /// see the private `session::csv::csv_sessions` -- and
@@ -413,11 +404,10 @@ pub fn cost_recovery_surplus(
 ///
 /// # Errors
 ///
-/// See [`ApiError`]. The files are opened before the month is read off the session report's name,
-/// unlike [`cost_recovery`]: there is only one session report here, so a name that says nothing and
-/// a file that cannot be read are the same trip to the disk either way.
+/// See [`ApiError`]. The Charges Report is opened first, because its name is what states the month
+/// the session reports are then checked against.
 pub fn reconcile_evolute_reimbursement(
-    session_csv: &Path,
+    session_csvs: &[&Path],
     charges_csv: &Path,
     reimbursed: f64,
     cost_recovery_rates: CostRecoveryRates,
@@ -426,16 +416,14 @@ pub fn reconcile_evolute_reimbursement(
         path: charges_csv.to_path_buf(),
         cause: Box::new(cause),
     })?;
-    let sessions = read_sessions(&[session_csv])?;
-
-    // Before the reconciliation rather than inside it, because it is the one question that needs
-    // both documents in hand and `pure` is handed only their figures. Each file has already been
-    // checked against its own name by the reader that produced it, so all that is left is whether
-    // the two are for the same month.
-    pure::check_same_month(&sessions, &charges)?;
+    // Before anything is opened: a set of names that does not reach across the month is told so
+    // rather than after every session in them has been parsed.
+    pure::check_reports_cover(charges.month, charges.month.last_of_month(), session_csvs)?;
+    let sessions = read_sessions(session_csvs)?;
 
     Ok(pure::reconcile_evolute_reimbursement(
         &sessions,
+        charges.month,
         charges.total_kwh,
         charges.total_amount,
         reimbursed,
@@ -713,7 +701,7 @@ mod test {
         // same double-naming is available to them. Both are read before anything else their call
         // touches, which is what lets a missing file stand in for an unreadable one here.
         let missing_pdf = Path::new("/nonexistent/no_such_file.pdf");
-        let bill = peak_power_cost(missing_pdf, missing, missing_csv, missing_csv)
+        let bill = peak_power_cost(missing_pdf, missing, &[missing_csv])
             .unwrap_err()
             .to_string();
         assert_eq!(
@@ -724,7 +712,7 @@ mod test {
 
         let missing_charges = Path::new("/nonexistent/no_such_charges.csv");
         let charges = reconcile_evolute_reimbursement(
-            missing_csv,
+            &[missing_csv],
             missing_charges,
             0.0,
             CostRecoveryRates {
@@ -831,8 +819,10 @@ mod test {
         let err = peak_power(
             date(2026, 6, 30),
             Path::new("nothing.XML"),
-            Path::new("Session_Report_May_1_2026-May_31_2026.csv"),
-            Path::new("Session_Report_June_1_2026-June_30_2026.csv"),
+            &[
+                Path::new("Session_Report_May_1_2026-May_31_2026.csv"),
+                Path::new("Session_Report_June_1_2026-June_30_2026.csv"),
+            ],
         )
         .expect_err("30 June does not label a billing period");
         assert!(
@@ -851,8 +841,10 @@ mod test {
         let err = peak_power(
             date(2026, 6, 23),
             Path::new("nothing.XML"),
-            Path::new("Session_Report_April_1_2026-April_30_2026.csv"),
-            Path::new("Session_Report_June_1_2026-June_30_2026.csv"),
+            &[
+                Path::new("Session_Report_April_1_2026-April_30_2026.csv"),
+                Path::new("Session_Report_June_1_2026-June_30_2026.csv"),
+            ],
         )
         .expect_err("April and June do not cover a period starting 24 May");
         assert!(
@@ -874,8 +866,10 @@ mod test {
             Path::new("nothing.XML"),
             // Months that do not cover a period between them, so the report check would fire
             // first if it could run at all. It cannot: it has no period to check against yet.
-            Path::new("Session_Report_April_1_2026-April_30_2026.csv"),
-            Path::new("Session_Report_June_1_2026-June_30_2026.csv"),
+            &[
+                Path::new("Session_Report_April_1_2026-April_30_2026.csv"),
+                Path::new("Session_Report_June_1_2026-June_30_2026.csv"),
+            ],
         )
         .expect_err("there is no such bill");
         assert!(
@@ -893,8 +887,10 @@ mod test {
     fn energy_refuses_reports_that_do_not_cover_the_period() {
         let err = energy(
             date(2026, 6, 23),
-            Path::new("Session_Report_April_1_2026-April_30_2026.csv"),
-            Path::new("Session_Report_June_1_2026-June_30_2026.csv"),
+            &[
+                Path::new("Session_Report_April_1_2026-April_30_2026.csv"),
+                Path::new("Session_Report_June_1_2026-June_30_2026.csv"),
+            ],
         )
         .expect_err("April and June do not cover a period starting 24 May");
         assert!(
@@ -980,8 +976,10 @@ mod test {
         };
         let err = cost_recovery(
             date(2026, 6, 23),
-            Path::new("Session_Report_April_1_2026-April_30_2026.csv"),
-            Path::new("Session_Report_June_1_2026-June_30_2026.csv"),
+            &[
+                Path::new("Session_Report_April_1_2026-April_30_2026.csv"),
+                Path::new("Session_Report_June_1_2026-June_30_2026.csv"),
+            ],
             rates,
             None,
         )
@@ -1011,8 +1009,10 @@ mod test {
             Path::new("nothing.XML"),
             // Months that do not cover a period between them, so the report check would fire first
             // if it could run at all. It cannot: it has no period to check against yet.
-            Path::new("Session_Report_April_1_2026-April_30_2026.csv"),
-            Path::new("Session_Report_June_1_2026-June_30_2026.csv"),
+            &[
+                Path::new("Session_Report_April_1_2026-April_30_2026.csv"),
+                Path::new("Session_Report_June_1_2026-June_30_2026.csv"),
+            ],
             rates,
             None,
         )
@@ -1062,8 +1062,10 @@ mod test {
             Path::new("nothing.pdf"),
             // Months that do not cover a period between them, so the report check would fire first
             // if it could run at all. It cannot: it has no period to check against yet.
-            Path::new("Session_Report_April_1_2026-April_30_2026.csv"),
-            Path::new("Session_Report_June_1_2026-June_30_2026.csv"),
+            &[
+                Path::new("Session_Report_April_1_2026-April_30_2026.csv"),
+                Path::new("Session_Report_June_1_2026-June_30_2026.csv"),
+            ],
         )
         .expect_err("there is no such bill");
         assert!(
