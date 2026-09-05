@@ -66,17 +66,11 @@ Given a time interval of interest **`I`** as described above, the estimation of 
 
 #### Sessions and segments
 
-Sessions, segments, and intervals of interest are all **half-open**: each includes its left end-point and excludes its right one. Consecutive segments therefore meet at a single instant belonging to the later one, so no instant falls in two segments, and *abutting* stays distinguishable from *overlapping* — a distinction the estimates count on. See [Boundaries and the time grid](#boundaries-and-the-time-grid).
+Sessions, segments, and intervals of interest are all **half-open**: each includes its left end-point and excludes its right one. Consecutive segments therefore meet at a single instant belonging to the later one, so no instant falls in two segments, and *abutting* stays distinguishable from *overlapping* — a distinction the estimates count on. See [Half-open boundaries](#half-open-boundaries).
 
-`TIME_GRID_STEP` — written **`R`** below, currently 60 seconds — is exactly the resolution at which the session report states session **start and end times**. It is not the resolution of everything in the report: `Conn_Duration` and `Active_Charge_Time` are stated more finely, and several of the Technical Notes depend on that difference.
+A session occupies `[Conn_DateTime_Start, Conn_DateTime_End)`, exactly as the report states them. The portal states both to the second, so there is nothing to adjust and every overlap has one width.
 
-A time stated to the minute is the true time truncated down to the minute, so a session reported to end at `16:34` truly ended somewhere in `[16:34:00, 16:35:00)`. The software therefore records an adjusted end, **`adj_conn_end`**, one `R` past the reported end — the exclusive bound that contains the true end wherever in that minute it fell. That the report truncates rather than rounds is an assumption; see [Assumptions](#assumptions).
-
-What truncation leaves behind is a residual doubt the estimates have to answer for. Where one session is reported to end in the same minute another is reported to start, the two may have genuinely overlapped for part of that minute, or may merely have abutted; the reported times cannot say which. Similarly, the same margin of uncertainty exists in the overlap of a session with the interval of interest or a segment.
-
-#### Brackets
-
-The software accounts for the above margin of uncertainty by providing values in *brackets*: the minimum value in the bracket and the maximum value in the bracket.
+That was not always so. Reports used to state start and end times truncated to the minute, and the software padded each session's end out to the following minute to bound where the true end might have been. The consequence was that every figure came out as a range rather than a number: where one session was reported to end in the minute another was reported to start, the reported times could not say whether the two overlapped or merely abutted. The padding, and the brackets it forced, are gone.
 
 #### Interval of interest with no EVs charging
 
@@ -84,13 +78,13 @@ In such cases, the EV charging infrastructure still impacts the overall building
 
 ### Technical Notes
 
-#### Boundaries and the time grid
+#### Half-open boundaries
 
 Half-open is what makes segments properly cover all of the interval of interest without overlaps between them: consecutive segments meet at a single instant that belongs to the later one, so no instant falls in two segments. Closed intervals (i.e., the end is included) cannot do this — adjacent segments would either share an instant, and so disagree about which sessions were active at it, or leave a one-tick gap. It is also what makes *abutting* distinguishable from *overlapping*, which is significant for the estimates.
 
-The padding is a full `R` rather than one tick less for the same reason. A session reported to end at `16:34` truly ended somewhere in `[16:34:00, 16:35:00)`, so `16:35:00` — exclusive — is the bound that contains it wherever it fell.
+It applies to sessions too, and it is what settles the shared-instant case. A session reported to end at `16:34:00` and one reported to start at `16:34:00` abut: that instant belongs to the second alone, so neither counts it twice and the two do not overlap.
 
-**The time grid** is a consequence the session boundary resolution being `R`. Reported start and end times lie on the `R` grid; `adj_conn_end` adds exactly one `R`, so it lies on it too. `R` must divide 15 minutes without leaving a remainder. Otherwise, 15-minute segments can't properly partition the interval of interest.
+The interval of interest must still be a whole number of `SEGMENT_DURATION`s — 15 minutes — or the segments cannot partition it. `estimates_from_sessions` asserts that rather than rounding.
 
 #### kW and kVA calculations
 
@@ -142,7 +136,7 @@ The above-mentioned [electrotechnical document](site-model-marcus.md) derives ev
 
 #### Assumptions
 
-- **Session end times are truncated, not rounded.** `adj_conn_end = Conn_DateTime_End + R` is the exclusive bound of the window the true end lies in only because the reported end is the true end rounded *down* to `R`. Under rounding to nearest, or under a convention where the reported end is the first instant the vehicle was no longer drawing power, the correct padding would differ — in the latter case it would be zero.
+- **Reported times are exact.** `Conn_DateTime_Start` and `Conn_DateTime_End` are taken as the instants the connection began and ended, to the second. The one allowance is `DURATION_TOLERANCE`, a second of slack when checking them against `Conn_Duration`, because the source rounds somewhere at second level; see [Anomalies](#anomalies).
 - **Breaker ratings are uniform across panels.** `count_based_kw` and `count_based_kva` are an aggregate session count multiplied by a single rating, so an installation mixing breakers of different ratings would skew both. Panels enter the estimates in one other place only — the count at which the site total switches from the one-panel model to proportional scaling, described above — and that too assumes every panel is like the first. Which panel a session ran on is never used: the session report carries no panel ID, and none is needed. A session drawing more than a breaker should allow is flagged `ExcessiveAvgKw`; see [Anomalies](#anomalies).
 
 #### Anomalies
@@ -155,21 +149,21 @@ It was three of nine until session times were confirmed to be stated on a fixed 
 
 Excluded sessions get a section of their own in the report, listing **every** one in the session data rather than only those near the interval of interest, with an `In interval` column saying whether each *appears* to fall in that interval. Appears only: a record whose own fields contradict each other cannot be trusted to say where it belongs, so filtering on that judgement could hide exactly the session a reader most needs to see. Such a record may even report an end before its start, and the column answers for it.
 
-- **`InconsistentDuration`** — the record's reported start, end and duration contradict each other. Each session is checked for internal consistency; `docs/session/time-reporting-uncertainty.md` carries the derivation, its **Result** section states the three checks together, and `duration_is_consistent` in `src/session/common.rs` is the one place they appear in code:
+- **`InconsistentDuration`** — the record's reported start, end and duration contradict each other. The invariant is that the three agree, and `duration_is_consistent` in `src/session/common.rs` is the one place it appears in code:
 
   ```
-  1.  Conn_start <= Conn_end
-  2.  Conn_start + Conn_Duration  <  Conn_end + R + 1s
-  3.  Conn_end - R                <  Conn_start + Conn_Duration
+  | Conn_start + Conn_Duration - Conn_end |  <=  DURATION_TOLERANCE
   ```
 
-  Every bound is strict, because checks 2 and 3 are the condition for two half-open windows to *meet* rather than an interval anyone chose. That makes this the one band in the design that is open rather than half-open — an instance of the convention rather than an exception to it. The band is not slack: it is precisely what truncation to whole minutes accounts for, and the sample data reaches to within 3 seconds of its lower edge. It is also asymmetric, one second wider on the late side, because the reported end is truncated *and* of unknown last-second convention — the same second that appears in `adj_conn_end`.
+  `DURATION_TOLERANCE` is one second. It is not slack chosen for comfort: in the one real portal export, four of five rows satisfy the invariant exactly and one is a second out, and `Active_Charge_Time` misses `Conn_Duration` by a second on three of the five. Something in the source rounds at second level. Exact equality would exclude a fifth of the only genuine export there is; anything wider starts admitting records whose fields really do disagree.
 
-  - Check 1 is not implied by the other two, and is the reason they are three rather than two. A record whose end precedes its start by a single minute, carrying a duration near zero, satisfies checks 2 and 3; letting it through gives the estimating logic a span that ends before it begins.
-  - A session failing any of the three is excluded from the estimates. Every direction is a fault: if a record's own fields disagree by more than the reporting can explain, neither its duration nor the span the estimating logic would place it on can be relied on.
+  - An inverted record — one whose end precedes its start — fails this by whatever the inversion is worth, and that is what keeps it out. `Session::intersects` panics on an inverted span and names exclusion by this test as the reason it cannot reach one.
+  - A session failing it is excluded from the estimates, in either direction. If a record's own fields disagree by more than the source's rounding explains, neither its duration nor the span the estimating logic would place it on can be relied on.
+
+  This was three checks with a window a whole minute wide, while reported times were truncated to the minute. `docs/archive/session/time-reporting-uncertainty.md` carries that derivation.
 - **`DuplicateId`** — another session in the report carries the same `Charge_Session_ID`. `Charge_Session_ID` is **not unique**: Evolute's sample June 2026 report carries `S37487` on two sessions a week apart, within the one file, and reports for adjacent months overlap so a session near the boundary appears in both.
 
-  - Two records stating the same session identically — same adjusted start and end, charge time and energy — are one session, and only one copy is kept, whether the two came from different files or from the same one. This is what lets a billing period be estimated from the two monthly reports spanning it without every shared session counting twice. Each dropped copy is noted in the run log of the file it came from, in wording that says the fields were equal, so a collapse cannot be mistaken for a `DuplicateId`.
+  - Two records stating the same session identically — same start and end, charge time and energy — are one session, and only one copy is kept, whether the two came from different files or from the same one. This is what lets a billing period be estimated from the two monthly reports spanning it without every shared session counting twice. Each dropped copy is noted in the run log of the file it came from, in wording that says the fields were equal, so a collapse cannot be mistaken for a `DuplicateId`.
   - Two records sharing an id but differing in any of those fields are two sessions. Both are kept and both take part in every estimate, and each is flagged.
   - The flag cannot distinguish a reused id from two reports disagreeing about one session; from the merge the two look identical. Neither is treated as fatal, because refusing the first would make June 2026 unestimatable, and the judgement belongs to a reader who can go back to the source rows.
 - **`ZeroActiveChargeTime`** — the session delivered energy in no time at all, so its average power is unbounded or undefined. These are designated as *spike*s. Spikes are a theoretical possibility the software must guard against, though it is highly unlikely they would occur in practice.
@@ -180,7 +174,4 @@ Excluded sessions get a section of their own in the report, listing **every** on
     - If `Energy_Use == 0`, set `avg_kw` to 0. These sessions do not contribute to `energy_based_kw` and `energy_based_kva` but they do contribute to `count_based_kw` and `count_based_kva`.
     - Otherwise, set `avg_kw` to the constant `BREAKER_RATING_KW`. These sessions contribute to all four estimate types.
 - **`ExcessiveAvgKw`** — the session's own average power exceeds `BREAKER_MAX_NORMAL_KW`, the rating at the top of the normal supply voltage band, which the hardware should not allow. The breaker limits current, so a vehicle draws more kW when the voltage runs high; only a draw above the whole band says something is wrong. It is not excluded, because the figure says something is wrong with `Energy_Use` or `Active_Charge_Time` and not which. See [Assumptions](#assumptions), where the uniform-rating assumption this rests on is stated.
-- **`OffGridTimes`** — a reported start or end does not land on a whole `R`. Informational: the session takes part in every estimate, and nothing is wrong with the record. What it says is that the report's resolution has become finer than the time grid, so the padding and the consistency window described in [Boundaries and the time grid](#boundaries-and-the-time-grid) are now wider than the data needs — a session gets a padded end it does not need, and the consistency window admits records it should reject. Nothing crashes and no figure looks odd, which is exactly why it needs saying.
-
-  - Expect it on every row or on none. A report that has switched resolution has switched it throughout, so it is summarised once per file in the run log rather than listed per row, and it is the one anomaly never shown on screen.
 Not an anomaly, but easily mistaken for one: a session with zero `Energy_Use` and non-zero `Active_Charge_Time` is an ordinary record. It does not contribute to `energy_based_kw` or `energy_based_kva`, and it does contribute to `count_based_kw` and `count_based_kva`.

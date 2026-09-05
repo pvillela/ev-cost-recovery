@@ -31,7 +31,7 @@ mod site_model;
 
 // --- Named outside the crate -------------------------------------------------------------------
 
-pub use common::{Bracket, Segment, Session, Sessions};
+pub use common::{Segment, Session, Sessions};
 pub use excel::{SessionWriteReport, session_csv_to_xlsx};
 pub use file_name::{report_coverage, report_month};
 pub use peak::IntervalEstimates;

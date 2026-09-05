@@ -34,9 +34,11 @@ pub use tou::Tou;
 
 // --- Named elsewhere inside the crate ----------------------------------------------------------
 
+#[cfg(test)]
+pub(crate) use base::session_wall_time;
 pub(crate) use base::{
-    duration, is_on_grid, local_datetime, local_hour, local_midnight, session_instant,
-    session_wall_time, standard_date, standard_midnight, truncate_to,
+    duration, local_datetime, local_hour, local_midnight, session_instant, standard_date,
+    standard_midnight,
 };
 pub(crate) use excel::{
     serial_of_civil, serial_of_date, serial_of_duration, serial_of_instant, serial_of_local,

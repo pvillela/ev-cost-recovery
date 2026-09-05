@@ -61,12 +61,8 @@ enum Source {
     ConnStartUtc,
     ConnEndLocal,
     ConnEndUtc,
-    AdjConnStartLocal,
-    AdjConnStartUtc,
-    AdjConnEndLocal,
-    AdjConnEndUtc,
-    /// Formula: `adj_conn_end_utc - adj_conn_start_utc`.
-    AdjConnDuration,
+    /// Formula: `conn_end_utc - conn_start_utc`.
+    ConnSpan,
     /// Formula: `Energy_Use / Active_Charge_Time`, in kW.
     AvgKw,
     /// Comma-separated [`AnomalyKind`] tokens for this row; empty when the row is clean.
@@ -103,13 +99,9 @@ const COLUMNS: &[(&str, Source)] = &[
     // Everything from here on is this software's, not Evolute's. Grouped at the right end so the
     // left of the sheet is the session report as received and a reader can tell at a glance which
     // is which.
-    ("adj_conn_start", Source::AdjConnStartLocal),
-    ("adj_conn_end", Source::AdjConnEndLocal),
     ("conn_start_utc", Source::ConnStartUtc),
     ("conn_end_utc", Source::ConnEndUtc),
-    ("adj_conn_start_utc", Source::AdjConnStartUtc),
-    ("adj_conn_end_utc", Source::AdjConnEndUtc),
-    ("adj_conn_duration", Source::AdjConnDuration),
+    ("conn_span", Source::ConnSpan),
     ("avg_kw", Source::AvgKw),
     ("anomalies", Source::Anomalies),
 ];
@@ -119,8 +111,8 @@ const COLUMNS: &[(&str, Source)] = &[
 /// with the extension replaced.
 ///
 /// The parse is `csv::csv_session_rows`; nothing about the session report is interpreted here. The
-/// domain rules — the UTC conversion, the definitions of `adj_conn_end` and
-/// `adj_conn_duration`, and the treatment of zero-`Energy_Use` sessions — are specified in
+/// domain rules — the UTC conversion, the definition of `conn_span`, and the treatment of
+/// zero-`Energy_Use` sessions — are specified in
 /// `docs/time/README.md` under "Time zone" and in `docs/session/README.md` under "Excel workbook"
 /// and "Anomalies". They are shared with the peak power contribution logic and are not restated
 /// here.
@@ -133,7 +125,7 @@ const COLUMNS: &[(&str, Source)] = &[
 /// - Timestamp columns are Excel date/time numbers formatted `yyyy-mm-dd hh:mm:ss ddd`, left-
 ///   justified; duration columns are Excel durations formatted `[h]:mm:ss`, which does not wrap
 ///   past 24 hours, and are centered.
-/// - `adj_conn_duration` and `avg_kw` are live formulas. `adj_conn_duration` subtracts the two
+/// - `conn_span` and `avg_kw` are live formulas. `conn_span` subtracts the two
 ///   *UTC* columns rather than the local ones, so nothing about the zone can enter it; `avg_kw` is
 ///   `=Energy_Use/(Active_Charge_Time*24)`, in kW, displayed to 3 decimal
 ///   places, matching `Energy_Use`. The formula is written on every row, so a session with
@@ -243,8 +235,8 @@ fn write_sheet(
         sheet.style_mut((col, 1)).font_mut().set_bold(true);
     }
 
-    let adj_start_utc_col = column_letters(column_index(Source::AdjConnStartUtc));
-    let adj_end_utc_col = column_letters(column_index(Source::AdjConnEndUtc));
+    let start_utc_col = column_letters(column_index(Source::ConnStartUtc));
+    let end_utc_col = column_letters(column_index(Source::ConnEndUtc));
     let energy_col = column_letters(column_index(Source::Number("Energy_Use")));
     let active_col = column_letters(column_index(Source::Duration("Active_Charge_Time")));
 
@@ -297,17 +289,6 @@ fn write_sheet(
                 Source::ConnEndLocal => {
                     write_datetime(sheet, col, excel_row, serial_of_civil(row.end_local));
                 }
-                Source::AdjConnStartLocal => {
-                    write_datetime(
-                        sheet,
-                        col,
-                        excel_row,
-                        serial_of_civil(row.adj_start_local()),
-                    );
-                }
-                Source::AdjConnEndLocal => {
-                    write_datetime(sheet, col, excel_row, serial_of_civil(row.adj_end_local()));
-                }
                 Source::ConnStartUtc => {
                     write_datetime(
                         sheet,
@@ -324,29 +305,12 @@ fn write_sheet(
                         serial_of_instant(row.session.conn_end),
                     );
                 }
-                Source::AdjConnStartUtc => {
-                    write_datetime(
-                        sheet,
-                        col,
-                        excel_row,
-                        serial_of_instant(row.session.adj_conn_start()),
-                    );
-                }
-                Source::AdjConnEndUtc => {
-                    write_datetime(
-                        sheet,
-                        col,
-                        excel_row,
-                        serial_of_instant(row.session.adj_conn_end()),
-                    );
-                }
-                Source::AdjConnDuration => {
+                Source::ConnSpan => {
                     // Subtracting the UTC columns, not the local ones, so no zone enters the
-                    // arithmetic. Both ends are the adjusted ones, so the cell equals
-                    // `Session::adj_duration` — the span the estimating logic places the session
-                    // on, which is the point of showing it.
+                    // arithmetic. The cell equals `Session::conn_span` — the span the estimating
+                    // logic places the session on, which is the point of showing it.
                     sheet.cell_mut((col, excel_row)).set_formula(format!(
-                        "{adj_end_utc_col}{excel_row}-{adj_start_utc_col}{excel_row}"
+                        "{end_utc_col}{excel_row}-{start_utc_col}{excel_row}"
                     ));
                     set_duration_style(sheet, col, excel_row);
                 }
@@ -446,30 +410,13 @@ fn sheet_name(output_path: &Path) -> String {
 fn add_comments(sheet: &mut Worksheet) {
     let notes = [
         (
-            Source::AdjConnStartLocal,
-            "Adjusted connection start: Conn_DateTime_Start rounded DOWN to the whole minute, and \
-             INCLUSIVE. The report states times only to the minute, so the true start is known \
-             only to fall somewhere in the minute named; this is the earliest instant it could \
-             have been. Together with adj_conn_end it gives the half-open span \
-             [adj_conn_start, adj_conn_end), the tightest window guaranteed to contain the whole \
-             connection.",
-        ),
-        (
-            Source::AdjConnEndLocal,
-            "Adjusted connection end: EXCLUSIVE -- the first instant the connection is certainly \
-             over. The true end is known only to fall somewhere in the minute Conn_DateTime_End \
-             names, and it is not known whether that minute's last second counts as inside the \
-             session or outside it. So one second is added, the result is rounded DOWN to the \
-             whole minute, and one further minute is added. For a reported end on the whole \
-             minute -- which is every row the session report currently produces -- that comes to \
-             the following minute. Because the end is excluded, a session starting at this exact \
-             time does NOT overlap this one.",
-        ),
-        (
-            Source::AdjConnDuration,
-            "adj_conn_end_utc - adj_conn_start_utc: the width of the window above, which is the \
-             span every estimate places this session on. Computed from the UTC columns so that no \
-             time zone enters the arithmetic.",
+            Source::ConnSpan,
+            "conn_end_utc - conn_start_utc: the span every estimate places this session on. \
+             Computed from the UTC columns so that no time zone enters the arithmetic. It is the \
+             reported start to the reported end, taken as written -- Evolute states both to the \
+             second. The sheet used to carry a padded pair of columns beside these, because the \
+             times were stated only to the minute and the true start and end were known only to \
+             fall somewhere inside the minute named.",
         ),
         (
             Source::AvgKw,
@@ -501,9 +448,9 @@ fn add_comments(sheet: &mut Worksheet) {
 
 /// The date/time format needs real width or Excel renders the cell as `####`.
 ///
-/// Every column holding a date and time takes that width, whichever of the eight it is. The
-/// header's own length decides nothing here: `adj_conn_start_utc` is a long name and a value
-/// longer still, and sizing to the name left the value hidden.
+/// Every column holding a date and time takes that width, whichever it is. The header's own length
+/// decides nothing here: `Conn_DateTime_Start` is a long name and a value longer still, and sizing
+/// to the name left the value hidden.
 fn set_widths(sheet: &mut Worksheet) {
     for (i, (header, source)) in COLUMNS.iter().enumerate() {
         let letters = column_letters(i + 1);
@@ -511,12 +458,8 @@ fn set_widths(sheet: &mut Worksheet) {
             Source::ConnStartLocal
             | Source::ConnStartUtc
             | Source::ConnEndLocal
-            | Source::ConnEndUtc
-            | Source::AdjConnStartLocal
-            | Source::AdjConnStartUtc
-            | Source::AdjConnEndLocal
-            | Source::AdjConnEndUtc => 24.0,
-            Source::Duration(_) | Source::AdjConnDuration => 13.0,
+            | Source::ConnEndUtc => 24.0,
+            Source::Duration(_) | Source::ConnSpan => 13.0,
             // Room for a couple of variant names side by side.
             Source::Anomalies => 40.0,
             _ => (header.len() as f64 + 2.0).max(10.0),
@@ -563,13 +506,13 @@ mod test {
         assert_eq!(column_letters(1), "A");
         assert_eq!(column_letters(26), "Z");
         assert_eq!(column_letters(27), "AA");
-        assert_eq!(column_letters(COLUMNS.len()), "AD");
+        assert_eq!(column_letters(COLUMNS.len()), "Z");
     }
 
     const FIXTURE: &str = "\
 UR_ID,Location_Address,Location_City,Location_Postal_Code,Station_ID,Station_Network_Provider,Station_Make,Station_Model,Charge_Session_ID,User_ID,Conn_DateTime_Start,Conn_DateTime_End,Conn_Duration,Charge_Duration,Active_Charge_Time,Charging_Level,Energy_Use,Total_Fee,Vehicle_Make,Vehicle_Model,Vehicle_Year
-CKT-7,,Toronto,,Station-7,Evolute Inc.,FLO,G5,S69865,,2026-06-01 16:22,2026-06-01 21:29,5:07:53,5:07:53,5:07:52,Level 2,30.6,5.63,VinFast,Vf8,2024
-CKT-7,,Toronto,,Station-7,Evolute Inc.,FLO,G5,S13577,,2026-06-02 08:00,2026-06-02 08:00,0:00:11,0:00:11,0:00:10,Level 2,0,0,VinFast,Vf8,2024
+CKT-7,,Toronto,,Station-7,Evolute Inc.,FLO,G5,S69865,,2026-06-01 16:22:00,2026-06-01 21:29:53,5:07:53,5:07:53,5:07:52,Level 2,30.6,5.63,VinFast,Vf8,2024
+CKT-7,,Toronto,,Station-7,Evolute Inc.,FLO,G5,S13577,,2026-06-02 08:00:00,2026-06-02 08:00:11,0:00:11,0:00:11,0:00:10,Level 2,0,0,VinFast,Vf8,2024
 ";
 
     #[test]
@@ -598,26 +541,24 @@ CKT-7,,Toronto,,Station-7,Evolute Inc.,FLO,G5,S13577,,2026-06-02 08:00,2026-06-0
 
         let col = |s: Source| column_index(s) as u32;
 
-        // adj_conn_end = 21:30:00 local on the first row — the exclusive end of the minute the
-        // reported 21:29 end falls in.
-        let adj: f64 = sheet
-            .value((col(Source::AdjConnEndLocal), 2))
-            .parse()
-            .unwrap();
-        assert!((adj - 46_174.895_833_333_3).abs() < 1e-9, "{adj}");
+        // conn_end_utc on the first row: 21:29:53 at the session offset is 02:29:53Z on the 2nd.
+        let end_utc: f64 = sheet.value((col(Source::ConnEndUtc), 2)).parse().unwrap();
+        let expected = crate::time::serial_of_instant(
+            "2026-06-02T02:29:53Z"
+                .parse()
+                .expect("an RFC 3339 timestamp"),
+        );
+        assert!((end_utc - expected).abs() < 1e-9, "{end_utc} vs {expected}");
 
         // Formulas, not cached values. Both operands are the *adjusted* UTC columns, so the cell
-        // equals `Session::adj_duration` rather than a span starting at the reported start.
+        // equals `Session::conn_span` rather than a span starting at the reported start.
         let expect_formula = format!(
             "{}2-{}2",
-            column_letters(column_index(Source::AdjConnEndUtc)),
-            column_letters(column_index(Source::AdjConnStartUtc))
+            column_letters(column_index(Source::ConnEndUtc)),
+            column_letters(column_index(Source::ConnStartUtc))
         );
         assert_eq!(
-            sheet
-                .cell((col(Source::AdjConnDuration), 2))
-                .unwrap()
-                .formula(),
+            sheet.cell((col(Source::ConnSpan), 2)).unwrap().formula(),
             expect_formula
         );
         let avg_kw_formula = |r: u32| {
@@ -688,7 +629,7 @@ CKT-7,,Toronto,,Station-7,Evolute Inc.,FLO,G5,S13577,,2026-06-02 08:00,2026-06-0
         );
         assert_eq!(
             *sheet
-                .style((col(Source::AdjConnDuration), 2))
+                .style((col(Source::ConnSpan), 2))
                 .alignment()
                 .unwrap()
                 .horizontal(),

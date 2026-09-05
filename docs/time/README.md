@@ -3,8 +3,8 @@
 The `time` module: everything about dates, times and zones that more than one part of this software
 needs. Module-specific date arithmetic stays in its own module.
 
-`src/time/` holds the code — `base.rs` for the zones, the grid and intervals, `format.rs` for
-rendering an instant with the zone it is read in, `excel.rs` for serial-date conversion, `tou.rs` and
+`src/time/` holds the code — `base.rs` for the zones and intervals, `format.rs` for rendering an
+instant with the zone it is read in, `excel.rs` for serial-date conversion, `tou.rs` and
 `holidays.rs` for Ontario's time-of-use rules.
 
 ## What lives here and what does not
@@ -16,18 +16,11 @@ rendering an instant with the zone it is read in, `excel.rs` for serial-date con
 | The standard-time clock billing periods are cut on | here |
 | Excel serial dates, in both directions | here |
 | Ontario time-of-use periods and the holiday calendar | here |
-| Truncating an instant to a grid of a given step | here |
-| `TIME_GRID_STEP`, the step session boundaries are reported to | `sessions` |
-| `METER_INTERVAL`, the interval a Toronto Hydro meter records | `green_button` |
+| `METER_INTERVAL`, the interval a Toronto Hydro meter records, and `is_on_grid` | `green_button` |
 
-The two steps live with the module that has a reason for their value. Truncation itself is here
-because both use it, but neither step is a property of time.
-
-## Boundaries and the time grid
-
-`TIME_GRID_STEP` and the way segments tile an interval of interest are documented in
-[`docs/session/README.md`](../session/README.md), under "Boundaries and the time grid". They
-belong there: the grid is the session report's reporting resolution, and only `sessions` has one.
+The meter interval and the predicate that tests against it live together, in the module with a
+reason for the value. The session reader had a grid of its own — the resolution its timestamps were
+reported at — until the portal confirmed they are stated to the second.
 
 ## Two clocks, and which is which
 
@@ -105,11 +98,11 @@ sides of a transition, and then two headings in the same document differ by an h
 
 ### Where the two meet
 
-The workbook is the one place both clocks could appear in one row, so it does not let them.
-`Conn_DateTime_Start` and `Conn_DateTime_End` are copied from the CSV text verbatim, and the derived
-`adj_conn_*` local columns are rendered with `time::session_wall_time` rather than
-`time::local_datetime` — so every local column in the sheet is on the report's own clock. A workbook
-carries no zone labels, and that is only safe while it is internally consistent.
+The workbook could show both clocks in one row, so it shows only one. Its `Conn_DateTime_Start` and
+`Conn_DateTime_End` are the CSV's own text, copied verbatim, and it derives no local column of its
+own — the padded `adj_conn_*` pair it used to carry is gone with the padding. Its UTC columns are
+instants. So nothing in the sheet is on prevailing time, and a workbook that carries no zone labels
+stays honest.
 
 **Before the portal.** Until the offset was confirmed, the reader read session times as prevailing
 local and had to resolve the two hours a year that are ambiguous or absent: it enumerated readings
@@ -118,26 +111,9 @@ choose between, and assigned sentinel timestamps where a wall time named nothing
 along with the four anomaly kinds it raised. The history is in
 [`docs/archive/dst-gap-plan.md`](../archive/dst-gap-plan.md).
 
-## Truncating to a grid
-
-`truncate_to(ts, step)` rounds an instant down to the nearest multiple of `step`, counting from the
-Unix epoch, and `is_on_grid(ts, step)` says whether it was already there. The property everything
-else rests on is
-
-```text
-truncate_to(ts, step) <= ts < truncate_to(ts, step) + step
-```
-
-which is what makes `adj_conn_start <= real_start` true in
-[`docs/session/time-reporting-uncertainty.md`](../session/time-reporting-uncertainty.md).
-
-Truncation is always **backwards**, including before 1970. The implementation uses `rem_euclid`
-rather than `%` for that reason: `%` gives a negative remainder for a negative timestamp, which
-would round towards zero — forwards — and break the bound above.
-
 ## Where the labour divides
 
 `time` owns the zone arithmetic and knows nothing about sessions: `session_instant` converts a
-reported wall time, `session_wall_time` converts one back, and `format` renders one for a reader.
-`session::csv` owns the policy — whether a record's own three fields agree, and which `AnomalyKind`
-to raise when they do not.
+reported wall time to an instant, and `format` renders one for a reader. `session::csv` owns the
+policy — whether a record's own three fields agree, and which `AnomalyKind` to raise when they do
+not.

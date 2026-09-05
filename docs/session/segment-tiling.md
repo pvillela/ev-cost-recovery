@@ -33,11 +33,12 @@ membership section keys its lists on it.
 
 ## The seven sessions
 
-Every session occupies the half-open span `[Conn_start, adj_conn_end)`, where `adj_conn_end` is the
-*reported* end plus one `TIME_GRID_STEP` — currently one minute. That padding is not slack: a time
-stated to the minute is the true time truncated down, so a session reported to end at 16:34 truly
-ended somewhere in `[16:34:00, 16:35:00)`, and 16:35:00 exclusive is the tightest bound that
-contains it wherever in that minute it fell.
+Every session occupies the half-open span `[Conn_DateTime_Start, Conn_DateTime_End)`, exactly as
+the report states them. The portal states both to the second, so there is nothing to adjust.
+
+The clock times throughout this document are the ones the *report* states, which are on standard
+time all year. A rendered report shows the same instants in prevailing local time, so its segments
+are named an hour later — the segment called 16:15 here is `17:15` in the tables below.
 
 ```text
            16:00      16:15      16:30      16:45      17:00
@@ -75,15 +76,14 @@ not overlapping, and the half-open convention is what keeps the two distinguisha
 
 Two entries are worth dwelling on.
 
-**`B` in the 16:15 segment.** `B` is *reported* to end at 16:15, which looks like it stops exactly
-where the segment starts. But its true end lies anywhere in `[16:15, 16:16)`, so it may still have
-been drawing power when the segment opened. It is therefore counted — as a fraction, and a small
-one, which is what the bracket below expresses.
+**`B` is not in the 16:15 segment.** `B` ends at 16:15, exactly where the segment starts. Spans are
+half-open, so that instant belongs to the segment and not to `B`: the two abut and do not overlap.
+`B` used to be counted here, because its reported end was padded a minute forward on the reasoning
+that a time stated to the minute could mean anywhere inside it.
 
-**`D`, `E` and `F` in the 16:30 segment.** `D` and `E` are reported to end at 16:34 and `F` is
-reported to start at 16:34. Whether `F` overlapped them or merely took over from them, the reported
-times cannot say. All three are in the segment, and the doubt is carried into the figures rather
-than resolved by fiat.
+**`D`, `E` and `F` in the 16:30 segment.** `D` and `E` end at 16:34 and `F` starts at 16:34, so `F`
+abuts them rather than overlapping them — the shared instant is `F`'s. All three still meet the
+segment, each covering a different part of it.
 
 ## What each segment contributes
 
@@ -95,34 +95,30 @@ Two aggregates are computed per segment, and every estimate is derived from them
 - **`agg_kw`** — the same ratios, each multiplied by its session's own average power
   (`Energy_Use` over `Active_Charge_Time`), summed the same way.
 
-Both are **brackets** rather than numbers. Where a session's own reported edge falls inside the
-segment, the minute of truncation is a minute of genuine doubt, and the ratio runs from what the
-reported times least support to what they most support. Where neither edge falls inside — as with
-`A`, which crosses the whole interval — the ratio is exactly 1 and the bracket is a point.
+Both are single numbers. Reported times are exact, so an overlap has one width. They were a pair of
+bounds while those times were stated only to the minute and a session's edge could lie anywhere
+inside the minute it named.
 
-| Segment | `agg_count`   | `agg_kw`        |
-|---------|---------------|-----------------|
-| `16:00` | 2.400 – 2.467 | 14.880 – 15.293 |
-| `16:15` | 2.933 – 3.133 | 17.940 – 19.200 |
-| `16:30` | 2.800 – 3.133 | 17.420 – 19.560 |
-| `16:45` | 1.400 – 1.533 | 8.440 – 9.253   |
-
-The 16:00 segment is nearly exact — only `C` has an edge inside it — while 16:30 has the widest
-bracket of the four, because `C`, `D`, `E` and `F` all begin or end within it.
+| Segment | `agg_count` | `agg_kw` |
+|---------|------------:|---------:|
+| `16:00` |       2.467 |   15.293 |
+| `16:15` |       3.067 |   18.773 |
+| `16:30` |       2.867 |   17.867 |
+| `16:45` |       1.467 |    8.847 |
 
 ## Which segment is reported
 
 The estimates are reported for the **maximal** segment: the one where the derivation peaks. The
 two derivations are ranked separately and need not agree, so each names its own segment.
 
-Here they do agree, and narrowly. Ranked on the midpoint of its bracket, 16:15 leads 16:30 by
-0.067 on `agg_count` (3.033 against 2.966) and by 0.08 kW on `agg_kw` (18.570 against 18.490).
-Both maxima are 16:15, and that is the segment the report names.
+Here they do agree, and narrowly. 16:15 leads 16:30 by 0.200 on `agg_count` (3.067 against 2.867)
+and by 0.906 kW on `agg_kw` (18.773 against 17.867). Both maxima are 16:15, and that is the segment
+the report names.
 
-The narrowness is the point rather than an accident of the fixture. The two segments' brackets
-overlap heavily — 16:30's runs wider in both directions — so which one is "the peak" rests on a
-choice of ranking statistic. The midpoint is what the code uses, and a reader quoting one figure
-should look at the Segments table rather than treat the winner as decisive.
+The narrowness is the point rather than an accident of the fixture. Two segments this close mean
+that a small change in the fixture — one session a minute longer — would move the winner, so a
+reader quoting one figure should look at the Segments table rather than treat the winner as
+decisive.
 
 Ties go to the earliest segment. That is not a rare case to have decided: in an interval no session
 reached at all, every segment sits at the same standing block, and without a rule the report would

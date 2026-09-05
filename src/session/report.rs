@@ -20,7 +20,7 @@
 //! than two that could drift.
 
 use super::{
-    Anomaly, AnomalyKind, Bracket, IntervalEstimates, RSession, Segment, Session, SessionNotes,
+    Anomaly, AnomalyKind, IntervalEstimates, RSession, Segment, Session, SessionNotes,
     site_model::{
         BREAKER_RATING_A, CONTINUOUS_DUTY_DERATE, PANEL_BREAKER_COUNT, PANEL_VOLTAGE_V,
         XFMR_RATING_KVA, ev_load, ev_pilot_current_a, loading_ratio, single_panel_load,
@@ -45,15 +45,6 @@ fn local(ts: Timestamp) -> Zoned {
 /// membership list both use, so the three sections join on it.
 fn hm(ts: Timestamp) -> String {
     local(ts).strftime("%H:%M").to_string()
-}
-
-/// A bracket as one cell, `min-max`. Three decimals, matching every other figure in the report.
-///
-/// Always both ends, never a midpoint: the two numbers are what the reported times actually
-/// support, and collapsing them would state a precision the minute-resolution source does not have.
-/// An exact bracket still prints both, so a column of them stays a column of the same shape.
-fn bracket_cell(b: Bracket<f64>) -> String {
-    format!("{:.3}-{:.3}", b.min, b.max)
 }
 
 /// Whether an excluded session's reported span appears to meet the interval of interest, as a
@@ -153,10 +144,8 @@ impl SessionNotes {
         out.push(String::new());
         out.push(wrap(
             "These records cannot be placed on a timeline, so they take no part in any figure \
-             above: either their reported start, end and duration contradict each other, or a \
-             reported time names no instant - a wall time the clocks jumped over, or a repeated \
-             hour the record cannot choose between. Every one of them is energy the chargers may \
-             have drawn and none of the figures counts.",
+             above: their reported start, end and duration contradict each other. Every one of \
+             them is energy the chargers may have drawn and none of the figures counts.",
             "",
         ));
         out.push(String::new());
@@ -241,8 +230,8 @@ fn file_name(session: &Session) -> String {
     )
 }
 
-const ESTIMATE_HEADERS: [&str; 5] = ["Estimate", "Unit", "Min", "Max", "Segment"];
-const ESTIMATE_ALIGN: [Align; 5] = [Left, Left, Right, Right, Left];
+const ESTIMATE_HEADERS: [&str; 4] = ["Estimate", "Unit", "Value", "Segment"];
+const ESTIMATE_ALIGN: [Align; 4] = [Left, Left, Right, Left];
 
 impl IntervalEstimates {
     /// Renders the report as markdown that is also readable as plain text. See the module docs for
@@ -294,12 +283,11 @@ impl IntervalEstimates {
 
         let (energy_seg, energy_est) = &self.energy_based_seg_estimate;
         let (count_seg, count_est) = &self.count_based_seg_estimate;
-        let row = |label: &str, unit: &str, b: Bracket<f64>, seg: &Segment| {
+        let row = |label: &str, unit: &str, value: f64, seg: &Segment| {
             vec![
                 label.to_owned(),
                 unit.to_owned(),
-                format!("{:.3}", b.min),
-                format!("{:.3}", b.max),
+                format!("{value:.3}"),
                 hm(seg.start()),
             ]
         };
@@ -318,12 +306,13 @@ impl IntervalEstimates {
         out.push(String::new());
 
         out.push(wrap(
-            "Every figure is a bracket: the reported session times are stated only to the minute, \
-             so each estimate runs from what those times least support to what they most support. \
-             \"Energy-based\" is derived from the sessions' own consumption, \"Count-based\" from \
+            "\"Energy-based\" is derived from the sessions' own consumption, \"Count-based\" from \
              how many of them were charging and the per-EV rating of the infrastructure. \
              \"Segment\" names the 15-minute segment the figure was drawn from - the one where \
-             that derivation peaks, which the two need not agree on.",
+             that derivation peaks, which the two need not agree on. Each figure is a single \
+             value: the reported session times are stated to the second and taken as given, so an \
+             overlap has one width. They were a range while those times were stated only to the \
+             minute.",
             "",
         ));
         out.push(String::new());
@@ -383,8 +372,8 @@ impl IntervalEstimates {
             .map(|(seg, _)| {
                 vec![
                     hm(seg.start()),
-                    bracket_cell(seg.agg_count()),
-                    bracket_cell(seg.agg_kw()),
+                    format!("{:.3}", seg.agg_count()),
+                    format!("{:.3}", seg.agg_kw()),
                 ]
             })
             .collect();
@@ -453,8 +442,8 @@ impl IntervalEstimates {
                 vec![
                     s.row.to_string(),
                     s.id.clone(),
-                    zoned_minute(s.adj_conn_start()),
-                    zoned_span_end(s.adj_conn_start(), s.adj_conn_end()),
+                    zoned_minute(s.conn_start),
+                    zoned_span_end(s.conn_start, s.conn_end),
                     in_interval(s, &self.interval),
                     // An excluded session is in no segment, but the report holds the session
                     // itself here, so its figure needs no lookup.

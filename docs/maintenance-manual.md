@@ -20,7 +20,7 @@ Titles are stable; if one changes, the citation fails to find it and says so.
 - Golden files
 - Which constants are free, and which are derived
 - Messages the user sees
-- Boundaries and the time grid
+- The consistency tolerance
 - A generated workbook is not byte-reproducible
 
 ### Sessions
@@ -263,121 +263,35 @@ confirmation on the Convert tab, and variants no route through the GUI can reach
 `PeakPowerError::ValuesAreForAnotherPeriod`. A change that makes one of those reachable from the app
 brings it into the document.
 
-## Boundaries and the time grid
+## The consistency tolerance
 
+`DURATION_TOLERANCE` — one second — is the slack `duration_is_consistent` allows between
+`Conn_DateTime_Start + Conn_Duration` and `Conn_DateTime_End`. It is the only allowance this
+software makes for the session report's reporting, and its doc comment carries the evidence for the
+value: in the one real portal export, four of five rows satisfy the invariant exactly and one is a
+second out.
 
-`TIME_GRID_STEP` — written `R`, currently 60 seconds — is the resolution at which the session
-report states session start and end times. `SEGMENT_DURATION` is 15 minutes.
+**Widening it has no evidence behind it.** A wider window admits records whose fields genuinely
+disagree, and those records are exactly the ones the exclusion exists to catch. If a real export
+shows a systematic miss larger than a second, change the constant *and* record the new evidence in
+its doc comment — the number is worth nothing without it.
 
-> **`R` must divide `SEGMENT_DURATION` without remainder.**
+**Narrowing it to zero excludes real sessions.** That is what the one off-by-one row demonstrates.
 
-**Nothing enforces this.** There is no assertion, no `const` block, no test. If Evolute ever
-reports seconds and `R` is changed to something that does not divide 15 minutes, segments will no
-longer land on the time grid: session boundaries and segment boundaries will fall between each
-other's ticks, and the overlap brackets will quietly stop meaning what they say.
-
-If you change `TIME_GRID_STEP`, check this by hand. The candidates that work are the divisors of
-900 seconds; the ones anyone would plausibly want are 1, 5, 10, 15, 30 and 60 seconds.
-
-Changing `R` also moves `adj_conn_end`, which is the reported end plus exactly one `R`, and the
-half-width of the consistency band a sound record's `Conn_start + Conn_Duration` must land in.
-Both follow automatically — that is why the constant exists — but both will move every figure in
-the golden files.
-
-### If the session report starts stating seconds
-
-`TIME_GRID_STEP` is **ours**, not Evolute's, and it does not follow theirs down. Every allowance
-this software makes for truncated reporting is that one value: the padding that gives
-`adj_conn_end`, and the width of the window `duration_is_consistent` accepts.
-
-Should Evolute begin reporting seconds, the allowances become wider than the data needs — sessions
-get a padded end they no longer require, and the consistency window admits records it could now
-reject. Nothing crashes and no figure looks wrong, which is why the conversion says so out loud:
-the run log carries one line naming the count and the first three offending rows —
-`<stem>.session.convert.log` when the CSV is converted to a workbook,
-`<stem>.session.csv.read.log` when it is read straight to sessions. Both come from the same parse,
-so both say it.
-
-The fix is **not** to set `TIME_GRID_STEP` to one second. Not because one second is an illegal
-grid — it divides 15 minutes — but because this constant is global while the reporting resolution
-belongs to a report. During the changeover,
-minute-resolution and second-resolution reports are processed together, and no single global value
-is right for both; it has to stay at the coarsest resolution in scope. Once every report in scope
-reports seconds, that constraint lifts and moving the grid becomes a real option.
-
-If you do move it to one second, update `docs/session/README.md`, "Boundaries and the time grid".
-That section describes the padding in terms of whole minutes — a session reported to end at `16:34`
-ending somewhere in `[16:34:00, 16:35:00)` — and states the divisibility rule against 15 minutes.
-Both go stale the moment `R` changes.
-
-## A generated workbook is not byte-reproducible
-
-Converting the same input twice with the same binary gives two `.xlsx` files that differ.
-`xl/styles.xml` lists the same `numFmt` entries, with the same ids, in a different order — it is
-`HashMap` iteration order inside umya-spreadsheet. Every worksheet is byte-identical; only the style
-table moves.
-
-So **never compare workbook bytes or hashes**. Both golden suites dump sheet contents as text for
-this reason, and that is also why the committed standard workbook cannot be checked by comparing it
-to a fresh one.
-
-`Cargo.lock` is committed so that a figure in a workbook can be traced to the code that produced it.
-That still holds for the figures. It does not hold for the file.
-
----
-
-# Sessions
-
-## Adding an `AnomalyKind`
-
-
-`AnomalyKind` in `src/session/common.rs` classifies rows that need review. Adding a variant touches four
-things, and deliberately not a fifth.
-
-**The wire format.** `as_str` writes the variant name into a generated workbook's `anomalies`
-column. It is a wire format, not display text, and should preferably stay stable. Add the variant
-to it and to `from_token`, spelled identically — `from_token` is `#[cfg(test)]` and exists to check
-that what the writer emits is a readable token.
-
-Preferably rather than must, because nothing reads a token back in a release build. A rename leaves
-workbooks already written spelling the kind one way and the code spelling it another, which costs
-whoever reads an old sheet by eye and nothing else. Weigh a rename rather than ruling it out.
-
-**The prose.** `fmt::Display` carries the human wording, and it is free-form: reword it whenever it
-reads badly. It is deliberately distinct from `as_str` for exactly that reason. The report's
-glossary is generated from `Display`, so there is one wording to maintain rather than a second copy
-in `report.rs`. `Anomaly`'s own `Display` writes the token *and* the prose, so the run log and the
-Convert tab's list carry both without a second wording either.
-
-**The entry in `docs/ERRORS.md`.** Under *Changes the figures* or *Worth knowing*, headed by the
-token, quoting the prose. `tests/docs_errors.rs` fails until it is there. See "Messages the user
-sees" for what that document is and what is deliberately left out of it.
-
-**Whether it excludes.** `AnomalyKind::excludes_session` names the kinds that remove a session from
-the estimates, and the buckets are sorted on it in `Sessions::from_session_lists`. One does today:
-`InconsistentDuration`, whose fields contradict each other. Everything else is informational: the
-session still counts towards every figure. If a new kind should exclude, that is a decision to make
-explicitly and to record in README's "Anomalies" section — not something that follows from adding
-the variant.
-
-**What you do *not* have to wire up:** `collect_session_anomalies` in `src/session/peak.rs` matches on
-nothing. It is deliberately blind to the kind, so a variant added here surfaces in the report
-without anyone having to remember it. Keep it that way — the moment it grows a `match`, adding a
-kind acquires a step that is easy to forget and silent when forgotten.
-
-If the new kind is *about a figure* — as `ExcessiveAvgKw` is about average power — the figure
-goes in the report cell, via `anomaly_cell` in `src/session/report.rs`, and not on the enum. That is
-what keeps the workbook column a list of bare tokens.
+This section used to describe a `TIME_GRID_STEP` of 60 seconds, the padding it added to every
+session's end, and a divisibility rule against `SEGMENT_DURATION`. All of it existed because the
+report stated times only to the minute. The portal states seconds, the padding is gone, and the
+only surviving grid is `green_button::METER_INTERVAL`.
 
 ## Strict and lenient overlap tests
 
 
-`Session::intersects` has a **precondition**: `adj_conn_end` must not precede `conn_start`. It
-panics otherwise, and that is deliberate.
+`Session::intersects` has a **precondition**: `conn_end` must not precede `conn_start`. It panics
+otherwise, and that is deliberate.
 
-Nothing legitimate violates it. `conn_duration` is unsigned, so the soundness test's
-`conn_start + conn_duration < adj_conn_end` cannot hold unless `conn_start < adj_conn_end` — an
-inverted session is therefore always flagged `InconsistentDuration` and sorted into
+Nothing legitimate violates it. `conn_duration` is unsigned, so `conn_start + conn_duration` is
+never before `conn_start`; an inverted span therefore misses `conn_end` by more than
+`DURATION_TOLERANCE` and the record is flagged `InconsistentDuration` and sorted into
 `Sessions::excluded`, and `estimates_from_sessions` never puts an excluded session in front of the
 estimating logic. Reaching the panic means one got somewhere it should not have, which is worth a
 crash rather than a plausible-looking answer.

@@ -26,13 +26,13 @@
 //! left here is what only a session report means.
 
 use super::{
-    Anomaly, AnomalyKind, BREAKER_MAX_NORMAL_KW, RSession, Session, Sessions, TIME_GRID_STEP,
+    Anomaly, AnomalyKind, BREAKER_MAX_NORMAL_KW, RSession, Session, Sessions,
     duration_is_consistent,
 };
 use crate::{
     csv::{CsvReadError, Document, Table},
     log::{RunLog, SourceLog},
-    time::{is_on_grid, session_instant, session_wall_time},
+    time::session_instant,
 };
 use jiff::{Timestamp, civil};
 use std::{
@@ -104,9 +104,9 @@ impl Error for SessionCsvError {
 /// against; the workbook this crate writes is a rendering of what this function produced, and is
 /// never read back.
 ///
-/// The domain rules — the UTC conversion and its DST policy, the definitions of `adj_conn_end` and
-/// `adj_conn_duration`, and the treatment of zero-`Energy_Use` sessions — are specified in
-/// `docs/time/README.md` under "Time zone" and in `docs/session/README.md` under "Anomalies".
+/// The domain rules — the UTC conversion, and the treatment of zero-`Energy_Use` sessions — are
+/// specified in `docs/time/README.md` under "Time zone" and in `docs/session/README.md` under
+/// "Anomalies".
 ///
 /// The records are sorted into the three buckets of [`Sessions`] by
 /// `Sessions::from_session_lists`, which carries the rules. Every session in the file reaches one
@@ -222,14 +222,8 @@ pub(super) fn csv_session_rows(path: &Path) -> Result<SessionRows, SessionCsvErr
     // produces the values in the first place. See `crate::log` for why discrepancies are a
     // separate channel.
     let mut log = RunLog::new();
-    note_off_grid_rows(&rows, &mut log);
     for anomaly in &anomalies {
-        // `OffGridTimes` is summarised above instead. A report that has switched resolution has
-        // switched it throughout, so listing it per row would bury every other finding under a few
-        // hundred identical lines.
-        if anomaly.kind != AnomalyKind::OffGridTimes {
-            log.note(anomaly.to_string());
-        }
+        log.note(anomaly.to_string());
     }
 
     Ok(SessionRows {
@@ -238,47 +232,6 @@ pub(super) fn csv_session_rows(path: &Path) -> Result<SessionRows, SessionCsvErr
         anomalies,
         log,
     })
-}
-
-/// Warns once per file when reported boundaries do not land on [`TIME_GRID_STEP`].
-///
-/// Every allowance this software makes for the reporting's truncation assumes the reported times
-/// are truncated to that step. If Evolute starts reporting seconds, they no longer are, and the
-/// allowances become too wide rather than wrong — sessions get a padded end they do not need, and
-/// the consistency window admits records it should reject. Nothing crashes and no figure looks
-/// odd, which is exactly why it needs saying out loud.
-///
-/// Once per file with a count and the first three rows, not once per row: on a report that has
-/// switched resolution every row qualifies, and a log with 238 identical lines is a log nobody
-/// reads.
-fn note_off_grid_rows(rows: &[Row], log: &mut RunLog) {
-    // Reads the flag rather than repeating the test, so the summary and the anomalies cannot
-    // disagree about which rows qualify.
-    let offenders: Vec<&Row> = rows
-        .iter()
-        .filter(|r| r.session.anomalies.contains(&AnomalyKind::OffGridTimes))
-        .collect();
-    if offenders.is_empty() {
-        return;
-    }
-    let examples: Vec<String> = offenders
-        .iter()
-        .take(3)
-        .map(|r| format!("row {} ({})", r.session.row, r.session.id))
-        .collect();
-    // Names its own token. Summarised rather than listed, so unlike every other kind it never
-    // passes through `Anomaly`'s `Display`, which is where the rest gain theirs.
-    log.note(format!(
-        "{} of {} rows {}: a reported start or end is not a whole multiple of {:?} ({}). The \
-         session report's resolution has become finer than this software's time grid. Nothing is \
-         wrong with these rows, but the padding and the consistency window are now wider than the \
-         data needs — see docs/maintenance-manual.md, \"Boundaries and the time grid\".",
-        offenders.len(),
-        rows.len(),
-        AnomalyKind::OffGridTimes.as_str(),
-        TIME_GRID_STEP,
-        examples.join(", ")
-    ));
 }
 
 // ---------------------------------------------------------------------------
@@ -361,7 +314,7 @@ struct CsvSession {
 ///
 /// Carries a whole [`Session`] rather than loose timestamps, so that every derived column is
 /// computed by the same methods the estimating logic uses. When they were separate fields the
-/// write path had its own `adj_conn_end`, and it was wrong.
+/// write path had its own definition of the session's end, and it was wrong.
 ///
 /// The pass-through CSV columns are not part of a `Session` and never should be, so the row keeps
 /// an index back into the records instead — see [`SessionRows::field`].
@@ -372,24 +325,6 @@ pub(super) struct Row {
     /// The two reported wall times, kept as written rather than re-derived from the instants.
     pub start_local: civil::DateTime,
     pub end_local: civil::DateTime,
-}
-
-impl Row {
-    /// The adjusted start on the clock the report itself uses.
-    ///
-    /// `session_wall_time` and not `local_datetime`, because this sits in the workbook beside
-    /// [`Row::start_local`], which is the CSV's own text. Rendering the two on different clocks
-    /// would put a reported `16:22` and an adjusted `17:22` in adjacent columns of one row, an hour
-    /// apart and with nothing on the sheet to say why. The workbook carries no zone labels — see
-    /// `session::excel` — so every local column in it has to be on one clock.
-    pub fn adj_start_local(&self) -> civil::DateTime {
-        session_wall_time(self.session.adj_conn_start())
-    }
-
-    /// The adjusted end on the report's clock. See [`Row::adj_start_local`].
-    pub fn adj_end_local(&self) -> civil::DateTime {
-        session_wall_time(self.session.adj_conn_end())
-    }
 }
 
 impl CsvSession {
@@ -465,24 +400,14 @@ impl CsvSession {
     }
 
     /// Builds one output row from a pair of resolved instants.
-    ///
-    /// [`AnomalyKind::OffGridTimes`] is decided here because it is the last kind that reads the
-    /// instants.
     fn row(
         &self,
         source: &Rc<PathBuf>,
         row: usize,
         conn_start: Timestamp,
         conn_end: Timestamp,
-        mut anomalies: Vec<AnomalyKind>,
+        anomalies: Vec<AnomalyKind>,
     ) -> Row {
-        // Checked on the resolved instants rather than the reported wall times: the two differ only
-        // by the fixed offset, so either answers the question, and these are the values every later
-        // allowance is applied to.
-        if !is_on_grid(conn_start, TIME_GRID_STEP) || !is_on_grid(conn_end, TIME_GRID_STEP) {
-            anomalies.push(AnomalyKind::OffGridTimes);
-        }
-
         Row {
             record: row - 2,
             session: Rc::new(Session {
@@ -510,9 +435,8 @@ mod test {
     use jiff::{SignedDuration, tz::TimeZone};
     use std::{env, fs, path::PathBuf, process};
 
-    /// Both forms the reader itself accepts, in the same order — see `parse_local`. A helper
-    /// that took only whole minutes could not express a report that has moved to seconds, which is
-    /// the case [`AnomalyKind::OffGridTimes`] exists for.
+    /// Both forms the reader itself accepts, in the same order — see `parse_local`. The portal
+    /// states seconds; the minute form is what its reports carried before.
     fn dt(s: &str) -> civil::DateTime {
         civil::DateTime::strptime("%Y-%m-%d %H:%M:%S", s)
             .or_else(|_| civil::DateTime::strptime("%Y-%m-%d %H:%M", s))
@@ -547,7 +471,7 @@ mod test {
     /// Not prevailing local time, which runs an hour ahead of this through the summer. A test about
     /// what the reader did with a reported time has to speak in reported time.
     fn reported_of(ts: Timestamp) -> civil::DateTime {
-        session_wall_time(ts)
+        crate::time::session_wall_time(ts)
     }
 
     /// A scratch directory of its own per test, since these run in parallel within one process.
@@ -580,61 +504,38 @@ mod test {
         }
     }
 
-    /// `adj_conn_end` is the reported end padded past the end of its minute — the exclusive end of
-    /// the window the true end lies in, so `21:29` pads to `21:30:00` and not `21:29:59`. Both rows
-    /// are real sample rows, and they straddle the case the old `min(...)` rule treated specially:
-    /// the second has `start + duration` (23:40:29) *before* the reported end.
+    /// The reported end is the end. Both rows are real sample rows from the portal, stated to the
+    /// second, and each is taken exactly as written.
     #[test]
-    fn adj_conn_end_pads_the_reported_end() {
-        let rows =
-            session("2026-06-01 16:22", "2026-06-01 21:29", "5:07:53").resolve(&test_source(), 2);
+    fn the_reported_end_is_taken_at_face_value() {
+        let rows = session("2026-08-27 12:52:56", "2026-08-27 13:07:36", "0:14:40")
+            .resolve(&test_source(), 2);
         assert_eq!(
-            reported_of(rows[0].session.adj_conn_end()),
-            civil::date(2026, 6, 1).at(21, 30, 0, 0)
+            reported_of(rows[0].session.conn_end),
+            civil::date(2026, 8, 27).at(13, 7, 36, 0)
         );
         assert!(timing_anomalies(&rows[0].session.anomalies).is_empty());
 
-        let rows =
-            session("2026-06-07 16:42", "2026-06-07 23:41", "6:58:29").resolve(&test_source(), 2);
+        let rows = session("2026-08-27 13:09:03", "2026-08-27 15:05:06", "1:56:03")
+            .resolve(&test_source(), 2);
         assert_eq!(
-            reported_of(rows[0].session.adj_conn_end()),
-            civil::date(2026, 6, 7).at(23, 42, 0, 0)
+            reported_of(rows[0].session.conn_end),
+            civil::date(2026, 8, 27).at(15, 5, 6, 0)
         );
         assert!(timing_anomalies(&rows[0].session.anomalies).is_empty());
     }
 
-    /// Both invariants the rule exists to guarantee, on the whole-minute durations that are the
-    /// awkward case: the adjusted end never precedes the reported end, and the adjusted duration
-    /// is never shorter than the reported one.
+    /// The row of the real portal export that the tolerance exists for: `16:57:00 + 2:03:50` lands
+    /// at `19:00:50` and the report states `19:00:49`. One second out, and sound.
     #[test]
-    fn adjustment_invariants_hold_on_whole_minute_durations() {
-        let cases = [
-            ("2026-06-06 14:59", "2026-06-06 16:36", "1:37:00"),
-            ("2026-06-07 05:46", "2026-06-07 06:19", "0:33:00"),
-            ("2026-06-15 01:45", "2026-06-15 01:55", "0:10:00"),
-        ];
-        for (start, end, conn) in cases {
-            let s = session(start, end, conn);
-            let rows = s.resolve(&test_source(), 2);
-            let row = &rows[0];
-            assert!(
-                row.session.adj_conn_end() >= row.session.conn_end,
-                "{start}: adjusted end precedes reported end"
-            );
-            assert!(
-                row.session
-                    .adj_conn_end()
-                    .duration_since(row.session.conn_start)
-                    .unsigned_abs()
-                    >= s.conn_duration,
-                "{start}: adjusted duration shorter than Conn_Duration"
-            );
-            assert!(
-                timing_anomalies(&row.session.anomalies).is_empty(),
-                "{start}: unexpected {:?}",
-                row.session.anomalies
-            );
-        }
+    fn a_record_one_second_out_is_sound() {
+        let rows = session("2026-08-30 16:57:00", "2026-08-30 19:00:49", "2:03:50")
+            .resolve(&test_source(), 2);
+        assert!(
+            timing_anomalies(&rows[0].session.anomalies).is_empty(),
+            "{:?}",
+            rows[0].session.anomalies
+        );
     }
 
     /// A reported wall time is read at the fixed offset in every month, so a June record lands five
@@ -672,43 +573,14 @@ mod test {
         assert!(timing_anomalies(&rows[0].session.anomalies).is_empty());
     }
 
-    /// A reported boundary that does not land on a whole minute is flagged on the record itself,
-    /// since it is a fact about the times the report states.
-    ///
-    /// Not a fault: every figure is computed the same way either way. It says the report's
-    /// resolution has outgrown this software's time grid, which makes the truncation allowances
-    /// wider than the data needs.
+    /// A reported boundary carrying seconds is ordinary now: the portal states seconds, and no
+    /// allowance is made for truncation any more.
     #[test]
-    fn a_boundary_off_the_time_grid_is_flagged() {
-        // Ordinary minute boundaries, so nothing is flagged.
-        let rows =
-            session("2026-06-10 02:00", "2026-06-10 03:00", "1:00:00").resolve(&test_source(), 2);
-        assert!(
-            !rows[0]
-                .session
-                .anomalies
-                .contains(&AnomalyKind::OffGridTimes),
-            "{:?}",
-            rows[0].session.anomalies
-        );
-
-        // A start carrying seconds: the report has moved to a finer resolution than the grid.
-        let rows = session("2026-06-10 02:00:30", "2026-06-10 03:00", "0:59:30")
+    fn a_boundary_carrying_seconds_is_sound() {
+        let rows = session("2026-06-10 02:00:30", "2026-06-10 03:00:00", "0:59:30")
             .resolve(&test_source(), 2);
         assert!(
-            rows[0]
-                .session
-                .anomalies
-                .contains(&AnomalyKind::OffGridTimes),
-            "{:?}",
-            rows[0].session.anomalies
-        );
-        // And it is only that: the record is otherwise sound and still counts.
-        assert!(
-            !rows[0]
-                .session
-                .anomalies
-                .contains(&AnomalyKind::InconsistentDuration),
+            timing_anomalies(&rows[0].session.anomalies).is_empty(),
             "{:?}",
             rows[0].session.anomalies
         );
@@ -806,11 +678,8 @@ mod test {
     /// Both bounds are exclusive and both are pinned to the second, because getting either off by
     /// one silently reclassifies real records — the sample data reaches to within 3 seconds of the
     /// early edge. With the reported times at 10:00 and 10:30 the sound durations are exactly
-    /// `[0:29:01, 0:31:00]`.
-    ///
-    /// The window is asymmetric: one second wider late than early. That second is not slack, it is
-    /// the reporting's uncertainty about whether the last second of the end minute is included.
-    /// See `docs/session/time-reporting-uncertainty.md`.
+    /// `[0:29:59, 0:30:01]`, symmetric about the reported span. The second either side is
+    /// `DURATION_TOLERANCE`, which its own doc justifies from the portal's data.
     #[test]
     fn inconsistent_duration_is_reported() {
         let kinds = |start, end, conn| {
@@ -824,46 +693,43 @@ mod test {
         };
         let bad = vec![AnomalyKind::InconsistentDuration];
 
-        // Overshoot: 10:00 + 2h = 12:00, well past the 10:31:01 upper bound.
+        // Overshoot: 10:00 + 2h = 12:00, an hour and a half past the reported end.
         assert_eq!(
-            kinds("2026-06-01 10:00", "2026-06-01 10:30", "2:00:00"),
+            kinds("2026-06-01 10:00:00", "2026-06-01 10:30:00", "2:00:00"),
             bad
         );
 
-        // Check 1, doing work no other check does. A one-minute inversion with a zero duration
-        // satisfies both of the others -- 10:01 + 0 = 10:01 is under the 10:01:01 upper bound and
-        // over the 09:59:00 lower one -- so nothing but the start-before-end test rejects it. It
-        // is also the smallest inversion the reporting can express, since both reported times are
-        // whole minutes; that in turn forces the duration to zero, hence the extra anomaly here.
-        // Letting this row through panics `Session::intersects` downstream.
+        // An inversion. No separate check names it any more -- the implied end is a minute past
+        // the reported one, far outside the tolerance -- but it is the case that matters most,
+        // because letting the row through panics `Session::intersects` downstream. The zero
+        // duration an inversion of this shape forces brings `ZeroActiveChargeTime` with it.
         assert_eq!(
-            kinds("2026-06-01 10:01", "2026-06-01 10:00", "0:00:00"),
+            kinds("2026-06-01 10:01:00", "2026-06-01 10:00:00", "0:00:00"),
             vec![
                 AnomalyKind::ZeroActiveChargeTime,
                 AnomalyKind::InconsistentDuration
             ]
         );
-        // The same fault at a scale the overshoot check would also have caught.
+        // The same fault an hour wide.
         assert_eq!(
-            kinds("2026-06-01 10:00", "2026-06-01 09:00", "0:10:00"),
+            kinds("2026-06-01 10:00:00", "2026-06-01 09:00:00", "0:10:00"),
             bad
         );
 
-        // One second outside each bound. 10:31:01 is the first instant check 2 rejects, 10:29:00
-        // the last one check 3 does.
+        // One second outside the tolerance, each way.
         assert_eq!(
-            kinds("2026-06-01 10:00", "2026-06-01 10:30", "0:31:01"),
+            kinds("2026-06-01 10:00:00", "2026-06-01 10:30:00", "0:30:02"),
             bad
         );
         assert_eq!(
-            kinds("2026-06-01 10:00", "2026-06-01 10:30", "0:29:00"),
+            kinds("2026-06-01 10:00:00", "2026-06-01 10:30:00", "0:29:58"),
             bad
         );
 
-        // Exactly on each bound, and both sound. `0:31:00` is the case the old predicate rejected
-        // and the document accepts.
-        assert!(kinds("2026-06-01 10:00", "2026-06-01 10:30", "0:31:00").is_empty());
-        assert!(kinds("2026-06-01 10:00", "2026-06-01 10:30", "0:29:01").is_empty());
+        // On each edge of the tolerance, and exactly on the span. All three sound.
+        assert!(kinds("2026-06-01 10:00:00", "2026-06-01 10:30:00", "0:30:01").is_empty());
+        assert!(kinds("2026-06-01 10:00:00", "2026-06-01 10:30:00", "0:30:00").is_empty());
+        assert!(kinds("2026-06-01 10:00:00", "2026-06-01 10:30:00", "0:29:59").is_empty());
     }
 
     /// The sessions reach the peak power contribution logic straight from the CSV, sorted into the
@@ -873,9 +739,9 @@ mod test {
     fn csv_sessions_buckets_straight_from_the_csv() {
         const CSV: &str = "\
 Charge_Session_ID,Conn_DateTime_Start,Conn_DateTime_End,Conn_Duration,Active_Charge_Time,Energy_Use
-S1,2026-06-01 16:22,2026-06-01 21:29,5:07:53,5:07:52,30.6
-S2,2026-06-02 10:00,2026-06-02 09:00,0:10:00,0:09:00,1.5
-S3,2026-06-03 09:00,2026-06-03 09:00,0:00:00,0:00:00,4.2
+S1,2026-06-01 16:22:00,2026-06-01 21:29:53,5:07:53,5:07:52,30.6
+S2,2026-06-02 10:00:00,2026-06-02 09:00:00,0:10:00,0:09:00,1.5
+S3,2026-06-03 09:00:00,2026-06-03 09:00:00,0:00:00,0:00:00,4.2
 ";
         let dir = temp_dir("csv_sessions");
         let csv_path = dir.join("Session_Report_Test.csv");

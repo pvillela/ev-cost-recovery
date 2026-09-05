@@ -1,0 +1,6 @@
+UR_ID,Location_Address,Location_City,Location_Postal_Code,Station_ID,Station_Network_Provider,Station_Make,Station_Model,Charge_Session_ID,User_ID,Conn_DateTime_Start,Conn_DateTime_End,Conn_Duration,Charge_Duration,Active_Charge_Time,Charging_Level,Energy_Use,Total_Fee,Vehicle_Make,Vehicle_Model,Vehicle_Year
+CKT-3,123 Memory Lane,Toronto,M2Q 2H1,Station-3,Evolute Inc.,Tesla,Universal,S27644,422975d,2026-08-27 12:52:56,2026-08-27 13:07:36,0:14:40,0:14:40,0:14:39,Level 2,1.5,0.77,,,
+CKT-3,123 Memory Lane,Toronto,M2Q 2H1,Station-3,Evolute Inc.,Tesla,Universal,S86102,422975d,2026-08-27 13:09:03,2026-08-27 15:05:06,1:56:03,1:56:03,1:56:03,Level 2,12.7,6.54,,,
+CKT-3,123 Memory Lane,Toronto,M2Q 2H1,Station-3,Evolute Inc.,Tesla,Universal,S91603,422975d,2026-08-28 10:25:07,2026-08-28 10:59:34,0:34:27,0:34:27,0:34:26,Level 2,3.7,1.91,,,
+CKT-3,123 Memory Lane,Toronto,M2Q 2H1,Station-3,Evolute Inc.,Tesla,Universal,S83391,422975d,2026-08-30 16:57:00,2026-08-30 19:00:49,2:03:50,2:03:50,2:03:49,Level 2,14.2,5.99,,,
+CKT-3,123 Memory Lane,Toronto,M2Q 2H1,Station-3,Evolute Inc.,Tesla,Universal,S18651,422975d,2026-09-01 01:02:43,2026-09-01 02:09:37,1:06:54,1:06:54,1:06:54,Level 2,7.3,3.08,,,

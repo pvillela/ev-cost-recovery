@@ -25,7 +25,6 @@ fn session_tokens() -> Vec<(AnomalyKind, &'static str)> {
         InconsistentDuration,
         ExcessiveAvgKw,
         DuplicateId,
-        OffGridTimes,
     ]
     .into_iter()
     .map(|kind| {
@@ -34,7 +33,6 @@ fn session_tokens() -> Vec<(AnomalyKind, &'static str)> {
             InconsistentDuration => "InconsistentDuration",
             ExcessiveAvgKw => "ExcessiveAvgKw",
             DuplicateId => "DuplicateId",
-            OffGridTimes => "OffGridTimes",
         };
         (kind, expected)
     })

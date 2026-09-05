@@ -22,9 +22,10 @@
 //!   G          |                       16:48 ==|16:56              alone in the last segment
 //! ```
 //!
-//! Spans are `[conn_start, adj_conn_end)`, so each right edge is the reported end plus one
-//! `TIME_GRID_STEP`. That is why `F` overlaps `D` and `E` rather than merely abutting them: all
-//! three are reported to the minute, and the minute they share may hold any of them.
+//! Spans are `[conn_start, conn_end)` — the reported times, taken at face value. `D` and `E` end
+//! at 16:34 and `F` starts at 16:34, so `F` abuts them rather than overlapping them; all three
+//! still meet the 16:30 quarter, but the instant they share belongs to `F` alone. The right edge
+//! used to be padded a minute past the reported end, and that padding is what made them overlap.
 //!
 //! The times above are the ones the *report states*, on the fixed standard-time offset Evolute
 //! uses. June is daylight saving locally, so the same instants display an hour later: the quarter
@@ -56,9 +57,11 @@ const MEMBERSHIP: [(&str, &[&str]); 4] = [
     // `D`, `E`, `F` and `G` all start after 16:15, so the first quarter holds only the three
     // sessions already running.
     ("17:00", &["A", "B", "C"]),
-    // `B` reaches this quarter by a single minute: reported to end at 16:15, its true end lies
-    // anywhere in [16:15, 16:16), so it may still have been drawing when the quarter opened.
-    ("17:15", &["A", "B", "C", "D", "E"]),
+    // `B` is reported to end at 16:15, exactly where this quarter opens. Spans are half-open, so
+    // it abuts the quarter rather than meeting it. It used to be here: the padding put its
+    // adjusted end a minute later, on the reasoning that a time stated to the minute could mean
+    // anywhere inside it. The portal states seconds, so 16:15 means 16:15.
+    ("17:15", &["A", "C", "D", "E"]),
     // `D` and `E` are reported to end at 16:34 and `F` to start at 16:34, so all three are here:
     // the reported times cannot say whether they overlapped or merely abutted.
     ("17:30", &["A", "C", "D", "E", "F"]),
@@ -124,30 +127,26 @@ fn each_quarter_holds_the_sessions_that_meet_it() {
     }
 }
 
-/// A session reported to end in the same minute another is reported to start belongs to both, and
-/// the doubt shows up as a bracket rather than being resolved by fiat.
+/// A session reported to end at the instant another is reported to start abuts it rather than
+/// overlapping it, and the count says so exactly.
 ///
-/// `D` and `E` end at 16:34, `F` starts at 16:34. All three are in the 16:30 quarter, and `F`'s
-/// contribution to it is a range: it covers at least 16:35–16:42 and at most 16:34–16:43.
+/// `D` and `E` end at 16:34, `F` starts at 16:34. All three are in the 16:30 quarter because each
+/// meets it, but the shared instant belongs to neither's overlap twice: spans are half-open. This
+/// was a bracket while reported times were truncated to the minute and the shared minute could
+/// have held any of them.
 #[test]
-fn a_shared_minute_leaves_the_count_bracketed() {
+fn a_shared_instant_is_counted_once() {
     let report = estimates();
     let (third, _) = &report.seg_estimates[2];
     assert_eq!(hm(third.start()), "17:30");
 
+    // Five sessions meet the quarter, each covering part of it, so the total lies strictly between
+    // one session's worth and five.
     let count = third.agg_count();
-    assert!(
-        count.min < count.max,
-        "a quarter holding a shared minute should not be exact: {count:?}"
-    );
-    // A session that neither starts nor ends inside the quarter contributes exactly 1, so the
-    // bracket's width comes only from the sessions whose edges fall in it.
-    assert!(count.min > 1.0 && count.max < 5.0, "{count:?}");
+    assert!(count > 1.0 && count < 5.0, "{count:?}");
 }
 
-/// A session outrunning the interval on both sides counts as a full session in every quarter, with
-/// no uncertainty: neither of its reported edges falls inside the interval, so no minute of doubt
-/// applies.
+/// A session outrunning the interval on both sides counts as a full session in every quarter.
 #[test]
 fn a_session_spanning_the_whole_interval_is_exact_everywhere() {
     let report = estimates();
@@ -159,11 +158,11 @@ fn a_session_spanning_the_whole_interval_is_exact_everywhere() {
         );
     }
 
-    // The last quarter holds only `A` and `G`, and `G` contributes less than a whole session, so
-    // the quarter's count brackets `A`'s exact 1 from above.
+    // The last quarter holds only `A` and `G`. `A` covers all of it and `G` part of it, so the
+    // count sits between one session's worth and two.
     let (last, _) = &report.seg_estimates[3];
     let count = last.agg_count();
-    assert!(count.min > 1.0 && count.max < 2.0, "{count:?}");
+    assert!(count > 1.0 && count < 2.0, "{count:?}");
 }
 
 /// The busiest quarters are the middle two, and the maximal segment is drawn from them rather than
@@ -177,13 +176,13 @@ fn the_maximal_segment_is_one_of_the_busy_middle_quarters() {
     let counts: Vec<f64> = report
         .seg_estimates
         .iter()
-        .map(|(s, _)| s.agg_count().mid())
+        .map(|(s, _)| s.agg_count())
         .collect();
 
-    assert!(counts[1] > counts[0], "16:15 should beat 16:00");
-    assert!(counts[2] > counts[0], "16:30 should beat 16:00");
-    assert!(counts[1] > counts[3], "16:15 should beat 16:45");
-    assert!(counts[2] > counts[3], "16:30 should beat 16:45");
+    assert!(counts[1] > counts[0], "17:15 should beat 17:00");
+    assert!(counts[2] > counts[0], "17:30 should beat 17:00");
+    assert!(counts[1] > counts[3], "17:15 should beat 17:45");
+    assert!(counts[2] > counts[3], "17:30 should beat 17:45");
 
     let (energy_seg, _) = &report.energy_based_seg_estimate;
     let (count_seg, _) = &report.count_based_seg_estimate;

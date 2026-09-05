@@ -80,7 +80,7 @@ that of the libraries that read CSV, XML and PDF files. Those entries say so and
 - [periods that do not hold a full billing period's intervals](#periods-that-do-not-hold-a-full-billing-periods-intervals)
 - [the run's log was not written](#the-runs-log-was-not-written)
 - [the workbook was written, but its run log was not](#the-workbook-was-written-but-its-run-log-was-not)
-- Session report: [`ExcessiveAvgKw`](#excessiveavgkw), [`OffGridTimes`](#offgridtimes)
+- Session report: [`ExcessiveAvgKw`](#excessiveavgkw)
 
 ---
 
@@ -509,12 +509,13 @@ says so.
 
 ### `InconsistentDuration`
 
-> reported start, end and duration contradict each other by more than truncation to the minute can
-> explain; the session is excluded from every estimate
+> reported start, end and duration contradict each other by more than a second, which is the
+> rounding the source does; the session is excluded from every estimate
 
-The record's own three fields do not agree. Reported times are truncated to the minute, which
-accounts for a small disagreement; this is larger than that. Neither the duration nor the span the
-session would be placed on can be relied on, so it is left out of every figure.
+The record's own three fields do not agree. `Conn_DateTime_Start + Conn_Duration` should equal
+`Conn_DateTime_End`, and one second of slack is allowed for the rounding the source does; this is
+further out than that. Neither the duration nor the span the session would be placed on can be
+relied on, so it is left out of every figure.
 
 `src/session/common.rs:987-990`
 
@@ -682,23 +683,6 @@ the session is counted as it stands.
 
 `src/session/common.rs:1002-1005`
 
-### `OffGridTimes`
-
-> `<number>` of `<number>` rows `OffGridTimes`: a reported start or end is not a whole multiple of
-> 60s (`<up to three example rows>`). The session report's resolution has become finer than this
-> software's time grid. Nothing is wrong with these rows, but the padding and the consistency window
-> are now wider than the data needs — see docs/maintenance-manual.md, "Boundaries and the time
-> grid".
-
-**Where** the session report's run log only. It is never shown on screen.
-
-Summarised once per file rather than listed per row: a report that has changed resolution has
-changed it throughout, so every row would qualify and the list would bury everything else.
-
-Nothing is wrong with the data. It says that an allowance this software makes has become wider than
-it needs to be, which is a thing for the maintainer to know about and not something to act on now.
-
-`src/session/csv.rs:278-288`
 
 ---
 

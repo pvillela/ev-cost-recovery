@@ -7,8 +7,8 @@ Period       2026-05-24 - 2026-06-23  (31 days)
 |:-----------------|--------:|
 | Cost recovery    |    2.24 |
 | EV energy cost   |   -3.07 |
-| EV delivery cost | -136.93 |
-| Surplus          | -137.76 |
+| EV delivery cost | -136.92 |
+| Surplus          | -137.75 |
 
 The cost-recovery rates fell short of the chargers' share of the bill for
 this period, by the amount above.
@@ -47,8 +47,8 @@ EV rates effective 2026-06-01  (2026-06-01 - 2026-06-23)
 
 | TOU      |    kWh | EV rate | Recovery |
 |:---------|-------:|--------:|---------:|
-| On-peak  | 13.803 | 0.12000 |     1.66 |
-| Mid-peak |  2.197 | 0.12000 |     0.26 |
+| On-peak  | 14.000 | 0.12000 |     1.68 |
+| Mid-peak |  2.000 | 0.12000 |     0.24 |
 | Off-peak |  1.000 | 0.12000 |     0.12 |
 | Total    | 17.000 |         |     2.04 |
 
@@ -61,7 +61,7 @@ Loss factor  1.0295
 
 | Item                            | Amount |
 |:--------------------------------|-------:|
-| Energy charges                  |   2.86 |
+| Energy charges                  |   2.87 |
 | Wholesale Market Service Charge |   0.11 |
 | HST                             |   0.39 |
 | Ontario Electricity Rebate      |  -0.30 |
@@ -76,10 +76,10 @@ Energy charges by time of use
 
 | TOU      |    kWh | Adj. kWh | TH blended rate | Cost |
 |:---------|-------:|---------:|----------------:|-----:|
-| On-peak  | 15.803 |   16.269 |         0.15385 | 2.50 |
-| Mid-peak |  2.197 |    2.262 |         0.12500 | 0.28 |
+| On-peak  | 16.000 |   16.472 |         0.15385 | 2.53 |
+| Mid-peak |  2.000 |    2.059 |         0.12500 | 0.26 |
 | Off-peak |  1.000 |    1.030 |         0.07556 | 0.08 |
-| Total    | 19.000 |   19.561 |                 | 2.86 |
+| Total    | 19.000 |   19.561 |                 | 2.87 |
 
 Wholesale Market Service Charge
 -------------------------------
@@ -97,10 +97,10 @@ Days adj.    31/30 = 1.0333
 
 | Item                       | Amount |
 |:---------------------------|-------:|
-| Delivery charges           | 132.95 |
+| Delivery charges           | 132.94 |
 | HST                        |  17.28 |
 | Ontario Electricity Rebate | -13.29 |
-| Delivery cost              | 136.93 |
+| Delivery cost              | 136.92 |
 
 Note: figures are rounded for display. A column can therefore differ by a
 cent, or by a thousandth of a kilowatt-hour, from the total stated for it,
@@ -111,10 +111,10 @@ Delivery charges by component
 
 | Delivery charges component     | Basis  | EV demand | Adj. demand | TH blended rate | Charge |
 |:-------------------------------|:-------|----------:|------------:|----------------:|-------:|
-| Distribution Charges           | kVA    |     4.678 |       4.834 |         10.0000 |  48.34 |
+| Distribution Charges           | kVA    |     4.677 |       4.833 |         10.0000 |  48.33 |
 | Transmission Connection Charge | kW     |    20.291 |      20.967 |          3.0000 |  62.90 |
 | Transmission Network Charge    | kW 7-7 |     4.201 |       4.341 |          5.0000 |  21.70 |
-| Total                          |        |           |             |                 | 132.95 |
+| Total                          |        |           |             |                 | 132.94 |
 
 Each EV demand is a single figure taken from a range: the mid-point of the
 "Energy-based" range for the 15-minute segment that charge was priced on. It

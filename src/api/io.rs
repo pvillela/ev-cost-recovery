@@ -471,7 +471,7 @@ pub enum OnExistingWorkbook {
 /// Delegates to [`session::session_csv_to_xlsx`](crate::session::session_csv_to_xlsx), which
 /// states what the workbook holds: the
 /// report's own columns in the order it states them, then the columns this software derives, with
-/// `adj_conn_duration` and `avg_kw` as live formulas and the anomalies of each row in the last
+/// `conn_span` and `avg_kw` as live formulas and the anomalies of each row in the last
 /// column. Every session is written, anomalous ones included — which of them takes part in an
 /// estimate is decided on the reading side.
 ///

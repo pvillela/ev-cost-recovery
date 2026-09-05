@@ -9,12 +9,32 @@
 //! spreadsheet is reconciled against a utility invoice to three decimal places, and accumulating
 //! 744 floating-point divisions before summing them loses that agreement.
 
-use crate::{
-    log::RunLog,
-    time::{is_on_grid, zoned_minute},
-};
+use crate::{log::RunLog, time::zoned_minute};
 use jiff::Timestamp;
 use std::{collections::BTreeMap, fmt, time::Duration};
+
+/// Whether an instant lies exactly on the grid `step` defines.
+///
+/// True when the instant is a whole number of `step`s from the Unix epoch. `rem_euclid` rather
+/// than `%`, so a pre-epoch instant answers the same way: `%` gives a negative remainder there,
+/// which would make a whole hour before 1970 read as off the grid.
+///
+/// Here rather than in `time` because [`METER_INTERVAL`] is the only grid the crate has left, and
+/// a grid step belongs to the module with a reason for its value. The session reader had one too
+/// -- the resolution its timestamps were reported at -- until the portal confirmed they are stated
+/// to the second.
+///
+/// # Panics
+///
+/// If `step` is zero. Not reachable: the only caller passes [`METER_INTERVAL`].
+pub(crate) fn is_on_grid(ts: Timestamp, step: Duration) -> bool {
+    let step_secs = step.as_secs() as i64;
+    assert!(
+        step_secs > 0,
+        "a time grid step must be positive, got {step:?}"
+    );
+    ts.as_second().rem_euclid(step_secs) == 0
+}
 
 /// One hour, the interval every reading in a Toronto Hydro export covers.
 ///

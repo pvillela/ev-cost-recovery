@@ -4,49 +4,32 @@ use super::site_model::{
 };
 use crate::{
     log::SourceLog,
-    time::{Interval, duration, time_zone, truncate_to},
+    time::{Interval, duration, time_zone},
 };
 use jiff::{Timestamp, Zoned};
 use std::{
     collections::BTreeMap,
     error::Error,
     fmt::{self, Debug},
-    iter::Sum,
-    ops::{Add, Div, Mul},
+    ops::Add,
     path::PathBuf,
     rc::Rc,
     time::Duration,
 };
 
-/// Resolution this software works session boundaries to.
+/// Slack allowed when checking `Conn_DateTime_Start + Conn_Duration` against
+/// `Conn_DateTime_End`.
 ///
-/// **Ours, not Evolute's.** Evolute currently reports `Conn_DateTime_Start` and `Conn_DateTime_End`
-/// truncated to whole minutes, and this is set to match; but the two are different quantities, and
-/// the document that derives everything built on this calls them `EV_STEP` and `OUR_STEP` for that
-/// reason. See `docs/session/time-reporting-uncertainty.md`.
+/// The portal states all three to the second and the invariant is meant to hold exactly, but it
+/// does not quite. In `data/evolute/Session_Report_August_1_2026-September_4_2026.csv`, four of the
+/// five rows agree exactly and one does not: `2026-08-30 16:57:00 + 2:03:50` is reported as ending
+/// at `19:00:49`, a second early. `Active_Charge_Time` shows the same jitter, sitting one second
+/// under `Conn_Duration` on three of the five. Something in the source rounds at second level.
 ///
-/// The distinction decides what to do if Evolute ever reports seconds. **Do not follow them down
-/// to 1 second while reports of both resolutions are still processed together.** This constant is
-/// global; `EV_STEP` belongs to a report. A calculation spanning a minute-resolution report and a
-/// second-resolution one has no single right value for it, so it has to sit at the coarsest
-/// resolution still in scope. Finer reporting is a reason to narrow the allowances below, not to
-/// move the grid.
-///
-/// The constraint lifts once every report in scope reports seconds. 1 second is a legal grid — it
-/// divides [`SEGMENT_DURATION`] — so from then on the change is available, though it moves every
-/// figure in the golden files.
-///
-/// Every allowance the software makes for the reporting's truncation is this one value:
-///
-/// - Added to the reported session end to give `adj_conn_end`, the session's exclusive end.
-/// - The width of the window a sound record's `Conn_start + Conn_Duration` must land in — one step
-///   early, one step and a second late. See `duration_is_consistent`.
-///
-/// `Conn_Duration` and `Active_Charge_Time` are *not* truncated; they carry seconds. That asymmetry
-/// is why the window above has a width at all.
-///
-/// See docs/session/README.md, "Boundaries and the time grid".
-pub const TIME_GRID_STEP: Duration = Duration::from_secs(60);
+/// One second, therefore, and not zero: exact equality would exclude a fifth of the only genuine
+/// portal export there is. Widening it further has no evidence behind it and would start admitting
+/// records whose fields really do disagree.
+pub(crate) const DURATION_TOLERANCE: Duration = Duration::from_secs(1);
 
 /// The width of the [`Segment`]s an interval of interest is partitioned into.
 ///
@@ -70,61 +53,31 @@ pub const BREAKER_RATING_KW: f64 = ev_real_power_kw();
 pub const BREAKER_MAX_NORMAL_KW: f64 =
     BREAKER_RATING_KW * (1.0 + NORMAL_VOLTAGE_FLUCTUATION_FACTOR);
 
-// ---------------------------------------------------------------------------
-// Reported time, adjusted
-// ---------------------------------------------------------------------------
-//
-// The three functions below are the code counterpart of
-// `docs/session/time-reporting-uncertainty.md`, which derives all of them. They are free
-// functions rather than methods so the write path, which has a CSV record and not yet a
-// [`Session`], calls the same code the read path does. Two definitions of `adj_conn_end` is how
-// the two drifted apart last time.
-
-/// `adj_start` of the document: the reported start truncated to the time grid, so the true start
-/// lies in `[adj_conn_start, adj_conn_start + TIME_GRID_STEP)`.
-pub(crate) fn adj_conn_start_of(conn_start: Timestamp) -> Timestamp {
-    truncate_to(conn_start, TIME_GRID_STEP)
-}
-
-/// `adj_end` of the document: `our_truncate(rep_end + 1s) + OUR_STEP`.
-///
-/// The `+ 1s` is not padding. The reported end is truncated, *and* it is not known whether the
-/// reporting includes or excludes its last second, so the true end may lie a second beyond the
-/// minute the report names. Dropping it makes the bound too tight by up to one whole step for any
-/// `conn_end` carrying seconds; they agree only while every reported end lands on the minute.
-pub(crate) fn adj_conn_end_of(conn_end: Timestamp) -> Timestamp {
-    truncate_to(conn_end + Duration::from_secs(1), TIME_GRID_STEP) + TIME_GRID_STEP
-}
-
 /// Whether a record's reported start, end and duration can all be true at once.
 ///
-/// Three checks, and any failure raises [`AnomalyKind::InconsistentDuration`]:
+/// One check: `conn_start + conn_duration` must land within [`DURATION_TOLERANCE`] of `conn_end`,
+/// either side. Any failure raises [`AnomalyKind::InconsistentDuration`].
 ///
-/// ```text
-/// 1.  rep_start <= rep_end
-/// 2.  rep_start + conn_duration  <  rep_end + TIME_GRID_STEP + 1s
-/// 3.  rep_end - TIME_GRID_STEP   <  rep_start + conn_duration
-/// ```
+/// This was three checks while reported times were truncated to the minute and had to be given a
+/// window a whole step wide. The portal states seconds and the invariant
+/// `Conn_DateTime_Start + Conn_Duration == Conn_DateTime_End` is meant to hold, so what remains is
+/// that equality with the second of measured slack [`DURATION_TOLERANCE`] documents.
 ///
-/// Checks 2 and 3 are the document's consistency checks 1 and 2, the second rearranged. Neither is
-/// chosen: they are what truncation to `TIME_GRID_STEP` accounts for and nothing more, so widening
-/// either lets a real fault through and narrowing either flags a sound record.
-///
-/// Check 1 is explicit because the document's own check 3, `adj_start <= adj_end`, is too weak to
-/// stand in for it: with `rep_start = 10:01:00` and `rep_end = 10:00:00` both sides truncate to
-/// `10:01:00`, so a one-minute inversion passes. It only bites beyond roughly two steps. That
-/// matters because [`Session::intersects`] panics on an inverted span and documents exclusion by
-/// this very test as the reason it cannot happen — an inverted record with a small
-/// `conn_duration` satisfies both of the other two checks and would reach it.
+/// The old check 1, `conn_start <= conn_end`, is subsumed rather than dropped. `conn_duration` is
+/// unsigned, so `conn_start + conn_duration` is never before `conn_start`; an inverted span puts
+/// `conn_end` more than a second below it and fails. That matters because [`Session::intersects`]
+/// panics on an inverted span and names exclusion by this test as the reason it cannot happen.
 pub(crate) fn duration_is_consistent(
     conn_start: Timestamp,
     conn_end: Timestamp,
     conn_duration: Duration,
 ) -> bool {
     let implied_end = conn_start + conn_duration;
-    conn_start <= conn_end
-        && implied_end < conn_end + TIME_GRID_STEP + Duration::from_secs(1)
-        && conn_end - TIME_GRID_STEP < implied_end
+    let gap = match implied_end >= conn_end {
+        true => implied_end.duration_since(conn_end),
+        false => conn_end.duration_since(implied_end),
+    };
+    gap.unsigned_abs() <= DURATION_TOLERANCE
 }
 
 // ---------------------------------------------------------------------------
@@ -151,18 +104,17 @@ pub struct Session {
     pub id: String,
     /// `conn_start_utc`: connection start date-time from `session report`.
     pub conn_start: Timestamp,
-    /// `conn_end_utc`: connection end date-time as reported, truncated to the minute.
+    /// `conn_end_utc`: connection end date-time, exactly as reported.
     ///
-    /// Held for reporting only. Every calculation wants [`Session::adj_conn_end`], which is the
-    /// bound that actually contains the session.
+    /// Exclusive: `[conn_start, conn_end)` is the span every estimate places the session on, so a
+    /// session starting at this instant abuts this one rather than overlapping it.
     pub conn_end: Timestamp,
     /// `Conn_Duration` from `session report`: the physical elapsed time of the connection, which
     /// is what `duration_is_consistent` checks the reported start and end against.
     pub conn_duration: Duration,
     /// Active charge time from `session report`.
     ///
-    /// Differs from `adj_conn_end - conn_start` by the padding on `adj_conn_end`, and from
-    /// `conn_duration` by about a second. It does **not** measure charging as distinct from
+    /// Differs from [`Self::conn_span`] and from `conn_duration` by about a second. It does **not** measure charging as distinct from
     /// connection. Evolute, 22 Jul 2026:
     ///
     /// > All 3 will show as almost the same, with Active charging being off by maybe 1 second due
@@ -180,30 +132,16 @@ pub struct Session {
 }
 
 impl Session {
-    /// `adj_conn_start_utc`: see `adj_conn_start_of`, which this defers to.
-    pub fn adj_conn_start(&self) -> Timestamp {
-        adj_conn_start_of(self.conn_start)
-    }
-
-    /// `adj_conn_end_utc`: see `adj_conn_end_of`, which this defers to.
-    ///
-    /// This is the end the estimating logic uses throughout, so that
-    /// `[adj_conn_start, adj_conn_end)` is the tightest half-open span guaranteed to contain the
-    /// real connection. See docs/session/README.md, "Sessions and segments".
-    pub fn adj_conn_end(&self) -> Timestamp {
-        adj_conn_end_of(self.conn_end)
-    }
-
     /// Whether the session overlaps with an interval.
     ///
     /// # Panics
     ///
-    /// If `adj_conn_end` precedes `adj_conn_start`. That is a precondition, not a defensive check: a
+    /// If `conn_end` precedes `conn_start`. That is a precondition, not a defensive check: a
     /// session whose span is inverted has fields that contradict each other, is flagged
     /// [`AnomalyKind::InconsistentDuration`] on conversion, and is sorted into
     /// [`Sessions::excluded`] — so it never reaches the estimating logic at all.
     ///
-    /// What establishes that is check 1 of [`duration_is_consistent`], `conn_start <= conn_end`; see
+    /// What establishes that is [`duration_is_consistent`]; see
     /// its doc for why the other two checks cannot stand in for it.
     ///
     /// Panicking here is therefore the honest behaviour. Reaching it means an excluded session got
@@ -211,7 +149,7 @@ impl Session {
     /// one caller that legitimately holds excluded sessions — the report, which lists them on
     /// purpose — asks [`Self::lenient_intersects`] instead.
     pub(crate) fn intersects(&self, interval: &Interval) -> bool {
-        let sess_itvl = Interval::from_start_end(self.adj_conn_start(), self.adj_conn_end());
+        let sess_itvl = Interval::from_start_end(self.conn_start, self.conn_end);
         !sess_itvl.intersection(interval).is_empty()
     }
 
@@ -230,9 +168,9 @@ impl Session {
     ///
     /// Identical to [`Self::intersects`] for every session that is not inverted.
     pub(crate) fn lenient_intersects(&self, interval: &Interval) -> bool {
-        let (lo, hi) = match self.adj_conn_start() <= self.adj_conn_end() {
-            true => (self.adj_conn_start(), self.adj_conn_end()),
-            false => (self.adj_conn_end(), self.adj_conn_start()),
+        let (lo, hi) = match self.conn_start <= self.conn_end {
+            true => (self.conn_start, self.conn_end),
+            false => (self.conn_end, self.conn_start),
         };
         !Interval::from_start_end(lo, hi)
             .intersection(interval)
@@ -249,19 +187,18 @@ impl Session {
         Zoned::new(self.conn_end, time_zone())
     }
 
-    /// Adjusted, inclusive connection start in local time (ET).
-    pub fn adj_conn_start_local(&self) -> Zoned {
-        Zoned::new(self.adj_conn_start(), time_zone())
-    }
-
-    /// Adjusted, exclusive connection end in local time (ET).
-    pub fn adj_conn_end_local(&self) -> Zoned {
-        Zoned::new(self.adj_conn_end(), time_zone())
-    }
-
-    /// Session duration from `adj_conn_start` to `adj_conn_end`
-    pub fn adj_duration(&self) -> Duration {
-        duration(self.adj_conn_start(), self.adj_conn_end())
+    /// The reported connection span, `conn_end - conn_start`.
+    ///
+    /// Distinct from [`Self::conn_duration`], which is the elapsed time the report *states*. The
+    /// two agree within `DURATION_TOLERANCE` for any record `duration_is_consistent` accepts; this
+    /// is the one the estimating logic places the session on.
+    ///
+    /// # Panics
+    ///
+    /// On an inverted span. Such a record fails `duration_is_consistent` and is sorted into
+    /// [`Sessions::excluded`], so nothing that estimates reaches this.
+    pub fn conn_span(&self) -> Duration {
+        duration(self.conn_start, self.conn_end)
     }
 
     /// Average power draw in kW: [`Self::energy_use`] / ([`Self::charge_time`] in hours).
@@ -295,55 +232,31 @@ impl Session {
     /// case this has to see through.
     pub(crate) fn is_inconsistent_duplicate(&self, other: &Session) -> bool {
         self.id == other.id
-            && (self.adj_conn_start() != other.adj_conn_start()
-                || self.adj_conn_end() != other.adj_conn_end()
+            && (self.conn_start != other.conn_start
+                || self.conn_end != other.conn_end
                 || self.charge_time != other.charge_time
                 || self.energy_use != other.energy_use)
     }
 
-    /// The session's overlap with an interval, or `None` when the two do not meet.
+    /// How long the session and the interval overlap, zero when they do not meet.
     ///
-    /// `None` rather than a zero-width [`SessionOverlap`]: there is no pair of brackets that
-    /// stands for "no overlap" without also standing for some instant, and a sentinel pair built
-    /// from the extremes of the timestamp range only defers the problem to whoever measures its
-    /// duration. The absence is in the type instead.
-    pub(crate) fn interval_overlap(&self, interval: &Interval) -> Option<SessionOverlap> {
-        let sess_itvl = Interval::from_start_end(self.adj_conn_start(), self.adj_conn_end());
-        let overlap = sess_itvl.intersection(interval);
-        if overlap.is_empty() {
-            return None;
-        }
-
-        let left = if self.adj_conn_start() == overlap.start {
-            Bracket::new(overlap.start, overlap.start + TIME_GRID_STEP)
-        } else {
-            Bracket::exact(overlap.start)
-        };
-
-        let right = if self.adj_conn_end() == overlap.end() {
-            Bracket::new(overlap.end() - TIME_GRID_STEP, overlap.end())
-        } else {
-            Bracket::exact(overlap.end())
-        };
-
-        Some(SessionOverlap { left, right })
+    /// Exact. Reported times are stated to the second and taken at face value, so an overlap has
+    /// one width rather than a range. It was a pair of brackets while the times were truncated to
+    /// the minute and either edge could lie anywhere in the minute it named.
+    pub(crate) fn interval_overlap(&self, interval: &Interval) -> Duration {
+        let sess_itvl = Interval::from_start_end(self.conn_start, self.conn_end);
+        sess_itvl.intersection(interval).duration
     }
 
     /// The duration of the session's overlap with `interval` divided by `interval`'s
     /// duration.
-    pub(crate) fn interval_overlap_ratio(&self, interval: &Interval) -> Bracket<f64> {
-        match self.interval_overlap(interval) {
-            None => Bracket::exact(0.0),
-            Some(overlap) => overlap
-                .duration()
-                .map(|v| v.as_secs_f64() / interval.duration.as_secs_f64()),
-        }
+    pub(crate) fn interval_overlap_ratio(&self, interval: &Interval) -> f64 {
+        self.interval_overlap(interval).as_secs_f64() / interval.duration.as_secs_f64()
     }
 
     /// Average power (in kW) of this session over `interval`.
-    pub(crate) fn interval_avg_kw(&self, interval: &Interval) -> Bracket<f64> {
-        let overlap_ratio = self.interval_overlap_ratio(interval);
-        overlap_ratio.map(|v| v * self.avg_kw())
+    pub(crate) fn interval_avg_kw(&self, interval: &Interval) -> f64 {
+        self.interval_overlap_ratio(interval) * self.avg_kw()
     }
 }
 
@@ -352,25 +265,6 @@ impl Session {
 // drawn from it, rest on `Charge_Session_ID` being unique. It is not: Evolute's June 2026 report
 // carries `S37487` on two unrelated sessions a week apart. `Segment` holds a `Vec` for that reason,
 // and nothing else needs to ask whether two sessions are equal.
-
-/// A [`Session`]'s overlap with an [`Interval`], including quantification of
-/// overlap uncertainty due to [`TIME_GRID_STEP`].
-pub(crate) struct SessionOverlap {
-    left: Bracket<Timestamp>,
-    right: Bracket<Timestamp>,
-}
-
-impl SessionOverlap {
-    pub fn duration(&self) -> Bracket<Duration> {
-        let min = if self.left.max < self.right.min {
-            duration(self.left.max, self.right.min)
-        } else {
-            Duration::ZERO
-        };
-        let max = duration(self.left.min, self.right.max);
-        Bracket::new(min, max)
-    }
-}
 
 /// Several files' sessions as one list, with what is wrong across them.
 struct MergedSessions {
@@ -469,123 +363,6 @@ fn duplicate_id_anomalies(sessions: &[RSession]) -> Vec<Anomaly> {
         .collect()
 }
 
-// ---------------------------------------------------------------------------
-// Bracket
-// ---------------------------------------------------------------------------
-
-#[derive(Debug, Clone, Copy)]
-/// Value subject to uncertainty due to `TIME_GRID_STEP`.
-pub struct Bracket<T: Clone> {
-    /// Minimum value.
-    pub min: T,
-    /// Maximum value.
-    pub max: T,
-}
-
-impl<T: Clone> Bracket<T> {
-    /// A bracket from `min` and `max`; panics unless `min <= max`.
-    pub fn new(min: T, max: T) -> Self
-    where
-        T: Debug + PartialOrd,
-    {
-        assert!(min <= max, "min={min:?} must be <= max={max:?}");
-        Self { min, max }
-    }
-
-    /// Instantiates an exact instance.
-    pub fn exact(value: T) -> Self {
-        Self {
-            min: value.clone(),
-            max: value,
-        }
-    }
-
-    pub fn map<U: Clone>(&self, mut f: impl FnMut(&T) -> U) -> Bracket<U> {
-        let min = f(&self.min);
-        let max = f(&self.max);
-        Bracket { min, max }
-    }
-}
-
-impl<T: Clone + Default> Default for Bracket<T> {
-    fn default() -> Self {
-        Self {
-            min: Default::default(),
-            max: Default::default(),
-        }
-    }
-}
-
-impl<T: Clone + Add<Output = T>> Add for Bracket<T> {
-    type Output = Self;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        Self {
-            min: self.min + rhs.min,
-            max: self.max + rhs.max,
-        }
-    }
-}
-
-impl<T: Clone + Mul<f64, Output = T>> Mul<f64> for Bracket<T> {
-    type Output = Self;
-
-    fn mul(self, rhs: f64) -> Self::Output {
-        Self {
-            min: self.min * rhs,
-            max: self.max * rhs,
-        }
-    }
-}
-
-impl Bracket<f64> {
-    pub fn mid(&self) -> f64 {
-        (self.min + self.max) / 2.0
-    }
-}
-
-impl Div<f64> for Bracket<f64> {
-    type Output = Self;
-
-    fn div(self, rhs: f64) -> Self::Output {
-        Self {
-            min: self.min / rhs,
-            max: self.max / rhs,
-        }
-    }
-}
-
-impl Sum for Bracket<f64> {
-    fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
-        let mut sum = Bracket::default();
-        for item in iter {
-            sum = sum + item;
-        }
-        sum
-    }
-}
-
-impl Mul<u32> for Bracket<Duration> {
-    type Output = Self;
-
-    fn mul(self, rhs: u32) -> Self::Output {
-        Self {
-            min: self.min * rhs,
-            max: self.max * rhs,
-        }
-    }
-}
-
-impl Sum for Bracket<Duration> {
-    fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
-        let mut sum = Bracket::default();
-        for item in iter {
-            sum = sum + item;
-        }
-        sum
-    }
-}
-
 impl Add for Load {
     type Output = Self;
 
@@ -640,33 +417,36 @@ impl Segment {
         self.interval.end()
     }
 
-    pub fn agg_count(&self) -> Bracket<f64> {
+    /// Sessions weighted by how much of the segment each covered.
+    ///
+    /// `fold` from an explicit `0.0` rather than `sum`: std seeds `Sum for f64` with `-0.0`, so an
+    /// empty segment summed with `sum()` renders as `-0.000` in the report. The bracket type this
+    /// replaced had a `Sum` of its own that seeded from `Default`, which is why the negative zero
+    /// only appeared once the brackets went.
+    pub fn agg_count(&self) -> f64 {
         self.sessions
             .iter()
-            .map(|s| s.interval_overlap_ratio(&self.interval))
-            .sum()
+            .fold(0.0, |acc, s| acc + s.interval_overlap_ratio(&self.interval))
     }
 
-    pub fn agg_kw(&self) -> Bracket<f64> {
+    /// The sessions' average power, weighted the same way. Seeded as [`Self::agg_count`] is.
+    pub fn agg_kw(&self) -> f64 {
         self.sessions
             .iter()
-            .map(|s| s.interval_avg_kw(&self.interval))
-            .sum()
+            .fold(0.0, |acc, s| acc + s.interval_avg_kw(&self.interval))
     }
 
     /// Site load implied by how many vehicles were connected over the segment.
-    pub fn count_based_load(&self) -> Bracket<Load> {
-        self.agg_count().map(|count| Self::scaled_load(*count))
+    pub fn count_based_load(&self) -> Load {
+        Self::scaled_load(self.agg_count())
     }
 
     /// Site load implied by the energy the segment's sessions drew.
     ///
     /// The aggregate power is converted to an equivalent vehicle count first, so both derivations
     /// go through the same `scaled_load` and can be compared directly.
-    pub fn energy_based_load(&self) -> Bracket<Load> {
-        let single_ev_real_kw = ev_load().real_kw;
-        let scaling = self.agg_kw().map(|v| v / single_ev_real_kw);
-        scaling.map(|count| Self::scaled_load(*count))
+    pub fn energy_based_load(&self) -> Load {
+        Self::scaled_load(self.agg_kw() / ev_load().real_kw)
     }
 
     /// Site load for a vehicle count, which may be fractional, and may exceed aggregate panel
@@ -738,17 +518,17 @@ pub enum AnomalyKind {
     /// `Active_Charge_Time` is zero so its `avg_kw` cell shows `#DIV/0!`.
     ZeroActiveChargeTime,
     /// `Conn_start + Conn_Duration` misses the reported `Conn_DateTime_End` by more than
-    /// truncation to `TIME_GRID_STEP` can account for, early or late, so the reported start, end
-    /// and duration are mutually inconsistent. The two sides of the window are not the same width;
-    /// `duration_is_consistent` states each exactly.
+    /// `DURATION_TOLERANCE`, either way, so the reported start, end and duration are mutually
+    /// inconsistent.
     ///
-    /// The test is `duration_is_consistent`, which carries the three checks and their derivation.
+    /// The test is `duration_is_consistent`, and `DURATION_TOLERANCE` carries the evidence for the
+    /// one second it allows.
     ///
     /// Every direction is a fault, and all of them exclude the session from the estimates: if a
     /// record's own fields disagree by more than the reporting can explain, neither its duration
     /// nor the span the estimating logic would place it on can be relied on.
     ///
-    /// See `docs/session/time-reporting-uncertainty.md` and docs/session/README.md, "Anomalies".
+    /// See docs/session/README.md, "Anomalies".
     InconsistentDuration,
     /// The session's average power exceeds [`BREAKER_MAX_NORMAL_KW`], which the hardware is
     /// supposed to make impossible.
@@ -769,21 +549,6 @@ pub enum AnomalyKind {
     /// part in the estimates exactly as it would otherwise, since two records sharing an id are
     /// two sessions until something says otherwise.
     DuplicateId,
-
-    /// The reported start or end does not land on a whole `TIME_GRID_STEP`.
-    ///
-    /// Informational only. Every allowance this software makes for the reporting's truncation
-    /// assumes the reported times are truncated to that step. If Evolute starts reporting seconds,
-    /// they no longer are, and the allowances become too wide rather than wrong — a session gets a
-    /// padded end it does not need, and the consistency window admits records it should reject.
-    /// Nothing crashes and no figure looks odd, which is exactly why it needs saying.
-    ///
-    /// A property of the record's own times, so it travels on [`Session::anomalies`] and survives
-    /// the round trip through a workbook honestly: the times it describes are the ones written.
-    ///
-    /// Expect it on every row or on none. A report that has switched resolution has switched it
-    /// throughout, so whatever renders these should say how many rather than list them all.
-    OffGridTimes,
 }
 
 impl AnomalyKind {
@@ -797,9 +562,8 @@ impl AnomalyKind {
     /// - [`Self::DuplicateId`] — two records may be one session counted twice, or one id on two
     ///   sessions; the energy differs by a whole session either way.
     ///
-    /// The rest do not. [`Self::ZeroActiveChargeTime`] and [`Self::ExcessiveAvgKw`] are about
-    /// power, which is not what is summed; [`Self::OffGridTimes`] is a fact about the file rather
-    /// than about the session.
+    /// The rest do not: [`Self::ZeroActiveChargeTime`] and [`Self::ExcessiveAvgKw`] are about
+    /// power, which is not what is summed.
     ///
     /// The demand side reports every kind instead, since an estimate over a single hour turns on
     /// each session's power and on exactly which records touch that hour.
@@ -835,7 +599,6 @@ impl AnomalyKind {
             Self::InconsistentDuration => "InconsistentDuration",
             Self::ExcessiveAvgKw => "ExcessiveAvgKw",
             Self::DuplicateId => "DuplicateId",
-            Self::OffGridTimes => "OffGridTimes",
         }
     }
 
@@ -851,7 +614,6 @@ impl AnomalyKind {
             "InconsistentDuration" => Self::InconsistentDuration,
             "ExcessiveAvgKw" => Self::ExcessiveAvgKw,
             "DuplicateId" => Self::DuplicateId,
-            "OffGridTimes" => Self::OffGridTimes,
             _ => return None,
         })
     }
@@ -881,8 +643,9 @@ impl fmt::Display for AnomalyKind {
                  session is worth reviewing individually"
             }
             Self::InconsistentDuration => {
-                "reported start, end and duration contradict each other by more than truncation \
-                 to the minute can explain; the session is excluded from every estimate"
+                "reported start, end and duration contradict each other by more than a second, \
+                 which is the rounding the source does; the session is excluded from every \
+                 estimate"
             }
             Self::ExcessiveAvgKw => {
                 "average kilowatts above the Evolute breaker rating at the top of the normal \
@@ -892,12 +655,6 @@ impl fmt::Display for AnomalyKind {
             Self::DuplicateId => {
                 "another session in the report carries the same Charge_Session_ID; the id is not \
                  unique in Evolute's reports, so both sessions still count towards every estimate"
-            }
-            Self::OffGridTimes => {
-                "the reported start or end does not land on a whole minute, so the report's \
-                 resolution has become finer than this software's time grid; nothing is wrong with \
-                 the record, but the padding and the consistency window are now wider than the \
-                 data needs"
             }
         };
         f.write_str(s)
@@ -1132,7 +889,7 @@ impl Sessions {
     /// [`Self::spikes`].
     ///
     /// [`Self::excluded`] is left out rather than overlooked. Those records' start, end and
-    /// duration contradict each other, and an inverted one panics in `adj_duration` before any
+    /// duration contradict each other, and an inverted one panics in `conn_span` before any
     /// figure comes of it.
     ///
     /// A spike is counted because the contradiction in it is between energy and *charge time*: the

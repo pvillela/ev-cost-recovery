@@ -8,20 +8,20 @@ Interval   2026-06-15 17:00 - 18:00 EDT  (1 hour)
 Estimates
 ---------
 
-| Estimate     | Unit |    Min |    Max | Segment |
-|:-------------|:-----|-------:|-------:|:--------|
-| Energy-based | kW   | 16.176 | 17.506 | 17:15   |
-| Energy-based | kVA  | 16.628 | 17.971 | 17:15   |
-| Count-based  | kW   | 16.956 | 18.284 | 17:15   |
-| Count-based  | kVA  | 17.415 | 18.756 | 17:15   |
+| Estimate     | Unit |  Value | Segment |
+|:-------------|:-----|-------:|:--------|
+| Energy-based | kW   | 20.608 | 17:15   |
+| Energy-based | kVA  | 21.105 | 17:15   |
+| Count-based  | kW   | 21.387 | 17:15   |
+| Count-based  | kVA  | 21.893 | 17:15   |
 
-Every figure is a bracket: the reported session times are stated only to the
-minute, so each estimate runs from what those times least support to what
-they most support. "Energy-based" is derived from the sessions' own
-consumption, "Count-based" from how many of them were charging and the
-per-EV rating of the infrastructure. "Segment" names the 15-minute segment
-the figure was drawn from - the one where that derivation peaks, which the
-two need not agree on.
+"Energy-based" is derived from the sessions' own consumption, "Count-based"
+from how many of them were charging and the per-EV rating of the
+infrastructure. "Segment" names the 15-minute segment the figure was drawn
+from - the one where that derivation peaks, which the two need not agree on.
+Each figure is a single value: the reported session times are stated to the
+second and taken as given, so an overlap has one width. They were a range
+while those times were stated only to the minute.
 
 The peak is always a 15-minute average, whatever the length of the interval
 asked for, because that is the basis the demand charge is billed on. An hour
@@ -36,12 +36,12 @@ under Excluded sessions.
 Segments
 --------
 
-| Segment | Count-based |  Energy-based |
-|:--------|------------:|--------------:|
-| 17:00   | 0.267-0.400 |   1.600-2.400 |
-| 17:15   | 2.533-2.733 | 15.920-17.239 |
-| 17:30   | 1.000-1.200 |   6.000-7.280 |
-| 17:45   | 0.000-0.000 |   0.000-0.000 |
+| Segment | Count-based | Energy-based |
+|:--------|------------:|-------------:|
+| 17:00   |       0.333 |        2.000 |
+| 17:15   |       3.200 |       20.314 |
+| 17:30   |       1.133 |        6.879 |
+| 17:45   |       0.000 |        0.000 |
 
 Times are local, on the zone the Interval line above names, and each segment
 is 15 minutes long, named by the minute it starts on. That is an hour later
@@ -58,9 +58,9 @@ kW.
 Sessions by segment
 -------------------
 
-- 17:00 - N1, MARGIN
+- 17:00 - N1
 - 17:15 - N1, N2, EXCESS, SPIKE
-- 17:30 - N1, N2, EXCESS
+- 17:30 - N1, N2, SPIKE
 - 17:45 - none
 
 
@@ -69,8 +69,8 @@ Excluded sessions
 
 | Row | Session  | From                 | To        | In interval | Anomaly              |
 |----:|:---------|:---------------------|:----------|:------------|:---------------------|
-|   4 | BAD      | 2026-06-15 17:05 EDT | 17:31 EDT | yes         | InconsistentDuration |
-|   8 | REVERSED | 2026-06-15 17:30 EDT | 17:21 EDT | yes         | InconsistentDuration |
+|   4 | BAD      | 2026-06-15 17:05 EDT | 17:30 EDT | yes         | InconsistentDuration |
+|   8 | REVERSED | 2026-06-15 17:30 EDT | 17:20 EDT | yes         | InconsistentDuration |
 
 These sessions take no part in any estimate. Times are local and name the
 zone they are read in, which through the summer is an hour later than the
@@ -83,8 +83,8 @@ other cannot be trusted to say where it belongs. It reads the same doubtful
 times, so no row was dropped on its say-so.
 
 - InconsistentDuration - reported start, end and duration contradict each
-  other by more than truncation to the minute can explain; the session is
-  excluded from every estimate.
+  other by more than a second, which is the rounding the source does; the
+  session is excluded from every estimate.
 
 
 Anomalies

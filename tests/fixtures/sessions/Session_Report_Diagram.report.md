@@ -8,20 +8,20 @@ Interval   2026-06-15 17:00 - 18:00 EDT  (1 hour)
 Estimates
 ---------
 
-| Estimate     | Unit |    Min |    Max | Segment |
-|:-------------|:-----|-------:|-------:|:--------|
-| Energy-based | kW   | 18.212 | 19.483 | 17:15   |
-| Energy-based | kVA  | 18.684 | 19.968 | 17:15   |
-| Count-based  | kW   | 19.614 | 20.944 | 17:15   |
-| Count-based  | kVA  | 20.100 | 21.445 | 17:15   |
+| Estimate     | Unit |  Value | Segment |
+|:-------------|:-----|-------:|:--------|
+| Energy-based | kW   | 19.053 | 17:15   |
+| Energy-based | kVA  | 19.533 | 17:15   |
+| Count-based  | kW   | 20.500 | 17:15   |
+| Count-based  | kVA  | 20.996 | 17:15   |
 
-Every figure is a bracket: the reported session times are stated only to the
-minute, so each estimate runs from what those times least support to what
-they most support. "Energy-based" is derived from the sessions' own
-consumption, "Count-based" from how many of them were charging and the
-per-EV rating of the infrastructure. "Segment" names the 15-minute segment
-the figure was drawn from - the one where that derivation peaks, which the
-two need not agree on.
+"Energy-based" is derived from the sessions' own consumption, "Count-based"
+from how many of them were charging and the per-EV rating of the
+infrastructure. "Segment" names the 15-minute segment the figure was drawn
+from - the one where that derivation peaks, which the two need not agree on.
+Each figure is a single value: the reported session times are stated to the
+second and taken as given, so an overlap has one width. They were a range
+while those times were stated only to the minute.
 
 The peak is always a 15-minute average, whatever the length of the interval
 asked for, because that is the basis the demand charge is billed on. An hour
@@ -32,12 +32,12 @@ whole hour.
 Segments
 --------
 
-| Segment | Count-based |  Energy-based |
-|:--------|------------:|--------------:|
-| 17:00   | 2.400-2.467 | 14.880-15.293 |
-| 17:15   | 2.933-3.133 | 17.940-19.200 |
-| 17:30   | 2.800-3.133 | 17.420-19.560 |
-| 17:45   | 1.400-1.533 |   8.440-9.253 |
+| Segment | Count-based | Energy-based |
+|:--------|------------:|-------------:|
+| 17:00   |       2.467 |       15.293 |
+| 17:15   |       3.067 |       18.773 |
+| 17:30   |       2.867 |       17.867 |
+| 17:45   |       1.467 |        8.847 |
 
 Times are local, on the zone the Interval line above names, and each segment
 is 15 minutes long, named by the minute it starts on. That is an hour later
@@ -55,7 +55,7 @@ Sessions by segment
 -------------------
 
 - 17:00 - A, B, C
-- 17:15 - A, B, C, D, E
+- 17:15 - A, C, D, E
 - 17:30 - A, C, D, E, F
 - 17:45 - A, G
 

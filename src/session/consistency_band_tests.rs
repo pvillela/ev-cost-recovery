@@ -9,28 +9,30 @@
 //! the band. So this reads the CSV and calls the two functions the band actually runs through.
 //!
 //! Unit tests in [`super::csv`] already pin the predicate. This pins the *consequence*. Nothing
-//! did that before, which is how commit `1d99e29` moved the band by a whole `TIME_GRID_STEP` —
-//! excluding 116 of the 238 sessions in the real June report — with the whole suite green. See
+//! did that before, which is how commit `1d99e29` moved the band by a whole minute — excluding 116
+//! of the 238 sessions in the real June report — with the whole suite green. See
 //! `docs/archive/merger-review-findings.md`, finding 1.
 //!
 //! # The arithmetic every record here is one second away from
 //!
-//! With a reported start of `16:10` and end of `16:40`, `Δ = 30:00`, the three checks of
-//! `duration_is_consistent` reduce to a closed range of sound durations:
+//! With a reported start of `16:10:00` and end of `16:40:00`, `Δ = 30:00`, `duration_is_consistent`
+//! reduces to a closed range of sound durations:
 //!
 //! ```text
-//! check 2:  16:10 + d  <  16:40 + 60s + 1s   =>  d <= 0:31:00
-//! check 3:  16:40 - 60s  <  16:10 + d        =>  d >= 0:29:01
+//! |16:10:00 + d - 16:40:00|  <=  DURATION_TOLERANCE   =>   0:29:59 <= d <= 0:30:01
 //! ```
 //!
-//! So `[0:29:01, 0:31:00]` is sound and everything outside it is not. Each record in the fixture
-//! sits on one of those two edges or one second past it. Getting a bound wrong by a single second
-//! moves a real record between the two groups, so a second is the right resolution to test at.
+//! So `[0:29:59, 0:30:01]` is sound and everything outside it is not. The fixture puts a record on
+//! each edge, one on each side a second beyond it, and one exactly on `Δ`. Getting a bound wrong by
+//! a single second moves a real record between the two groups, so a second is the right resolution
+//! to test at — and it is now the whole width of the allowance, where it used to be a sixtieth of
+//! it.
 //!
-//! `INVERT1` tests check 1 on its own, and is the case with no equivalent among the predicate's
-//! own unit tests: a one-minute inversion is the smallest the reporting can express, since both
-//! reported times are whole minutes, and that forces the duration to zero. It therefore also
-//! carries `ZeroActiveChargeTime` — the two travel together by arithmetic, not coincidence.
+//! `INVERT1` is the inversion case: a record whose end precedes its start. It is not a separate
+//! check any more — an inverted span misses by a minute, far outside the tolerance — but it is
+//! still worth a row, because `Session::intersects` panics on an inverted span and names exclusion
+//! by this test as the reason it cannot reach one. It also carries `ZeroActiveChargeTime`, since
+//! the reporting forces the duration to zero.
 
 use super::{AnomalyKind, Sessions, csv::csv_sessions, estimates_from_sessions};
 use crate::{golden, time::Interval};
@@ -43,10 +45,10 @@ use std::path::PathBuf;
 const LO: &str = "2026-06-15T21:00:00Z";
 const HI: &str = "2026-06-15T22:00:00Z";
 
-/// Ids expected to fail one of the three checks.
+/// Ids expected to fall outside the tolerance.
 const UNSOUND: [&str; 3] = ["EARLYOUT", "INVERT1", "LATEOUT"];
-/// Ids expected to pass all three, each one second inside a bound.
-const SOUND: [&str; 2] = ["EARLYIN", "LATEIN"];
+/// Ids expected to fall inside it: one on each edge, and one exactly on the reported span.
+const SOUND: [&str; 3] = ["EARLYIN", "EXACT", "LATEIN"];
 
 fn fixture() -> PathBuf {
     golden::fixture("sessions/Session_Report_Band.csv")
@@ -119,6 +121,43 @@ fn the_flag_and_the_exclusion_agree() {
         "the fixture no longer inverts: {} to {}",
         invert.conn_start,
         invert.conn_end
+    );
+}
+
+/// The real portal export passes, including the row that misses the invariant by a second.
+///
+/// This is the assertion `DURATION_TOLERANCE` exists for, made against the data that set its
+/// value rather than against a fixture written to agree with it. Four of the five rows satisfy
+/// `start + duration == end` exactly; `S83391` reports `16:57:00 + 2:03:50` ending at `19:00:49`,
+/// a second early. Exact equality would exclude a fifth of the file.
+#[test]
+fn the_real_portal_export_is_sound_throughout() {
+    let path = golden::fixture("sessions/Session_Report_August_1_2026-September_4_2026.csv");
+    let report = csv_sessions(&path).expect("the portal export reads");
+
+    assert!(
+        report.excluded.is_empty(),
+        "excluded: {:?}",
+        report
+            .excluded
+            .iter()
+            .map(|s| s.id.as_str())
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(report.sessions.len() + report.spikes.len(), 5);
+
+    // The off-by-one row specifically, so a change to the tolerance fails here by name.
+    let one_out = report
+        .sessions
+        .iter()
+        .find(|s| s.id == "S83391")
+        .expect("the off-by-one row is kept");
+    assert!(
+        !one_out
+            .anomalies
+            .contains(&AnomalyKind::InconsistentDuration),
+        "{:?}",
+        one_out.anomalies
     );
 }
 

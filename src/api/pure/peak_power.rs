@@ -26,7 +26,7 @@ use crate::{
         NotABillingPeriodEnding, ZeroDenominator, billing_period_dates, billing_period_span,
     },
     markdown::{Left, Right, amounts, field, h1, h2, rounding_note, table, wrap},
-    session::{Bracket, EstimateSet, IntervalEstimates, SessionNotes, estimates_from_sessions},
+    session::{EstimateSet, IntervalEstimates, SessionNotes, estimates_from_sessions},
     time::Interval,
 };
 use jiff::civil::Date;
@@ -651,11 +651,8 @@ impl fmt::Display for DeliveryCost {
 /// selector's reason for existing: the choice is made on energy-based kW, and the load model is
 /// monotone in it — a segment drawing more real power draws more apparent power — so the segment
 /// maximising kVA is the same one. Re-choosing per unit could only introduce a disagreement.
-fn energy_based(
-    estimates: &IntervalEstimates,
-    which: impl Fn(&EstimateSet) -> Bracket<f64>,
-) -> f64 {
-    which(&estimates.energy_based_seg_estimate.1).mid()
+fn energy_based(estimates: &IntervalEstimates, which: impl Fn(&EstimateSet) -> f64) -> f64 {
+    which(&estimates.energy_based_seg_estimate.1)
 }
 
 /// Whether the meter figures cover the whole of the billing period.
@@ -993,7 +990,6 @@ mod test {
                 .energy_based_seg_estimate
                 .1
                 .energy_based_kw
-                .mid()
         );
         assert_eq!(
             cost.demand_kva,
@@ -1002,7 +998,6 @@ mod test {
                 .energy_based_seg_estimate
                 .1
                 .energy_based_kva
-                .mid()
         );
 
         // The 7-7 hour is a third hour holding only `ELSEWHERE`, which is a smaller load than the
@@ -1247,7 +1242,7 @@ mod test {
                 kept.unit
             );
             assert_eq!(
-                read(&kept.estimates.energy_based_seg_estimate.1).mid(),
+                read(&kept.estimates.energy_based_seg_estimate.1),
                 figure,
                 "{} was priced off some other interval",
                 kept.unit

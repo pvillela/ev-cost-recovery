@@ -1,6 +1,4 @@
-use super::{
-    Anomaly, AnomalyKind, Bracket, RSegment, RSession, SEGMENT_DURATION, Segment, Sessions,
-};
+use super::{Anomaly, AnomalyKind, RSegment, RSession, SEGMENT_DURATION, Segment, Sessions};
 use crate::{log::SourceLog, time::Interval};
 use std::{path::PathBuf, rc::Rc};
 
@@ -59,19 +57,22 @@ pub struct IntervalEstimates {
 ///
 /// Two derivations times two units. The energy-based pair reads the sessions' own consumption; the
 /// count-based pair reads how many of them were charging against the per-EV rating of the
-/// infrastructure. Each is a [`Bracket`], because the reported session times are stated only to the
-/// minute and the overlap they imply is therefore a range rather than a number.
+/// infrastructure.
+///
+/// Each was a bracket while reported session times were truncated to the minute and the overlap
+/// they implied was a range. The portal states seconds, the overlap is exact, and so is each figure
+/// here.
 #[derive(Debug)]
 pub struct EstimateSet {
-    pub energy_based_kw: Bracket<f64>,
-    pub energy_based_kva: Bracket<f64>,
-    pub count_based_kw: Bracket<f64>,
-    pub count_based_kva: Bracket<f64>,
+    pub energy_based_kw: f64,
+    pub energy_based_kva: f64,
+    pub count_based_kw: f64,
+    pub count_based_kva: f64,
 }
 
 impl EstimateSet {
     /// The four figures, in the order the report tabulates them.
-    pub fn values(&self) -> [Bracket<f64>; 4] {
+    pub fn values(&self) -> [f64; 4] {
         [
             self.energy_based_kw,
             self.energy_based_kva,
@@ -110,8 +111,8 @@ pub(crate) fn estimates_from_sessions(
         .iter()
         .map(|seg| (seg.clone(), segment_estimate(seg)))
         .collect();
-    let energy_based_seg_estimate = maximal_segment_estimate(&segments, |seg| seg.agg_kw().mid());
-    let count_based_seg_estimate = maximal_segment_estimate(&segments, |seg| seg.agg_count().mid());
+    let energy_based_seg_estimate = maximal_segment_estimate(&segments, |seg| seg.agg_kw());
+    let count_based_seg_estimate = maximal_segment_estimate(&segments, |seg| seg.agg_count());
     let session_anomalies = collect_session_anomalies(&ioi, &rsessions, &sessions.anomalies);
 
     IntervalEstimates {
@@ -170,10 +171,10 @@ pub(crate) fn segment_estimate(segment: &Segment) -> EstimateSet {
     let energy_based_load = segment.energy_based_load();
     let count_based_load = segment.count_based_load();
     EstimateSet {
-        energy_based_kw: energy_based_load.map(|load| load.real_kw),
-        energy_based_kva: energy_based_load.map(|load| load.apparent_kva()),
-        count_based_kw: count_based_load.map(|load| load.real_kw),
-        count_based_kva: count_based_load.map(|load| load.apparent_kva()),
+        energy_based_kw: energy_based_load.real_kw,
+        energy_based_kva: energy_based_load.apparent_kva(),
+        count_based_kw: count_based_load.real_kw,
+        count_based_kva: count_based_load.apparent_kva(),
     }
 }
 
@@ -264,7 +265,7 @@ fn collect_session_anomalies(
 
 #[cfg(test)]
 mod test {
-    use crate::session::{Session, TIME_GRID_STEP};
+    use crate::session::Session;
 
     use super::{
         super::{
@@ -301,40 +302,26 @@ mod test {
 
     /// A session spanning `[start, end)` exactly, drawing `kw` on average.
     ///
-    /// `end` is the **adjusted** end, so a test states the geometry it means rather than the
-    /// reported end that produces it. `conn_end` is worked back from it, and the result is checked
-    /// against [`Session::adj_conn_end`], which is the only definition of that bound.
-    ///
-    /// The check is not ceremony. This helper used to subtract one [`TIME_GRID_STEP`] and stop
-    /// there, inverting a formula `adj_conn_end` no longer has, and so quietly built sessions
-    /// ending before the `end` named here for every `end` off the grid. An adjusted end is always
-    /// on the grid -- that is what truncation means -- so an `end` that is not on the grid names a geometry the
-    /// software cannot produce, and a test asking for one is asking about a session that cannot
-    /// exist.
+    /// The reported end *is* the end of the span: reported times are taken at face value, so there
+    /// is nothing to work backwards through. The helper used to subtract a grid step to invert the
+    /// padding on the reported end, and that padding is gone.
     ///
     /// `charge_time` and `energy_use` are chosen so that `avg_kw()` returns `kw`.
     fn session(id: &str, start: &str, end: &str, kw: f64) -> RSession {
         let conn_start = ts(start);
-        let adj_conn_end = ts(end);
+        let conn_end = ts(end);
         let charge_time = Duration::from_secs(3600);
-        let session = Session {
+        Rc::new(Session {
             path: Rc::new(PathBuf::from("Session_Report_Test.csv")),
             row: 2,
             id: id.to_owned(),
             conn_start,
-            conn_end: adj_conn_end - TIME_GRID_STEP,
-            conn_duration: adj_conn_end.duration_since(conn_start).unsigned_abs(),
+            conn_end,
+            conn_duration: conn_end.duration_since(conn_start).unsigned_abs(),
             charge_time,
             energy_use: kw * charge_time.as_secs_f64() / 3600.0,
             anomalies: Vec::new(),
-        };
-        assert_eq!(
-            session.adj_conn_end(),
-            adj_conn_end,
-            "{id}: no reported end yields an adjusted end of {adj_conn_end}; it is off the time \
-             grid"
-        );
-        Rc::new(session)
+        })
     }
 
     // -----------------------------------------------------------------------
@@ -463,16 +450,14 @@ mod test {
     /// minutes of fifteen is.
     #[test]
     fn a_session_covering_part_of_a_segment_counts_that_fraction() {
-        // A session running well past both edges of the segment covers all of it. Neither of its
-        // reported boundaries falls inside, so no minute of doubt applies and the bracket is exact.
+        // A session running well past both edges of the segment covers all of it.
         let s = session("H", "2026-06-15T19:00:00Z", "2026-06-15T22:00:00Z", 1.0);
         let half = Interval::new(hour().start, SEGMENT_DURATION / 2);
         let mut segment = Segment::new(half.start, half.duration);
         segment.add_session(s);
 
         let count = segment.agg_count();
-        assert!((count.min - 1.0).abs() < TOLERANCE, "{count:?}");
-        assert!((count.max - 1.0).abs() < TOLERANCE, "{count:?}");
+        assert!((count - 1.0).abs() < TOLERANCE, "{count:?}");
 
         // Against the whole segment, a session running 20:00–20:05 covers a third of it.
         let mut whole = Segment::new(hour().start, SEGMENT_DURATION);
@@ -483,7 +468,7 @@ mod test {
             1.0,
         ));
         let count = whole.agg_count();
-        assert!((count.max - 1.0 / 3.0).abs() < TOLERANCE, "{count:?}");
+        assert!((count - 1.0 / 3.0).abs() < TOLERANCE, "{count:?}");
     }
 
     /// An empty segment is not a zero: every panel's transformer is energised whether or not a car
@@ -493,12 +478,7 @@ mod test {
         let segment = Segment::new(hour().start, SEGMENT_DURATION);
         let standing = site_load_for(0.0);
 
-        for load in [
-            segment.count_based_load().min,
-            segment.count_based_load().max,
-            segment.energy_based_load().min,
-            segment.energy_based_load().max,
-        ] {
+        for load in [segment.count_based_load(), segment.energy_based_load()] {
             assert!(
                 (load.real_kw - standing.real_kw).abs() < TOLERANCE,
                 "{load:?}"
@@ -524,12 +504,12 @@ mod test {
             1.0,
         )];
         let segments = segments_for_ioi(hour(), &sessions);
-        let (seg, _) = maximal_segment_estimate(&segments, |s| s.agg_count().mid());
+        let (seg, _) = maximal_segment_estimate(&segments, |s| s.agg_count());
         assert_eq!(seg.start(), hour().start);
 
         // With nothing anywhere, every segment ties at the standing block and the earliest wins.
         let empty = segments_for_ioi(hour(), &[]);
-        let (seg, _) = maximal_segment_estimate(&empty, |s| s.agg_kw().mid());
+        let (seg, _) = maximal_segment_estimate(&empty, |s| s.agg_kw());
         assert_eq!(seg.start(), hour().start);
 
         // A later segment that genuinely beats the first still displaces it.
@@ -539,7 +519,7 @@ mod test {
             session("M", "2026-06-15T20:30:00Z", "2026-06-15T20:45:00Z", 1.0),
         ];
         let segments = segments_for_ioi(hour(), &sessions);
-        let (seg, _) = maximal_segment_estimate(&segments, |s| s.agg_count().mid());
+        let (seg, _) = maximal_segment_estimate(&segments, |s| s.agg_count());
         assert_eq!(seg.start(), hour().start + SEGMENT_DURATION * 2);
     }
 
@@ -558,8 +538,8 @@ mod test {
             ev_load().real_kw,
         )];
         let segments = segments_for_ioi(hour(), &sessions);
-        let (by_kw, _) = maximal_segment_estimate(&segments, |s| s.agg_kw().mid());
-        let (by_count, _) = maximal_segment_estimate(&segments, |s| s.agg_count().mid());
+        let (by_kw, _) = maximal_segment_estimate(&segments, |s| s.agg_kw());
+        let (by_count, _) = maximal_segment_estimate(&segments, |s| s.agg_count());
 
         // Each maximum is one of the segments handed in, not a clone of one.
         assert!(segments.iter().any(|s| Rc::ptr_eq(s, &by_kw)));
@@ -584,8 +564,7 @@ mod test {
         for n in 0..=3u32 {
             let sessions: Vec<RSession> = (0..n)
                 .map(|i| {
-                    // Spanning the whole hour, so the quarter is covered end to end and the
-                    // overlap bracket is exact.
+                    // Spanning the whole hour, so every quarter is covered end to end.
                     session(
                         &format!("S{i}"),
                         "2026-06-15T19:00:00Z",
@@ -599,21 +578,15 @@ mod test {
 
             for segment in &segments {
                 let count = segment.agg_count();
-                assert!((count.min - f64::from(n)).abs() < TOLERANCE, "n={n}");
-                assert!((count.max - f64::from(n)).abs() < TOLERANCE, "n={n}");
+                assert!((count - f64::from(n)).abs() < TOLERANCE, "n={n}");
 
                 let est = segment_estimate(segment);
                 for figure in [est.energy_based_kw, est.count_based_kw] {
-                    assert!((figure.min - expected.real_kw).abs() < TOLERANCE, "n={n}");
-                    assert!((figure.max - expected.real_kw).abs() < TOLERANCE, "n={n}");
+                    assert!((figure - expected.real_kw).abs() < TOLERANCE, "n={n}");
                 }
                 for figure in [est.energy_based_kva, est.count_based_kva] {
                     assert!(
-                        (figure.min - expected.apparent_kva()).abs() < TOLERANCE,
-                        "n={n}"
-                    );
-                    assert!(
-                        (figure.max - expected.apparent_kva()).abs() < TOLERANCE,
+                        (figure - expected.apparent_kva()).abs() < TOLERANCE,
                         "n={n}"
                     );
                 }
@@ -640,27 +613,27 @@ mod test {
         let est = segment_estimate(&segments[0]);
         let expected = site_load_for(1.0 / 3.0);
 
-        assert!((segments[0].agg_count().max - 1.0 / 3.0).abs() < TOLERANCE);
+        assert!((segments[0].agg_count() - 1.0 / 3.0).abs() < TOLERANCE);
         assert!(
-            (est.count_based_kw.max - expected.real_kw).abs() < TOLERANCE,
+            (est.count_based_kw - expected.real_kw).abs() < TOLERANCE,
             "{:?} vs {:?}",
             est.count_based_kw,
             expected.real_kw
         );
         assert!(
-            (est.count_based_kva.max - expected.apparent_kva()).abs() < TOLERANCE,
+            (est.count_based_kva - expected.apparent_kva()).abs() < TOLERANCE,
             "{:?} vs {:?}",
             est.count_based_kva,
             expected.apparent_kva()
         );
         assert!(
-            (est.energy_based_kw.max - est.count_based_kw.max).abs() < TOLERANCE,
+            (est.energy_based_kw - est.count_based_kw).abs() < TOLERANCE,
             "{:?} vs {:?}",
             est.energy_based_kw,
             est.count_based_kw
         );
         assert!(
-            (est.energy_based_kva.max - est.count_based_kva.max).abs() < TOLERANCE,
+            (est.energy_based_kva - est.count_based_kva).abs() < TOLERANCE,
             "{:?} vs {:?}",
             est.energy_based_kva,
             est.count_based_kva
@@ -668,20 +641,17 @@ mod test {
     }
 
     /// A session reaching no segment of the interval contributes nothing, and measuring its
-    /// non-overlap does not panic.
+    /// non-overlap contributes zero rather than panicking.
     ///
-    /// `SessionOverlap::empty()` used to build `(MAX,MAX)/(MIN,MIN)`, so `duration()` called
-    /// `duration(MAX, MIN)` and panicked. The `Option` is the type-level backstop; the filter in
-    /// `segments_for_ioi` is what ordinarily keeps such a session out.
+    /// The filter in `segments_for_ioi` is what ordinarily keeps such a session out; this is the
+    /// backstop for a caller that reaches the overlap directly.
     #[test]
     fn a_session_outside_the_interval_contributes_nothing() {
         let elsewhere = session("X", "2026-06-16T20:00:00Z", "2026-06-16T21:00:00Z", 5.0);
         let first = Interval::from_start_end(hour().start, hour().start + SEGMENT_DURATION);
 
-        assert!(elsewhere.interval_overlap(&first).is_none());
-        let ratio = elsewhere.interval_overlap_ratio(&first);
-        assert_eq!(ratio.min, 0.0);
-        assert_eq!(ratio.max, 0.0);
+        assert!(elsewhere.interval_overlap(&first).is_zero());
+        assert_eq!(elsewhere.interval_overlap_ratio(&first), 0.0);
 
         // And it never reaches a segment in the first place.
         let segments = segments_for_ioi(hour(), &[elsewhere]);

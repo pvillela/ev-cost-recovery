@@ -16,10 +16,10 @@ use std::{path::PathBuf, rc::Rc, time::Duration};
 /// [`duration_is_consistent`](super::duration_is_consistent) allows, and the charge time is
 /// non-zero.
 ///
-/// Note the padding when reasoning about which segment a session lands in: the adjusted end is one
-/// [`TIME_GRID_STEP`](super::TIME_GRID_STEP) past the reported one, so a session of `minutes`
-/// occupies `minutes + 1` on the timeline. A 14-minute session starting on a quarter hour is
-/// therefore exactly one segment wide.
+/// A session of `minutes` occupies exactly that on the timeline — the reported times are the span,
+/// with nothing added to either end. A 15-minute session starting on a quarter hour is therefore
+/// exactly one segment wide, and one ending on a segment boundary abuts the next segment rather
+/// than reaching into it.
 pub(crate) fn session(
     path: &str,
     row: usize,
@@ -48,7 +48,7 @@ pub(crate) fn session(
 /// [`session`] cannot express this: it derives the end from a positive elapsed time. The
 /// inversion has to be built by hand, and it is worth having because such a record is the one shape
 /// that no calculation may be handed --
-/// [`Session::adj_duration`](super::Session::adj_duration) panics on it rather than returning a
+/// [`Session::conn_span`](super::Session::conn_span) panics on it rather than returning a
 /// negative span, so a caller that forgets to drop it brings the call down instead of reporting a
 /// wrong figure.
 ///
@@ -108,7 +108,7 @@ pub(crate) fn spike_session(
 /// A row's anomalies with [`AnomalyKind::ExcessiveAvgKw`] removed.
 ///
 /// Nearly every test in [`super::csv`] and [`super::excel`] is about *timestamps* — the offset
-/// conversion, the `adj_conn_end` padding, the consistency band — and each fixture states an
+/// conversion and the consistency band — and each fixture states an
 /// `Energy_Use` and an `Active_Charge_Time` as fixed text. Whether the average power those imply
 /// clears `BREAKER_MAX_NORMAL_KW` therefore depends on `BREAKER_RATING_A` and
 /// `NORMAL_VOLTAGE_FLUCTUATION_FACTOR`, and no test may depend on those: lower the breaker rating
