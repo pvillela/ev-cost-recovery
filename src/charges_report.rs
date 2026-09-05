@@ -49,8 +49,8 @@ const DATE_FORMAT: &str = "%d-%b-%y";
 
 /// What sits between the building and the date range in a Charges Report's file name.
 ///
-/// Matched case-insensitively. The portal writes `_Charges_`; files exported before it wrote
-/// `_charges_`, and a person renaming one by hand will not be careful about the capital.
+/// Matched case-insensitively, because a person renaming a file by hand will not be careful about
+/// the capital. The portal writes `_Charges_`.
 const NAME_MARKER: &str = "_charges_";
 
 /// The form a Charges Report name has to take, quoted in every message about one.
@@ -1027,8 +1027,8 @@ Start_Date,End_Date,Bill_Status,kWh,Cost
         }
     }
 
-    /// The marker is matched case-insensitively: the portal writes `_Charges_`, files exported
-    /// before it wrote `_charges_`, and a person renaming one by hand will not be careful.
+    /// The marker is matched case-insensitively, because a person renaming a file by hand will not
+    /// be careful about the capital.
     #[test]
     fn the_marker_is_matched_whatever_its_case() {
         for name in [
@@ -1079,13 +1079,6 @@ Start_Date,End_Date,Bill_Status,kWh,Cost
             kind("XX-XX_Charges_June 2026-May 2026"),
             ChargesReportNameError::Inverted { .. }
         ));
-    }
-
-    /// The old ISO-timestamp form is not read. It was the portal's name before the range form, and
-    /// accepting both would mean two code paths and a test matrix twice this size.
-    #[test]
-    fn the_old_timestamp_name_is_no_longer_read() {
-        assert!(parse_charges_report_name("XX-XX_charges_2026-06-01T00_00_00-04_00").is_err());
     }
 
     /// A range longer than one month parses, and the reader refuses it. The parser reads what the

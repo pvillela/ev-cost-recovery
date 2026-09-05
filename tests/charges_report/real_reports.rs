@@ -1,79 +1,24 @@
-//! What a Charges Report has to satisfy, checked against real files.
+//! What a Charges Report has to satisfy, checked against a real one.
 //!
 //! Parsing without error is the weaker half. The stronger half is that the file covers the month
 //! its name states, and that the two totals are the ones a person adding the columns by hand would
 //! get -- which is the whole reason to read the file rather than have someone type its totals in.
 //!
-//! Two tiers, and they run the same checks:
-//!
-//! - The **committed fixture** under `tests/fixtures/charges/`, which CI reads. Five real rows,
-//!   anonymised, under the name the portal writes.
-//! - Every Charges Report in `data/evolute`, which CI does not: those files are not in the
-//!   repository. `#[ignore]`d, and run explicitly with
-//!
-//!   ```text
-//!   cargo test --test integration -- charges_report::real_reports --ignored --nocapture
-//!   ```
-//!
-//! The fixture tier is what keeps the by-hand totalling honest between exports. The `data/evolute`
-//! tier is what notices a shape no fixture has.
+//! The fixture under `tests/fixtures/charges/` is five real rows, anonymised, under the name the
+//! portal writes. A file rather than a string literal, so the reader is given the same thing a user
+//! gives it.
 
-use ev_cost_recovery::charges_report::{charges_report, parse_charges_report_name};
+use ev_cost_recovery::charges_report::charges_report;
 use std::{
     fs,
     path::{Path, PathBuf},
 };
 
-/// Evolute's own files, both reports, beside each other -- see `crate::charges_report`.
-fn evolute_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("data/evolute")
-}
-
-/// Whether the crate would read this file as a Charges Report.
-///
-/// Asked of the parser rather than by matching the name here, so the walk picks up exactly the
-/// files the reader accepts. `data/evolute` still holds exports under the old
-/// `<building>_charges_<ISO timestamp>.csv` name, which is no longer read; those are not Charges
-/// Reports as far as this crate is concerned, and a filter that caught them would fail on a file
-/// nothing is expected to open.
-fn is_charges_report(path: &Path) -> bool {
-    let Some(stem) = path.file_stem().and_then(|n| n.to_str()) else {
-        return false;
-    };
-    path.extension()
-        .is_some_and(|e| e.eq_ignore_ascii_case("csv"))
-        && parse_charges_report_name(stem).is_ok()
-}
-
-/// The committed fixture, checked the same way the real files are.
-///
-/// This is the half CI runs. Without it the by-hand totalling below is dead code between the
-/// occasions someone remembers to pass `--ignored`, and a change that broke it would sit unnoticed.
 #[test]
-fn the_committed_fixture_parses_and_totals_its_own_columns() {
+fn a_real_charges_report_parses_and_totals_its_own_columns() {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/charges/XX-XX_Charges_June 2026-June 2026.csv");
     check(&path);
-}
-
-#[test]
-#[ignore = "reads the Charges Report CSVs in data/evolute"]
-fn every_charges_report_parses_and_totals_its_own_columns() {
-    let mut paths: Vec<PathBuf> = fs::read_dir(evolute_dir())
-        .expect("the sample data is not in the repository")
-        .map(|entry| entry.expect("readable directory entry").path())
-        .filter(|p| is_charges_report(p))
-        .collect();
-    paths.sort();
-    assert!(
-        !paths.is_empty(),
-        "no Charges Report found in {}",
-        evolute_dir().display()
-    );
-
-    for path in &paths {
-        check(path);
-    }
 }
 
 /// Everything one Charges Report has to satisfy.

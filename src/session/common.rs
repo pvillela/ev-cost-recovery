@@ -21,10 +21,11 @@ use std::{
 /// `Conn_DateTime_End`.
 ///
 /// The portal states all three to the second and the invariant is meant to hold exactly, but it
-/// does not quite. In `data/evolute/Session_Report_August_1_2026-September_4_2026.csv`, four of the
-/// five rows agree exactly and one does not: `2026-08-30 16:57:00 + 2:03:50` is reported as ending
-/// at `19:00:49`, a second early. `Active_Charge_Time` shows the same jitter, sitting one second
-/// under `Conn_Duration` on three of the five. Something in the source rounds at second level.
+/// does not quite. `tests/fixtures/sessions/Session_Report_August_1_2026-September_4_2026.csv` is a
+/// real export: four of its five rows agree exactly and one does not, `2026-08-30 16:57:00 +
+/// 2:03:50` being reported as ending at `19:00:49`, a second early. `Active_Charge_Time` shows the
+/// same jitter, sitting a second under `Conn_Duration` on three of the five. Something in the
+/// source rounds at second level.
 ///
 /// One second, therefore, and not zero: exact equality would exclude a fifth of the only genuine
 /// portal export there is. Widening it further has no evidence behind it and would start admitting
