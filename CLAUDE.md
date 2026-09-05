@@ -46,12 +46,12 @@ that actually went wrong, not a general principle.
 
 - **A subject document describes its subject. Packaging facts go in the packaging document.**
   `docs/session/README.md` is about session reports, interval-of-interest rules and workbook
-  columns. Twice I put `historic` explanations in it — a six-line block quote about what a default
-  `cargo build` produces, and later a paragraph on why `ioi` is gated, naming the API and the
-  desktop app. Both belonged in `docs/historic-feature.md`, which already said them. The one
-  mention that survives is `Needs --features historic` on the command-table row, where a reader is
-  about to type the command. When a change spans a feature, the pull is to mention it everywhere
-  the feature touches; the test is whether a reader of *this* document needs it here.
+  columns. Twice I put explanations of the old `historic` cargo feature in it — a block quote about
+  what a default `cargo build` produced, and later a paragraph on why a module was gated, naming
+  the API and the desktop app. Both belonged in the document about the feature, which already said
+  them. The one mention that earned its place was on the command-table row, where a reader was
+  about to type the command. When a change spans the whole crate, the pull is to mention it
+  everywhere it touches; the test is whether a reader of *this* document needs it here.
 
 ## Rules this repository has settled on
 
@@ -60,10 +60,9 @@ that actually went wrong, not a general principle.
   `BillError` (`src/hydro_bill/bill_pdf.rs`) is the model; `GbReadError`
   (`src/green_button/read_xml.rs`), `SessionCsvError` (`src/session/csv.rs`) and
   `ChargesReportError` (`src/charges_report.rs`) follow it, as does `PdfTextError`
-  (`src/hydro_bill/pdf_text.rs`). One place still formats a path into a message: the `historic`
-  workbook reader, `session::excel::historic::xlsx_to_sessions`, where a comment says it is legacy
-  and exempt. Being structured is separate from being public — `SessionCsvError` is `pub(crate)`,
-  because the function that returns it is.
+  (`src/hydro_bill/pdf_text.rs`). Nowhere is exempt any more: the one place that formatted a path
+  into a message was the legacy workbook reader, and it is gone. Being structured is separate from
+  being public — `SessionCsvError` is `pub(crate)`, because the function that returns it is.
 
 - **A wrapper that adds the path must not wrap a cause that already carries one.** When
   `SessionCsvError` gained its `path` field, `ConversionError::Write` — which prints the path,
@@ -98,22 +97,22 @@ that actually went wrong, not a general principle.
   links to private item `ReadError`" is a *warning*, not an error, so `cargo check` stays green
   while the type is unreachable.
 
-- **What a cargo feature sorts by is who calls the code, not what the code touches.** `historic`
-  began as "reads a workbook back" and now also holds `session::ioi`, which opens nothing and is
-  pure — it is there because its only callers are `ev_peak_cli` and `ev_peak_gui`, the same two the
-  workbook reader serves. Do not argue from the kind of code: `docs/deletion-candidates.md`
-  recorded "gating a module of types and predicates is a different kind of quarantine" as a reason
-  to hold off, and that was the wrong axis.
+- **Where a helper lives is settled by who calls it, not by what kind of code it is.** `is_on_grid`
+  sat in `time` because it looked like time arithmetic, beside a `truncate_to` that no longer had
+  callers at all. Once the session reader stopped asking it anything, its two callers were both in
+  `green_button` and both asked it about `METER_INTERVAL` — so it moved there, beside the constant.
+  The same argument once put a module of pure types and predicates behind the `historic` feature,
+  over the objection that "gating a module of types and predicates is a different kind of
+  quarantine". The kind of code was the wrong axis then too.
 
-- **"Reached only by gated callers" is necessary but not sufficient for gating a public item.**
-  The second question is whether an *ungated* public signature or field is typed with it. Six of
-  `session`'s thirteen historic-only paths could not be gated for this reason: `IntervalEstimates`
-  types `PowerEstimates.kw_estimates`, and gating it would make that field unnameable while it
-  stays readable — the `ReadError` hole again. The compiler will not ask this question; a public
-  field of a type with no public path compiles clean.
+- **"Nothing outside names it" is necessary but not sufficient for making an item private.**
+  The second question is whether a *public* signature or field is typed with it. `IntervalEstimates`
+  types `PowerEstimates.kw_estimates`, so making it private would leave that field readable and
+  unnameable — the `ReadError` hole again. **The compiler will not ask this question:** a public
+  field whose type has no public path compiles clean, and `cargo doc` reports it as a warning.
 
 - **A `pub use` publishes a type as surely as a `pub struct` does.** Surveying what external files
-  *name* will not find it. See `docs/public-surface-usage.md`, whose list of 49 was nine short for
+  *name* will not find it. See `docs/archive/public-surface-usage.md`, whose list of 49 was nine short for
   exactly this reason. To decide what may go private, take such a list as the floor and let
   `cargo check` add the rest: it refuses a `pub use` of a `pub(crate)` item (`E0365`).
 
