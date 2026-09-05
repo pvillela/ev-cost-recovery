@@ -23,9 +23,6 @@ fn session_tokens() -> Vec<(AnomalyKind, &'static str)> {
     [
         ZeroActiveChargeTime,
         InconsistentDuration,
-        DstAmbiguousDuplicated,
-        FellInDstGap,
-        DstUnresolvable,
         ExcessiveAvgKw,
         DuplicateId,
         OffGridTimes,
@@ -35,9 +32,6 @@ fn session_tokens() -> Vec<(AnomalyKind, &'static str)> {
         let expected = match kind {
             ZeroActiveChargeTime => "ZeroActiveChargeTime",
             InconsistentDuration => "InconsistentDuration",
-            DstAmbiguousDuplicated => "DstAmbiguousDuplicated",
-            FellInDstGap => "FellInDstGap",
-            DstUnresolvable => "DstUnresolvable",
             ExcessiveAvgKw => "ExcessiveAvgKw",
             DuplicateId => "DuplicateId",
             OffGridTimes => "OffGridTimes",

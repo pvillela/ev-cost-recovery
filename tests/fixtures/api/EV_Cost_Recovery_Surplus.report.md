@@ -161,8 +161,8 @@ demand side is a maximum over the whole period, so an hour anywhere in it
 that carried no reading is an hour that could have held the maximum and
 offered nothing.
 
-| Hour             | Anomaly    |
-|:-----------------|:-----------|
-| 2026-06-11 19:00 | MissingKva |
+| Hour                 | Anomaly    |
+|:---------------------|:-----------|
+| 2026-06-11 19:00 EDT | MissingKva |
 
 - MissingKva - the hour carried a kWh or kW reading but no kVA.

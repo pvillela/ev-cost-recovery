@@ -10,9 +10,9 @@
 
 mod base;
 
-mod dst;
-
 mod excel;
+
+mod format;
 
 mod tou;
 
@@ -23,6 +23,10 @@ pub mod holidays;
 // --- Named outside the crate -------------------------------------------------------------------
 
 pub use base::{Interval, local_date, time_zone};
+// Every rendered time in the crate goes through these, so there is one answer to "which zone is
+// this shown in" rather than one per module. Public because the desktop app renders interval
+// headings of its own. See `format`'s own docs for why the label is there.
+pub use format::{zoned_minute, zoned_span, zoned_span_end};
 // Not named directly by anything outside the crate, but `api::pure::energy` re-exports it, which
 // makes it public by that route: `TouKwh` is keyed on it, so a caller reading one has to be able
 // to write the key.
@@ -31,12 +35,9 @@ pub use tou::Tou;
 // --- Named elsewhere inside the crate ----------------------------------------------------------
 
 pub(crate) use base::{
-    duration, is_on_grid, local_datetime, local_hour, local_midnight, standard_date,
-    standard_midnight, truncate_to,
+    duration, is_on_grid, local_datetime, local_hour, local_midnight, session_instant,
+    session_wall_time, standard_date, standard_midnight, truncate_to,
 };
-// What the session reader needs to place a reported wall time, and the sentinels for when it
-// cannot. Nothing outside the crate names any of them, so `dst` publishes nothing.
-pub(crate) use dst::{UNPLACEABLE_END, UNPLACEABLE_START, falls_in_gap, local_readings};
 pub(crate) use excel::{
     serial_of_civil, serial_of_date, serial_of_duration, serial_of_instant, serial_of_local,
 };

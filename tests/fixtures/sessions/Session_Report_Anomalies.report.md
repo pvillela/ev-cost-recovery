@@ -2,7 +2,7 @@ EV Peak Power Contribution
 ==========================
 
 Source     Session_Report_Anomalies.csv
-Interval   2026-06-15 16:00 - 17:00 EDT  (1 hour)
+Interval   2026-06-15 17:00 - 18:00 EDT  (1 hour)
 
 
 Estimates
@@ -10,10 +10,10 @@ Estimates
 
 | Estimate     | Unit |    Min |    Max | Segment |
 |:-------------|:-----|-------:|-------:|:--------|
-| Energy-based | kW   | 16.176 | 17.506 | 16:15   |
-| Energy-based | kVA  | 16.628 | 17.971 | 16:15   |
-| Count-based  | kW   | 16.956 | 18.284 | 16:15   |
-| Count-based  | kVA  | 17.415 | 18.756 | 16:15   |
+| Energy-based | kW   | 16.176 | 17.506 | 17:15   |
+| Energy-based | kVA  | 16.628 | 17.971 | 17:15   |
+| Count-based  | kW   | 16.956 | 18.284 | 17:15   |
+| Count-based  | kVA  | 17.415 | 18.756 | 17:15   |
 
 Every figure is a bracket: the reported session times are stated only to the
 minute, so each estimate runs from what those times least support to what
@@ -28,7 +28,7 @@ asked for, because that is the basis the demand charge is billed on. An hour
 is reported as the highest of its four segments, not as an average over the
 whole hour.
 
-3 sessions in the source report were excluded from every figure above,
+2 sessions in the source report were excluded from every figure above,
 having reported times that cannot be placed on a timeline. They are listed
 under Excluded sessions.
 
@@ -38,56 +38,53 @@ Segments
 
 | Segment | Count-based |  Energy-based |
 |:--------|------------:|--------------:|
-| 16:00   | 0.267-0.400 |   1.600-2.400 |
-| 16:15   | 2.533-2.733 | 15.920-17.239 |
-| 16:30   | 1.000-1.200 |   6.000-7.280 |
-| 16:45   | 0.000-0.000 |   0.000-0.000 |
+| 17:00   | 0.267-0.400 |   1.600-2.400 |
+| 17:15   | 2.533-2.733 | 15.920-17.239 |
+| 17:30   | 1.000-1.200 |   6.000-7.280 |
+| 17:45   | 0.000-0.000 |   0.000-0.000 |
 
-Times are local (ET), and each segment is 15 minutes long, named by the
-minute it starts on. Segments are half-open: each runs from its own start up
-to but not including the next one's, so no instant falls in two of them and
-they tile the interval exactly. The two columns are the aggregates the
-estimates of the same name are derived from. "Count-based" is a session
-count weighted by how much of the segment each session covered, so it is
-fractional; "Energy-based" weights each session's average power the same
-way, and is in kW.
+Times are local, on the zone the Interval line above names, and each segment
+is 15 minutes long, named by the minute it starts on. That is an hour later
+than the session report states the same instants, which are on standard time
+all year. Segments are half-open: each runs from its own start up to but not
+including the next one's, so no instant falls in two of them and they tile
+the interval exactly. The two columns are the aggregates the estimates of
+the same name are derived from. "Count-based" is a session count weighted by
+how much of the segment each session covered, so it is fractional;
+"Energy-based" weights each session's average power the same way, and is in
+kW.
 
 
 Sessions by segment
 -------------------
 
-- 16:00 - N1, MARGIN
-- 16:15 - N1, N2, EXCESS, SPIKE
-- 16:30 - N1, N2, EXCESS
-- 16:45 - none
+- 17:00 - N1, MARGIN
+- 17:15 - N1, N2, EXCESS, SPIKE
+- 17:30 - N1, N2, EXCESS
+- 17:45 - none
 
 
 Excluded sessions
 -----------------
 
-| Row | Session  | From             | To    | In interval | Anomaly              |
-|----:|:---------|:-----------------|:------|:------------|:---------------------|
-|   4 | BAD      | 2026-06-15 16:05 | 16:31 | yes         | InconsistentDuration |
-|   8 | REVERSED | 2026-06-15 16:30 | 16:21 | yes         | InconsistentDuration |
-|  10 | INGAP    | —                | —     | —           | FellInDstGap         |
+| Row | Session  | From                 | To        | In interval | Anomaly              |
+|----:|:---------|:---------------------|:----------|:------------|:---------------------|
+|   4 | BAD      | 2026-06-15 17:05 EDT | 17:31 EDT | yes         | InconsistentDuration |
+|   8 | REVERSED | 2026-06-15 17:30 EDT | 17:21 EDT | yes         | InconsistentDuration |
 
-These sessions take no part in any estimate. Times are local (ET), and the
+These sessions take no part in any estimate. Times are local and name the
+zone they are read in, which through the summer is an hour later than the
+session report states them; the report is on standard time all year. The
 list covers the whole source report rather than the interval estimated, so
 "From" carries its date and "To" carries one only when the session crosses
-midnight. A dash means the reported times name no instant at all - a wall
-time the clocks jumped over, or a repeated hour the record cannot choose
-between - so there is nothing to show; the row and session number address it
-in the source file. "In interval" is whether the session appears to fall in
-the interval - appears only, because a record whose own fields contradict
-each other cannot be trusted to say where it belongs. It reads the same
-doubtful times, so no row was dropped on its say-so.
+midnight. "In interval" is whether the session appears to fall in the
+interval - appears only, because a record whose own fields contradict each
+other cannot be trusted to say where it belongs. It reads the same doubtful
+times, so no row was dropped on its say-so.
 
 - InconsistentDuration - reported start, end and duration contradict each
   other by more than truncation to the minute can explain; the session is
   excluded from every estimate.
-- FellInDstGap - reported start or end is a local time that never occurred,
-  in the hour the clocks jump over when DST begins; it names no instant, so
-  none was assigned and the session is excluded from every estimate.
 
 
 Anomalies

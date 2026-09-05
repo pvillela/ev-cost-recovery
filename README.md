@@ -171,7 +171,7 @@ Much, but not all, of this documentation pertains to software structure or elect
 - [docs/session/Evolute-Simultaneous_Charging.pdf](docs/session/Evolute-Simultaneous_Charging.pdf) -- Evolute technical documentation about simultaneous charging limits in terms of voltages, currents, kW, kVA, transformer parameters, and number of charging stations.
 - [docs/green_button/README.md](docs/green_button/README.md) -- What the meter export is, when a reading is treated as an anomaly, and when a billing period counts as complete.
 - [docs/green_button/Toronto_Hydro_Object_Model.md](docs/green_button/Toronto_Hydro_Object_Model.md) -- The conceptual domain model for the Green Button ESPI XML feed.
-- [docs/time/README.md](docs/time/README.md) -- Date-time-related functions and constants, the time grid, the DST fold and how it is resolved.
+- [docs/time/README.md](docs/time/README.md) -- Date-time-related functions and constants, the time grid, and the two clocks the software keeps apart.
 - [docs/Development_Approach_and_Roles.md](docs/Development_Approach_and_Roles.md) -- How the software was developed.
 
 ## Appendix
@@ -206,7 +206,7 @@ A Toronto Hydro bill for the building states that it covers from the 23rd of a m
 
 Toronto Hydro Green Button metering data is reported in UTC (Coordinated Universal Time = EST + 5h, no DST).
 
-On the other hand, Evolute's reports are based on calendar months, running from the 1st to the last day of each month, in ET (not EST), so they **are** impacted by DST. A side-effect of reporting in ET is that some information on the "DST fold" day (when DST transitions back to Standard Time) may be ambiguous and the software needs to use a heuristic approach to disambiguate.
+Evolute's session reports state their times in EST as well, all year round, so they are not impacted by DST either. This was confirmed after gaining access to the Evolute portal; the software previously read them as ET and had to disambiguate the hour that repeats when DST ends. Reports shown to the user are stated in prevailing local time (ET), so a summer session appears an hour later than the portal shows it — which is why every displayed time names its zone.
 
 Correlating a Toronto Hydro bill with Evolute's reports is challenging as they cover different periods and use different time standards.
 

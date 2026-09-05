@@ -8,8 +8,7 @@ use crate::{
     widgets,
 };
 use eframe::egui;
-use ev_cost_recovery::{api::pure::PricedInterval, time::time_zone};
-use jiff::Zoned;
+use ev_cost_recovery::{api::pure::PricedInterval, time::zoned_span};
 use std::fs;
 
 pub fn ui(ui: &mut egui::Ui, state: &mut SurplusState, working: &mut WorkingDir) {
@@ -57,16 +56,17 @@ pub fn ui(ui: &mut egui::Ui, state: &mut SurplusState, working: &mut WorkingDir)
 /// One interval's heading: the bill line's unit, then when the interval was, in local time.
 ///
 /// Local rather than UTC because that is the clock the meter export's own hours are read on and the
-/// one a reader checking against the bill is using.
+/// one a reader checking against the bill is using. The zone is named, which matters here more than
+/// anywhere else in this app: the kW and kVA peaks of one billing period can fall either side of a
+/// daylight-saving transition, and then two of these three headings carry different offsets.
 fn heading_for(priced: &PricedInterval) -> String {
-    let tz = time_zone();
-    let start = Zoned::new(priced.estimates.interval.start, tz.clone());
-    let end = Zoned::new(priced.estimates.interval.end(), tz);
     format!(
-        "{} — {} to {}",
+        "{} — {}",
         priced.unit,
-        start.strftime("%Y-%m-%d %H:%M"),
-        end.strftime("%H:%M"),
+        zoned_span(
+            priced.estimates.interval.start,
+            priced.estimates.interval.end()
+        ),
     )
 }
 

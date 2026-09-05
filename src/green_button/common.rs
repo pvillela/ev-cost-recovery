@@ -11,7 +11,7 @@
 
 use crate::{
     log::RunLog,
-    time::{is_on_grid, time_zone},
+    time::{is_on_grid, zoned_minute},
 };
 use jiff::Timestamp;
 use std::{collections::BTreeMap, fmt, time::Duration};
@@ -188,11 +188,7 @@ pub fn note_anomalies(anomalies: impl IntoIterator<Item = (Timestamp, Anomaly)>,
         let examples: Vec<String> = hours
             .iter()
             .take(EXAMPLE_HOURS)
-            .map(|at| {
-                at.to_zoned(time_zone())
-                    .strftime("%Y-%m-%d %H:%M")
-                    .to_string()
-            })
+            .map(|at| zoned_minute(*at))
             .collect();
         let more = hours.len().saturating_sub(examples.len());
         let and_more = if more == 0 {

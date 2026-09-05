@@ -115,6 +115,52 @@ pub(crate) fn standard_midnight(d: Date) -> Timestamp {
 }
 
 // ---------------------------------------------------------------------------
+// Session report time
+// ---------------------------------------------------------------------------
+//
+// Evolute states `Conn_DateTime_Start` and `Conn_DateTime_End` on a clock that does not observe
+// daylight saving. A reported wall time therefore names exactly one instant, all year: there is no
+// hour that occurs twice and none that is skipped, so nothing has to be inferred from
+// `Conn_Duration` to place a session on a timeline.
+//
+// Separate from `BILLING_OFFSET` although the two hold the same value. They are the same value for
+// unrelated reasons -- one is how Toronto Hydro cuts a period, the other is how Evolute stamps a
+// row -- and either could change without the other. Sharing the constant would make a change to
+// the billing rule move every session by an hour.
+
+/// The offset a session report's timestamps are stated in, under the name a reader will recognise.
+///
+/// The standard-time entry of [`TZ_OFFSETS`], named rather than indexed so the reason is visible at
+/// the use site, as [`BILLING_OFFSET`] is. `test::the_session_offset_is_the_standard_time_one` pins
+/// it, so reordering that array cannot silently move every session.
+pub const SESSION_OFFSET: (&str, i8) = TZ_OFFSETS[0];
+
+/// The zone a session report's wall times are read in: a fixed offset, with no daylight-saving rule.
+///
+/// Built on the spot rather than resolved once, for the reason [`billing_zone`] gives.
+const fn session_zone() -> TimeZone {
+    TimeZone::fixed(Offset::constant(SESSION_OFFSET.1))
+}
+
+/// The instant a session report's reported wall time names.
+///
+/// Cannot fail, and that is the point of the fixed offset: there is no gap for a wall time to fall
+/// into and no fold for it to be ambiguous in, so every reported time places exactly one session.
+pub(crate) fn session_instant(dt: DateTime) -> Timestamp {
+    dt.to_zoned(session_zone())
+        .expect("a fixed offset has neither gaps nor folds")
+        .timestamp()
+}
+
+/// The wall time a session report would state for an instant: the inverse of [`session_instant`].
+///
+/// For the workbook's derived local columns, which sit beside two columns copied verbatim from the
+/// CSV and so have to be on the report's clock rather than on [`local_date`]'s.
+pub(crate) fn session_wall_time(ts: Timestamp) -> DateTime {
+    ts.to_zoned(session_zone()).datetime()
+}
+
+// ---------------------------------------------------------------------------
 // Time grids
 // ---------------------------------------------------------------------------
 //

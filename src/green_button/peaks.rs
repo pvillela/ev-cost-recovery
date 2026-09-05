@@ -9,7 +9,7 @@ use crate::{
     hydro_bill::BillingPeriod,
     log::{RunLog, SourceLog},
     markdown::{Left, h2, table, wrap},
-    time::{Interval, Tou, is_off_peak, time_zone, tou_of},
+    time::{Interval, Tou, is_off_peak, tou_of, zoned_minute},
 };
 use jiff::Timestamp;
 use std::{collections::BTreeMap, error::Error, path::PathBuf};
@@ -177,14 +177,7 @@ impl MeterNotes {
         let rows: Vec<Vec<String>> = self
             .anomalies
             .iter()
-            .map(|(at, kind)| {
-                vec![
-                    at.to_zoned(time_zone())
-                        .strftime("%Y-%m-%d %H:%M")
-                        .to_string(),
-                    kind.as_str().to_owned(),
-                ]
-            })
+            .map(|(at, kind)| vec![zoned_minute(*at), kind.as_str().to_owned()])
             .collect();
         out.push(table(&["Hour", "Anomaly"], &rows, &[Left, Left]));
         out.push(String::new());

@@ -28,7 +28,7 @@ use super::{
 };
 use crate::{
     markdown::{Align, Left, Right, h1, h2, table, wrap},
-    time::{Interval, time_zone},
+    time::{Interval, time_zone, zoned_minute, zoned_span, zoned_span_end},
 };
 use jiff::{Timestamp, Zoned};
 use std::{collections::BTreeMap, fmt, path::PathBuf};
@@ -45,26 +45,6 @@ fn local(ts: Timestamp) -> Zoned {
 /// membership list both use, so the three sections join on it.
 fn hm(ts: Timestamp) -> String {
     local(ts).strftime("%H:%M").to_string()
-}
-
-/// Dated, and to the minute. The excluded list covers the whole source report, so its dates cannot
-/// be left implicit the way a segment's can.
-fn ymd_hm(ts: Timestamp) -> String {
-    local(ts).strftime("%Y-%m-%d %H:%M").to_string()
-}
-
-/// The far end of a span whose near end is already printed: the date only when it differs.
-///
-/// The same convention the header's interval line follows, and it is what keeps the excluded-
-/// sessions table inside the width the report has to read at. Nearly every session begins and ends
-/// on one day, so repeating the date would spend sixteen columns to say what the previous cell
-/// already said; a session that does cross midnight still says so.
-fn ymd_hm_to(from: Timestamp, to: Timestamp) -> String {
-    let (from, to) = (local(from), local(to));
-    match from.date() == to.date() {
-        true => to.strftime("%H:%M").to_string(),
-        false => to.strftime("%Y-%m-%d %H:%M").to_string(),
-    }
 }
 
 /// A bracket as one cell, `min-max`. Three decimals, matching every other figure in the report.
@@ -418,8 +398,10 @@ impl IntervalEstimates {
         ));
         out.push(String::new());
         out.push(wrap(
-            "Times are local (ET), and each segment is 15 minutes long, named by the minute it \
-             starts on. Segments are half-open: each runs from its own start up to but not \
+            "Times are local, on the zone the Interval line above names, and each segment is 15 \
+             minutes long, named by the minute it starts on. That is an hour later than the \
+             session report states the same instants, which are on standard time all year. \
+             Segments are half-open: each runs from its own start up to but not \
              including the next one's, so no instant falls in two of them and they tile the \
              interval exactly. The two columns are the aggregates the estimates of the same name \
              are derived from. \"Count-based\" is a session count weighted by how much of the \
@@ -468,24 +450,12 @@ impl IntervalEstimates {
             .excluded_sessions
             .iter()
             .map(|s| {
-                // A session whose reported times name no instant has nothing to put in a time
-                // column, and `adj_conn_*` would report the sentinels rather than a reading. The
-                // dashes say so; `Row` and `Session` still address the record in its source file,
-                // which is where anyone looking at it goes.
-                let (from, to, within) = match s.is_placeable() {
-                    true => (
-                        ymd_hm(s.adj_conn_start()),
-                        ymd_hm_to(s.adj_conn_start(), s.adj_conn_end()),
-                        in_interval(s, &self.interval),
-                    ),
-                    false => ("—".to_owned(), "—".to_owned(), "—".to_owned()),
-                };
                 vec![
                     s.row.to_string(),
                     s.id.clone(),
-                    from,
-                    to,
-                    within,
+                    zoned_minute(s.adj_conn_start()),
+                    zoned_span_end(s.adj_conn_start(), s.adj_conn_end()),
+                    in_interval(s, &self.interval),
                     // An excluded session is in no segment, but the report holds the session
                     // itself here, so its figure needs no lookup.
                     s.anomalies
@@ -503,12 +473,11 @@ impl IntervalEstimates {
         ));
         out.push(String::new());
         out.push(wrap(
-            "These sessions take no part in any estimate. Times are local (ET), and the list \
-             covers the whole source report rather than the interval estimated, so \"From\" \
-             carries its date and \"To\" carries one only when the session crosses midnight. A \
-             dash means the reported times name no instant at all - a wall time the clocks jumped \
-             over, or a repeated hour the record cannot choose between - so there is nothing to \
-             show; the row and session number address it in the source file. \
+            "These sessions take no part in any estimate. Times are local and name the zone they \
+             are read in, which through the summer is an hour later than the session report states \
+             them; the report is on standard time all year. The list covers the whole source \
+             report rather than the interval estimated, so \"From\" carries its date and \"To\" \
+             carries one only when the session crosses midnight. \
              \"In interval\" \
              is whether the session appears to fall in the interval - appears only, because a \
              record whose own fields contradict each other cannot be trusted to say where it \
@@ -587,34 +556,13 @@ impl IntervalEstimates {
     }
 }
 
-/// The header's interval line, naming the UTC offset in force at each end.
+/// The header's interval line: the span, then how long it is.
 ///
-/// Naming it is not decoration. On the night DST ends an hour of wall time occurs twice, so an
-/// interval can begin at `01:30` and end at `01:30` — the same clock reading an hour apart. Written
-/// as bare local times that reads as a window of no duration; written with the offsets it reads as
-/// what it is. When both ends share an offset, which is every interval but two a year, it is stated
-/// once at the end.
+/// The span comes from [`zoned_span`], which names the offset in force at each end — see its docs
+/// for why that is not decoration.
 fn interval_line(interval: Interval) -> String {
     let (lo, hi) = (interval.start, interval.end());
-    let (lo_z, hi_z) = (local(lo), local(hi));
-    let (lo_off, hi_off) = (
-        lo_z.strftime("%Z").to_string(),
-        hi_z.strftime("%Z").to_string(),
-    );
-    let length = interval_length(lo, hi);
-    if lo_off == hi_off {
-        format!(
-            "{} - {} {lo_off}  ({length})",
-            lo_z.strftime("%Y-%m-%d %H:%M"),
-            hi_z.strftime("%H:%M"),
-        )
-    } else {
-        format!(
-            "{} {lo_off} - {} {hi_off}  ({length})",
-            lo_z.strftime("%Y-%m-%d %H:%M"),
-            hi_z.strftime("%H:%M"),
-        )
-    }
+    format!("{}  ({})", zoned_span(lo, hi), interval_length(lo, hi))
 }
 
 /// "1 hour" / "15 minutes", for the header.

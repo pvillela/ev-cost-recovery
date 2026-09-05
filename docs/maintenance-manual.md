@@ -354,17 +354,11 @@ token, quoting the prose. `tests/docs_errors.rs` fails until it is there. See "M
 sees" for what that document is and what is deliberately left out of it.
 
 **Whether it excludes.** `AnomalyKind::excludes_session` names the kinds that remove a session from
-the estimates, and the buckets are sorted on it in `Sessions::from_session_lists`. Three do today:
-`InconsistentDuration`, whose fields contradict each other, and the two that leave a record with no
-instant at all — `FellInDstGap` and `DstUnresolvable`, which `leaves_no_instant` names and which
-`excludes_session` defers to. Everything else is informational: the session still counts towards
-every figure. If a new kind should exclude, that is a decision to make explicitly and to record in
-README's "Anomalies" section — not something that follows from adding the variant.
-
-A kind that means *no instant could be assigned* belongs in `leaves_no_instant` as well. That
-predicate is what the workbook reader recognises such a row by, since the writer leaves every cell
-derived from the instants empty and the `anomalies` column is all that is left to say what the row
-is.
+the estimates, and the buckets are sorted on it in `Sessions::from_session_lists`. One does today:
+`InconsistentDuration`, whose fields contradict each other. Everything else is informational: the
+session still counts towards every figure. If a new kind should exclude, that is a decision to make
+explicitly and to record in README's "Anomalies" section — not something that follows from adding
+the variant.
 
 **What you do *not* have to wire up:** `collect_session_anomalies` in `src/session/peak.rs` matches on
 nothing. It is deliberately blind to the kind, so a variant added here surfaces in the report
@@ -372,8 +366,8 @@ without anyone having to remember it. Keep it that way — the moment it grows a
 kind acquires a step that is easy to forget and silent when forgotten.
 
 If the new kind is *about a figure* — as `ExcessiveAvgKw` is about average power — the figure
-goes in the report cell, via `anomaly_cell` in `src/session/report.rs`, and not on the enum. That is what
-keeps the workbook column a list of bare tokens `from_token` can read back.
+goes in the report cell, via `anomaly_cell` in `src/session/report.rs`, and not on the enum. That is
+what keeps the workbook column a list of bare tokens.
 
 ## Strict and lenient overlap tests
 
@@ -388,11 +382,8 @@ inverted session is therefore always flagged `InconsistentDuration` and sorted i
 estimating logic. Reaching the panic means one got somewhere it should not have, which is worth a
 crash rather than a plausible-looking answer.
 
-A session carrying the `UNPLACEABLE_START`/`UNPLACEABLE_END` sentinels is inverted by construction,
-and it reaches `Sessions::excluded` by its own flag rather than by this argument — see
-`AnomalyKind::leaves_no_instant`. The panic is the point there: those two values exist so that
-placing such a session on a timeline is impossible rather than merely wrong. `Session::adj_duration`
-and `SessionOverlap::duration` panic on the same inversion, and for the same reason.
+`Session::adj_duration` and `SessionOverlap::duration` panic on the same inversion, and for the
+same reason.
 
 `Session::lenient_intersects` reads the two endpoints in whichever order puts them the right way
 round, and answers instead of panicking.

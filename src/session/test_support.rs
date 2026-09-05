@@ -107,12 +107,12 @@ pub(crate) fn spike_session(
 
 /// A row's anomalies with [`AnomalyKind::ExcessiveAvgKw`] removed.
 ///
-/// Nearly every test in [`super::csv`] and [`super::excel`] is about *timestamps* — DST
-/// resolution, the `adj_conn_end` padding, the consistency band — and each fixture states an
+/// Nearly every test in [`super::csv`] and [`super::excel`] is about *timestamps* — the offset
+/// conversion, the `adj_conn_end` padding, the consistency band — and each fixture states an
 /// `Energy_Use` and an `Active_Charge_Time` as fixed text. Whether the average power those imply
 /// clears `BREAKER_MAX_NORMAL_KW` therefore depends on `BREAKER_RATING_A` and
 /// `NORMAL_VOLTAGE_FLUCTUATION_FACTOR`, and no test may depend on those: lower the breaker rating
-/// and a dozen tests about the DST fold would start failing over a flag that has nothing to do
+/// and a dozen tests about reported times would start failing over a flag that has nothing to do
 /// with what they check.
 ///
 /// Filtering the one power-dependent kind out is what keeps them testing what they are named

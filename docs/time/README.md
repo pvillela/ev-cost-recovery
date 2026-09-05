@@ -3,15 +3,16 @@
 The `time` module: everything about dates, times and zones that more than one part of this software
 needs. Module-specific date arithmetic stays in its own module.
 
-`src/time/` holds the code — `base.rs` for the zone, the grid and intervals, `dst.rs` for resolving
-a wall time the zone reads twice or not at all, `excel.rs` for serial-date conversion, `tou.rs` and
+`src/time/` holds the code — `base.rs` for the zones, the grid and intervals, `format.rs` for
+rendering an instant with the zone it is read in, `excel.rs` for serial-date conversion, `tou.rs` and
 `holidays.rs` for Ontario's time-of-use rules.
 
 ## What lives here and what does not
 
 | Concern | Where |
 |---|---|
-| The time zone, and resolving a wall time that is ambiguous or does not exist | here |
+| The zones, and converting a wall time to an instant or back | here |
+| Rendering an instant for a person, with the zone it is read in | here |
 | The standard-time clock billing periods are cut on | here |
 | Excel serial dates, in both directions | here |
 | Ontario time-of-use periods and the holiday calendar | here |
@@ -81,100 +82,41 @@ two agree.
 
 ## Time zone
 
-The session report's timestamps are stated in local time — ET, `America/Toronto` — and every
-calculation works in UTC, so each reported wall time has to be placed on the calendar. Almost every
-one of them names exactly one instant. Two hours a year do not: the hour repeated when DST ends
-names two, and the hour skipped when DST begins names none.
+Two clocks are in play, and keeping them apart is the whole of this section.
 
-The reader settles both from the record itself, and where the record cannot settle it, says so
-rather than guessing.
+**The session report is stated on standard time, all year.** Evolute's `Conn_DateTime_Start` and
+`Conn_DateTime_End` do not observe daylight saving. `time::SESSION_OFFSET` names that offset and
+`time::session_instant` does the conversion, which cannot fail: a fixed offset has no hour that
+occurs twice and none that is skipped, so every reported wall time names exactly one instant. There
+is nothing for the reader to infer, and no anomaly it can raise about placing a record.
 
-### One probe, three outcomes
+**Everything shown to a person is on prevailing local time** — ET, `America/Toronto`, the clock a
+customer reads. Time-of-Use periods, the 07:00-19:00 demand window and the holiday calendar are all
+stated on it, and so is every rendered time.
 
-Everything below falls out of one question, asked once per offset in `TZ_OFFSETS`: read the wall
-time *as if* at that fixed offset, and check that the zone really is at that offset on the instant
-you land on. The readings that survive are what the wall time names, and how many there are is the
-classification.
+The consequence is that a session displays an hour later than the portal states it, right through
+the summer. A row the portal shows at `16:57` appears in a report as `17:57 EDT`. That is not a
+discrepancy — it is one instant on two clocks — but nothing on the page would say so, which is why
+every rendered time names its offset. `time::format` does that and nothing else does; see its own
+docs.
 
-| Readings | What it is | What the reader does |
-|---:|---|---|
-| 1 | Every wall time but two hours a year | Use it |
-| 2 | The **fold**, 01:00:00-01:59:59 when DST ends | Settle it against `Conn_Duration`, below |
-| 0 | The **gap**, 02:00:00-02:59:59 when DST begins | Assign no instant at all |
+One report can carry both labels. The kW and kVA peaks of a billing period can fall on opposite
+sides of a transition, and then two headings in the same document differ by an hour of offset.
 
-`local_readings` in `src/time/dst.rs` is the probe, and both resolvers sit on it — see "Two
-resolvers, deliberately" below.
+### Where the two meet
 
-### Settling the fold
+The workbook is the one place both clocks could appear in one row, so it does not let them.
+`Conn_DateTime_Start` and `Conn_DateTime_End` are copied from the CSV text verbatim, and the derived
+`adj_conn_*` local columns are rendered with `time::session_wall_time` rather than
+`time::local_datetime` — so every local column in the sheet is on the report's own clock. A workbook
+carries no zone labels, and that is only safe while it is internally consistent.
 
-**The assumption it rests on.** `Conn_Duration` is *physical elapsed time*, so it spans the true
-start and the true end of the connection. This is what makes the inference possible. Were
-`Conn_Duration` instead a naive subtraction of local clock values, a session spanning the fold would
-under-report by exactly the repeated hour, and the reported end could not distinguish the two
-readings from each other.
-
-**The procedure.** Take every combination of a start reading with an end reading — one or two of
-each, so at most four — and keep the combinations satisfying `duration_is_consistent`, the same
-three checks any other record is held to and the crate's only statement of them. All of it is
-instant arithmetic in UTC; nothing compares wall times.
-
-A mismatched combination — a start read as EDT with an end read as EST — needs no special case. It
-implies a duration a whole hour out from the reported one, so the consistency test rejects it on its
-own.
-
-The number of survivors is the answer:
-
-- **Exactly one** — that is the session. The ambiguity is resolved.
-- **Two** — reachable only when *both* wall times fall in the fold. The hour then cancels on each
-  side of the comparison, so the EDT/EDT and EST/EST combinations pass or fail together and the
-  record cannot say which it is. This is precisely the case of a session short enough to end inside
-  the repeated hour, derived rather than applied as a hardcoded 1-hour threshold. Both are kept —
-  see **Duplicated records** below.
-- **None** — the evidence has failed: whatever `Conn_Duration` measures on this row, it is not the
-  elapsed time the inference assumes. There is nothing left to choose with, so no instant is
-  assigned. The row is flagged `DstUnresolvable`, and `InconsistentDuration` with it, since a record
-  agreeing with itself under no reading is inconsistent however it is read.
-
-Note the consistency test is a *window*, not an equality, and that is what makes failing it mean
-something. Both reported timestamps are truncated while `Conn_Duration` carries seconds, so on a
-perfectly sound record the implied end misses the reported one — by up to but never reaching one
-truncation step, in either direction. Demanding equal minutes would reject every record whose end
-was truncated less than its start: roughly half of them, and 116 of the 238 rows in this project's
-`data` directory. The window cannot blur the two readings together, since they lie a full hour
-apart. Its derivation is in
-[`docs/session/time-reporting-uncertainty.md`](../session/time-reporting-uncertainty.md).
-
-### The gap: no instant is assigned
-
-A wall time in the skipped hour never occurred. There is no instant to record, and shifting it to
-either side of the gap would be a guess dressed as a reading — so the reader assigns none.
-
-The session is given two sentinel timestamps, `UNPLACEABLE_START` and `UNPLACEABLE_END`, whose only
-property is that they are inverted: any span built from them is impossible, and code that tries to
-place such a session on a timeline gets a panic rather than a plausible answer. It is flagged
-`FellInDstGap` — once, whichever end it came from — and excluded from every estimate.
-
-The gap is settled before anything else and settles the record on its own. No fold work is done, and
-no test that reads the instants runs: `duration_is_consistent` and the grid check would both be
-reporting the sentinels rather than the record.
-
-What survives is what the record actually said. The reported wall times are written to the
-workbook's `Conn_DateTime_Start` and `Conn_DateTime_End` columns verbatim, from the CSV text rather
-than re-derived, and the row and file name where the record is. Every column derived from the
-instants is left empty, and the workbook reader puts the sentinels back from the `anomalies` column
-rather than parsing those cells — a serial carries whole seconds and the sentinels do not sit on
-one, so reading them back could not reproduce them.
-
-`DstUnresolvable` reaches the same state by the other route. The two kinds are kept apart because
-they say different things about *why* the record could not be placed.
-
-### Duplicated records
-
-**Duplicated records** are given distinct ids — `<id>-EDT` and `<id>-EST` — because the peak power
-contribution logic keys `Session` on its id alone and holds sessions in a `BTreeSet`. With identical
-ids the second copy would be silently discarded on insertion, defeating the purpose of duplicating
-it. Note also that **both copies carry the full `Energy_Use`**, so a duplicated session contributes
-to the peak in both candidate hours.
+**Before the portal.** Until the offset was confirmed, the reader read session times as prevailing
+local and had to resolve the two hours a year that are ambiguous or absent: it enumerated readings
+at each offset, settled the fold against `Conn_Duration`, duplicated a record no reading could
+choose between, and assigned sentinel timestamps where a wall time named nothing. All of it is gone,
+along with the four anomaly kinds it raised. The history is in
+[`docs/archive/dst-gap-plan.md`](../archive/dst-gap-plan.md).
 
 ## Truncating to a grid
 
@@ -193,13 +135,9 @@ Truncation is always **backwards**, including before 1970. The implementation us
 rather than `%` for that reason: `%` gives a negative remainder for a negative timestamp, which
 would round towards zero — forwards — and break the bound above.
 
-## One resolver, and where the labour divides
+## Where the labour divides
 
-`CsvSession::resolve` (`session::csv`) is the only caller of the probe. It is asked *which reading
-was this session actually at?*, and the record carries evidence for it: `Conn_Duration`, an
-untruncated elapsed time. That usually settles the question; duplication and the sentinels are the
-fallbacks when it does not.
-
-The split of labour is the thing to keep: `time::dst` owns the zone arithmetic and knows nothing
-about sessions, while `session::csv` owns the policy — which reading the record's own fields
-support, which `AnomalyKind` to raise, and what a record gets when no reading fits.
+`time` owns the zone arithmetic and knows nothing about sessions: `session_instant` converts a
+reported wall time, `session_wall_time` converts one back, and `format` renders one for a reader.
+`session::csv` owns the policy — whether a record's own three fields agree, and which `AnomalyKind`
+to raise when they do not.

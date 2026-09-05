@@ -1,12 +1,13 @@
 //! Reading a session report CSV, as Evolute exports it.
 //!
-//! This is where the session report becomes [`Session`]s: the CSV is parsed, each record's local
-//! wall times are resolved to UTC, the DST fold is settled or the record duplicated, and every
-//! judgement call is recorded as an [`AnomalyKind`]. Nothing here knows about workbooks.
+//! This is where the session report becomes [`Session`]s: the CSV is parsed, each record's
+//! reported wall time is converted to a UTC instant, and every judgement call is recorded as an
+//! [`AnomalyKind`]. Nothing here knows about workbooks.
 //!
-//! The zone arithmetic itself is [`crate::time`]'s: this module holds only the policy — which
-//! reading of an ambiguous wall time the record's own `Conn_Duration` supports, which anomaly to
-//! raise, and what a record gets when no reading fits.
+//! The zone arithmetic itself is [`crate::time`]'s — a report states its times at
+//! `time::SESSION_OFFSET`, and `time::session_instant` does the conversion. This module holds only
+//! the policy: whether a record's own start, end and duration agree, and which anomaly to raise
+//! when they do not.
 //!
 //! Two ways out, sharing all of that:
 //!
@@ -31,10 +32,7 @@ use super::{
 use crate::{
     csv::{CsvReadError, Document, Table},
     log::{RunLog, SourceLog},
-    time::{
-        UNPLACEABLE_END, UNPLACEABLE_START, falls_in_gap, is_on_grid, local_datetime,
-        local_readings,
-    },
+    time::{is_on_grid, session_instant, session_wall_time},
 };
 use jiff::{Timestamp, civil};
 use std::{
@@ -151,7 +149,7 @@ fn read_sessions(path: &Path) -> Result<Sessions, SessionCsvError> {
 ///
 /// The unbucketed form of [`csv_sessions`], for a caller that has to render the report rather than
 /// estimate from it. It keeps what bucketing discards: report order, the pass-through CSV fields,
-/// and the reported wall times, which differ from a re-derivation inside the DST gap.
+/// and the reported wall times as the CSV wrote them.
 ///
 /// The `table` is held rather than copied out because the pass-through columns are not part of
 /// a [`Session`] and should not become part of one — a `Session` is what the arithmetic needs, not
@@ -163,7 +161,7 @@ pub(super) struct SessionRows {
     /// [`SessionRows::duration`] parses a cell on demand and its error has to name the report,
     /// which the rest of the parsing did while it still had the path in hand.
     table: Table,
-    /// One per output row, in report order. A record duplicated to resolve a DST fold yields two.
+    /// One per output row, in report order — one row per CSV record.
     pub rows: Vec<Row>,
     /// Every judgement call made, numbered by output row rather than by CSV record.
     pub anomalies: Vec<Anomaly>,
@@ -205,11 +203,10 @@ pub(super) fn csv_session_rows(path: &Path) -> Result<SessionRows, SessionCsvErr
     let mut anomalies = Vec::new();
     let mut rows: Vec<Row> = Vec::new();
     for i in 0..table.record_count() {
-        // The CSV row, counting the header, and the number every session parsed from this record
-        // carries. A record duplicated to resolve a DST fold yields two sessions and they share it,
-        // because they share the row they came from — see `Session::row`. The workbook row is a
-        // different number, and it belongs to the workbook: `super::excel` derives it from a
-        // session's position in `rows` when it writes one.
+        // The CSV row, counting the header, and the number the session parsed from this record
+        // carries — see `Session::row`. The workbook row is a different number, and it belongs to
+        // the workbook: `super::excel` derives it from a session's position in `rows` when it
+        // writes one.
         let csv_row = Table::row_number(i);
         let session = CsvSession::parse(&table, i, csv_row)?;
         for row in session.resolve(&source, csv_row) {
@@ -360,7 +357,7 @@ struct CsvSession {
     energy_use: f64,
 }
 
-/// One output row. A session normally yields one; an unresolvable DST fold yields two.
+/// One output row, one per CSV record.
 ///
 /// Carries a whole [`Session`] rather than loose timestamps, so that every derived column is
 /// computed by the same methods the estimating logic uses. When they were separate fields the
@@ -372,20 +369,26 @@ pub(super) struct Row {
     /// Index into [`SessionRows::records`], for the pass-through columns.
     record: usize,
     pub session: RSession,
-    /// The two reported wall times, kept as written. `Session` holds instants, and the local
-    /// columns must show what the report said rather than a re-derivation of it — those differ in
-    /// the DST gap, where the reported wall time never occurred.
+    /// The two reported wall times, kept as written rather than re-derived from the instants.
     pub start_local: civil::DateTime,
     pub end_local: civil::DateTime,
 }
 
 impl Row {
+    /// The adjusted start on the clock the report itself uses.
+    ///
+    /// `session_wall_time` and not `local_datetime`, because this sits in the workbook beside
+    /// [`Row::start_local`], which is the CSV's own text. Rendering the two on different clocks
+    /// would put a reported `16:22` and an adjusted `17:22` in adjacent columns of one row, an hour
+    /// apart and with nothing on the sheet to say why. The workbook carries no zone labels — see
+    /// `session::excel` — so every local column in it has to be on one clock.
     pub fn adj_start_local(&self) -> civil::DateTime {
-        local_datetime(self.session.adj_conn_start())
+        session_wall_time(self.session.adj_conn_start())
     }
 
+    /// The adjusted end on the report's clock. See [`Row::adj_start_local`].
     pub fn adj_end_local(&self) -> civil::DateTime {
-        local_datetime(self.session.adj_conn_end())
+        session_wall_time(self.session.adj_conn_end())
     }
 }
 
@@ -427,24 +430,20 @@ impl CsvSession {
 
     /// Resolves this session's reported wall times to UTC instants.
     ///
-    /// Returns one row normally, or two when both reported times fall in the DST fold and the
-    /// record cannot say which of the repeated hours it belongs to — see docs/time/README.md,
-    /// "Time zone", for why duplication is the policy and why the copies get distinct ids.
-    ///
-    /// The question asked here is *"which reading was this session actually at?"*, and the record
-    /// carries evidence for it: `Conn_Duration`, an untruncated elapsed time. Every start-end
-    /// combination is tested with [`duration_is_consistent`], and duplication is the fallback for
-    /// when more than one survives.
+    /// Always one row. Evolute states its times on a clock that does not observe daylight saving —
+    /// `time::SESSION_OFFSET` — so a reported wall time names exactly one instant, all year. There
+    /// is no repeated hour to choose between and no skipped hour to refuse, which is why nothing
+    /// here consults `Conn_Duration` to place the record. That value is still checked, by
+    /// [`duration_is_consistent`], but it is now evidence about the record's own consistency rather
+    /// than about which instant it sits on.
     fn resolve(&self, source: &Rc<PathBuf>, row: usize) -> Vec<Row> {
-        // Kinds known before the DST branch runs. They describe the record itself, so on
-        // duplication both copies inherit them.
-        let mut common = Vec::new();
+        let mut anomalies = Vec::new();
 
         // avg_kw is a division by Active_Charge_Time. The sheet shows it as #DIV/0!; it is
         // reported here so it is not left to be noticed by eye. Zero energy is no exception: 0/0
         // is just as undefined, and the session becomes a spike either way.
         if self.active_charge_time.is_zero() {
-            common.push(AnomalyKind::ZeroActiveChargeTime);
+            anomalies.push(AnomalyKind::ZeroActiveChargeTime);
         } else {
             // The bound is the breaker rating at the top of the normal voltage band, not the
             // rating itself: a draw inside that band is the installation working. Above it, the
@@ -452,106 +451,35 @@ impl CsvSession {
             // which, which is why this only reports and never excludes.
             let avg_kw = self.energy_use / (self.active_charge_time.as_secs_f64() / 3600.0);
             if avg_kw > BREAKER_MAX_NORMAL_KW {
-                common.push(AnomalyKind::ExcessiveAvgKw);
+                anomalies.push(AnomalyKind::ExcessiveAvgKw);
             }
         }
 
-        // The gap is settled before anything else, and settles the record on its own. A wall time
-        // the clocks jumped over never occurred, so there is no instant to assign and nothing that
-        // reads one may run: both `duration_is_consistent` and `is_on_grid` would be reporting the
-        // sentinels rather than the record.
-        if falls_in_gap(self.start_local) || falls_in_gap(self.end_local) {
-            common.push(AnomalyKind::FellInDstGap);
-            return vec![self.row(
-                source,
-                row,
-                UNPLACEABLE_START,
-                UNPLACEABLE_END,
-                None,
-                common,
-            )];
+        let conn_start = session_instant(self.start_local);
+        let conn_end = session_instant(self.end_local);
+        if !duration_is_consistent(conn_start, conn_end, self.conn_duration) {
+            anomalies.push(AnomalyKind::InconsistentDuration);
         }
 
-        // One reading at each end, or two where the hour repeats. Every combination of the two is
-        // tested, so a start and an end read at different offsets is rejected by the same test that
-        // accepts a matched pair: it implies a duration a whole hour out.
-        let starts = local_readings(self.start_local);
-        let ends = local_readings(self.end_local);
-        let ambiguous = starts.len() > 1 || ends.len() > 1;
-        let fits: Vec<(&'static str, Timestamp, Timestamp)> = starts
-            .iter()
-            .flat_map(|&(name, start)| ends.iter().map(move |&(_, end)| (name, start, end)))
-            .filter(|&(_, start, end)| duration_is_consistent(start, end, self.conn_duration))
-            .collect();
-
-        match fits.as_slice() {
-            // The record says which reading it was at.
-            [(_, start, end)] => vec![self.row(source, row, *start, *end, None, common)],
-
-            // Two survivors are reachable only from the fold at both ends, where the hour cancels
-            // on each side and the two matched combinations pass or fail together. The record
-            // cannot say which, so both are kept and told apart by the id.
-            [_, _, ..] => {
-                common.push(AnomalyKind::DstAmbiguousDuplicated);
-                fits.iter()
-                    .map(|&(name, start, end)| {
-                        self.row(source, row, start, end, Some(name), common.clone())
-                    })
-                    .collect()
-            }
-
-            // Nothing fits. Where the reading was ambiguous, no instant can be assigned at all and
-            // the record gets the sentinels, exactly as a gap does; `DstUnresolvable` says the
-            // ambiguity is why. Where it was not, the single reading stands and only the
-            // consistency of the record is in question.
-            [] if ambiguous => {
-                common.push(AnomalyKind::DstUnresolvable);
-                common.push(AnomalyKind::InconsistentDuration);
-                vec![self.row(
-                    source,
-                    row,
-                    UNPLACEABLE_START,
-                    UNPLACEABLE_END,
-                    None,
-                    common,
-                )]
-            }
-            [] => {
-                common.push(AnomalyKind::InconsistentDuration);
-                vec![self.row(source, row, starts[0].1, ends[0].1, None, common)]
-            }
-        }
+        vec![self.row(source, row, conn_start, conn_end, anomalies)]
     }
 
     /// Builds one output row from a pair of resolved instants.
     ///
-    /// `designator` is `Some` only for the two halves of a duplicated fold, which share a CSV row
-    /// and are told apart by the `-EDT`/`-EST` suffix it puts on the id.
-    ///
     /// [`AnomalyKind::OffGridTimes`] is decided here because it is the last kind that reads the
-    /// instants, and a record given the sentinels has none to read.
+    /// instants.
     fn row(
         &self,
         source: &Rc<PathBuf>,
         row: usize,
         conn_start: Timestamp,
         conn_end: Timestamp,
-        designator: Option<&str>,
         mut anomalies: Vec<AnomalyKind>,
     ) -> Row {
         // Checked on the resolved instants rather than the reported wall times: the two differ only
-        // by a whole-hour offset in this zone, so either answers the question, and these are the
-        // values every later allowance is applied to.
-        //
-        // Skipped only for a record holding the sentinels, which sit off the grid for reasons that
-        // say nothing about Evolute's reporting. The test is against the sentinels themselves and
-        // not against the span being inverted: a record flagged `InconsistentDuration` alone may
-        // also report an end before its start, and its times are real readings the check still
-        // applies to.
-        let placeable = conn_start != UNPLACEABLE_START || conn_end != UNPLACEABLE_END;
-        if placeable
-            && (!is_on_grid(conn_start, TIME_GRID_STEP) || !is_on_grid(conn_end, TIME_GRID_STEP))
-        {
+        // by the fixed offset, so either answers the question, and these are the values every later
+        // allowance is applied to.
+        if !is_on_grid(conn_start, TIME_GRID_STEP) || !is_on_grid(conn_end, TIME_GRID_STEP) {
             anomalies.push(AnomalyKind::OffGridTimes);
         }
 
@@ -559,13 +487,8 @@ impl CsvSession {
             record: row - 2,
             session: Rc::new(Session {
                 path: source.clone(),
-                // The CSV row this record occupies. Both halves of a duplicated fold carry it,
-                // since both were read from that one row.
                 row,
-                id: match designator {
-                    Some(s) => format!("{}-{s}", self.id),
-                    None => self.id.clone(),
-                },
+                id: self.id.clone(),
                 conn_start,
                 conn_end,
                 conn_duration: self.conn_duration,
@@ -583,7 +506,7 @@ impl CsvSession {
 // cargo test --lib -- session::csv::test --nocapture
 mod test {
     use super::*;
-    use crate::{session::test_support::timing_anomalies, time::serial_of_civil};
+    use crate::session::test_support::timing_anomalies;
     use jiff::{SignedDuration, tz::TimeZone};
     use std::{env, fs, path::PathBuf, process};
 
@@ -619,8 +542,12 @@ mod test {
         }
     }
 
-    fn local_of(ts: Timestamp) -> civil::DateTime {
-        local_datetime(ts)
+    /// The wall time a session report would state for an instant.
+    ///
+    /// Not prevailing local time, which runs an hour ahead of this through the summer. A test about
+    /// what the reader did with a reported time has to speak in reported time.
+    fn reported_of(ts: Timestamp) -> civil::DateTime {
+        session_wall_time(ts)
     }
 
     /// A scratch directory of its own per test, since these run in parallel within one process.
@@ -662,7 +589,7 @@ mod test {
         let rows =
             session("2026-06-01 16:22", "2026-06-01 21:29", "5:07:53").resolve(&test_source(), 2);
         assert_eq!(
-            local_of(rows[0].session.adj_conn_end()),
+            reported_of(rows[0].session.adj_conn_end()),
             civil::date(2026, 6, 1).at(21, 30, 0, 0)
         );
         assert!(timing_anomalies(&rows[0].session.anomalies).is_empty());
@@ -670,7 +597,7 @@ mod test {
         let rows =
             session("2026-06-07 16:42", "2026-06-07 23:41", "6:58:29").resolve(&test_source(), 2);
         assert_eq!(
-            local_of(rows[0].session.adj_conn_end()),
+            reported_of(rows[0].session.adj_conn_end()),
             civil::date(2026, 6, 7).at(23, 42, 0, 0)
         );
         assert!(timing_anomalies(&rows[0].session.anomalies).is_empty());
@@ -710,8 +637,11 @@ mod test {
         }
     }
 
+    /// A reported wall time is read at the fixed offset in every month, so a June record lands five
+    /// hours behind UTC and not four. This is the change the portal confirmed: the same row that
+    /// used to resolve to 20:22Z now resolves to 21:22Z.
     #[test]
-    fn utc_conversion_uses_edt_in_june() {
+    fn utc_conversion_uses_the_fixed_offset_in_june() {
         let rows =
             session("2026-06-01 16:22", "2026-06-01 21:29", "5:07:53").resolve(&test_source(), 2);
         assert_eq!(
@@ -720,16 +650,16 @@ mod test {
                 .conn_start
                 .to_zoned(TimeZone::UTC)
                 .datetime(),
-            civil::date(2026, 6, 1).at(20, 22, 0, 0)
+            civil::date(2026, 6, 1).at(21, 22, 0, 0)
         );
     }
 
-    /// A long session starting inside the Nov 1 fold: the reported end rules out one offset.
+    /// The same offset in November, so a record either side of the prevailing clock's transition is
+    /// read the same way. Nothing about the record has to say which reading is meant.
     #[test]
-    fn dst_fold_resolved_by_reported_end() {
-        // 01:30 EDT + 3h elapsed = 03:30 EST. Starting at 01:30 EST would end at 04:30.
+    fn utc_conversion_uses_the_fixed_offset_in_november() {
         let rows =
-            session("2026-11-01 01:30", "2026-11-01 03:30", "3:00:00").resolve(&test_source(), 2);
+            session("2026-11-01 01:30", "2026-11-01 04:30", "3:00:00").resolve(&test_source(), 2);
         assert_eq!(rows.len(), 1);
         assert_eq!(
             rows[0]
@@ -737,33 +667,7 @@ mod test {
                 .conn_start
                 .to_zoned(TimeZone::UTC)
                 .datetime(),
-            civil::date(2026, 11, 1).at(5, 30, 0, 0), // EDT is UTC-4
-        );
-        assert!(timing_anomalies(&rows[0].session.anomalies).is_empty());
-    }
-
-    /// The mirror of the test above, and the case a one-sided `start + duration <= adj_conn_end`
-    /// test would get wrong: here EST is correct, and the EDT candidate lands a full hour *early*.
-    /// Only a two-sided comparison rejects it; accepting it would duplicate a session that is not
-    /// ambiguous at all, double-counting its power.
-    #[test]
-    fn dst_fold_resolved_to_est_rejects_the_hour_early_candidate() {
-        // 01:30 EST + 3h elapsed = 04:30 EST. Starting at 01:30 EDT would end at 03:30.
-        let rows =
-            session("2026-11-01 01:30", "2026-11-01 04:30", "3:00:00").resolve(&test_source(), 2);
-        assert_eq!(
-            rows.len(),
-            1,
-            "should not duplicate: {:?}",
-            rows[0].session.id
-        );
-        assert_eq!(
-            rows[0]
-                .session
-                .conn_start
-                .to_zoned(TimeZone::UTC)
-                .datetime(),
-            civil::date(2026, 11, 1).at(6, 30, 0, 0), // EST is UTC-5
+            civil::date(2026, 11, 1).at(6, 30, 0, 0)
         );
         assert!(timing_anomalies(&rows[0].session.anomalies).is_empty());
     }
@@ -810,199 +714,75 @@ mod test {
         );
     }
 
-    /// Reported times are truncated to the minute while `Conn_Duration` carries seconds, so a
-    /// consistent record's `start + duration` lands up to a minute *either side* of the reported
-    /// end. Requiring equal minutes rejected roughly half of all real records; on a fold start that
-    /// meant a spurious `DstUnresolvable` and UTC timestamps an hour early.
+    /// The zone has no fold. A wall time in what would be the repeated hour names exactly one
+    /// instant, and the record is never duplicated.
     #[test]
-    fn fold_resolves_when_start_plus_duration_falls_short_of_the_reported_minute() {
-        // 01:30 EDT + 2:59:31 = 03:29:31 local, which truncates to 03:29, not the reported 03:30.
-        // The EST candidate lands at 04:29:31, an hour out, so only EDT is consistent — but the old
-        // equal-minutes test rejected *both* and called the record unresolvable.
-        let rows =
-            session("2026-11-01 01:30", "2026-11-01 03:30", "2:59:31").resolve(&test_source(), 2);
-        assert_eq!(rows.len(), 1);
-        assert!(
-            !rows[0]
-                .session
-                .anomalies
-                .contains(&AnomalyKind::DstUnresolvable),
-            "spurious DstUnresolvable: {:?}",
-            rows[0].session.anomalies
-        );
-        assert_eq!(
-            rows[0]
-                .session
-                .conn_start
-                .to_zoned(TimeZone::UTC)
-                .datetime(),
-            civil::date(2026, 11, 1).at(5, 30, 0, 0), // EDT is UTC-4
-        );
-    }
-
-    /// A short session wholly inside the repeated hour: neither offset can be ruled out, so the
-    /// record is duplicated with distinct ids.
-    #[test]
-    fn dst_fold_ambiguous_duplicates_the_record() {
+    fn a_wall_time_in_the_former_fold_names_one_instant() {
         let rows =
             session("2026-11-01 01:10", "2026-11-01 01:40", "0:30:00").resolve(&test_source(), 2);
-        assert_eq!(rows.len(), 2);
-        assert_eq!(rows[0].session.id, "S1-EDT");
-        assert_eq!(rows[1].session.id, "S1-EST");
-        // The copies are an hour apart in real time, which is the whole point.
-        assert_eq!(
-            rows[1]
-                .session
-                .conn_start
-                .duration_since(rows[0].session.conn_start),
-            SignedDuration::from_hours(1)
-        );
-        // Both copies carry the flag, so each output row says why it is there.
-        for row in &rows {
-            assert_eq!(
-                timing_anomalies(&row.session.anomalies),
-                vec![AnomalyKind::DstAmbiguousDuplicated]
-            );
-        }
-    }
-
-    /// A start that never occurred, on the March 8 spring-forward. No instant is assigned: the
-    /// record gets the sentinels, and shifting it to either side of the gap would be a guess.
-    #[test]
-    fn a_start_in_the_dst_gap_gets_no_instant() {
-        let rows =
-            session("2026-03-08 02:30", "2026-03-08 04:00", "0:30:00").resolve(&test_source(), 2);
         assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].session.conn_start, UNPLACEABLE_START);
-        assert_eq!(rows[0].session.conn_end, UNPLACEABLE_END);
-        assert!(!rows[0].session.is_placeable());
+        assert_eq!(rows[0].session.id, "S1");
+        // 01:10 at -05:00.
         assert_eq!(
-            timing_anomalies(&rows[0].session.anomalies),
-            vec![AnomalyKind::FellInDstGap]
+            rows[0].session.conn_start,
+            "2026-11-01T06:10:00Z".parse::<Timestamp>().unwrap()
         );
+        assert!(timing_anomalies(&rows[0].session.anomalies).is_empty());
     }
 
-    /// The same fault on the *end* column poisons the whole span, not just that end. A half-real
-    /// span would invite a reader to take the good half for a reading.
+    /// The zone has no gap either. A wall time the prevailing clock skips is an ordinary reading
+    /// here, so the record keeps its instants and carries no anomaly.
     #[test]
-    fn an_end_in_the_dst_gap_gets_no_instant() {
-        let rows =
-            session("2026-03-08 01:30", "2026-03-08 02:30", "1:00:00").resolve(&test_source(), 2);
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].session.conn_start, UNPLACEABLE_START);
-        assert_eq!(rows[0].session.conn_end, UNPLACEABLE_END);
-        assert_eq!(
-            timing_anomalies(&rows[0].session.anomalies),
-            vec![AnomalyKind::FellInDstGap]
-        );
-    }
-
-    /// One flag for a session whose reported start and end both fall in the gap, not two.
-    #[test]
-    fn a_gap_at_both_ends_is_flagged_once() {
+    fn a_wall_time_in_the_former_gap_is_ordinary() {
         let rows =
             session("2026-03-08 02:10", "2026-03-08 02:40", "0:30:00").resolve(&test_source(), 2);
         assert_eq!(rows.len(), 1);
         assert_eq!(
-            timing_anomalies(&rows[0].session.anomalies),
-            vec![AnomalyKind::FellInDstGap]
+            rows[0].session.conn_start,
+            "2026-03-08T07:10:00Z".parse::<Timestamp>().unwrap()
         );
+        assert!(timing_anomalies(&rows[0].session.anomalies).is_empty());
     }
 
-    /// A gap settles the record on its own. Nothing that reads the instants runs, so neither the
-    /// consistency test nor the grid test may add a kind of its own — both would be reporting the
-    /// sentinels rather than the record. `0:30:00` here contradicts the reported hour between
-    /// 02:10 and 02:40 read either side of the gap, and the seconds put both times off the grid.
+    /// A session spanning the prevailing clock's transition has the elapsed time its own fields
+    /// state. The fixed offset is what makes that arithmetic ordinary: there is no hour to lose.
     #[test]
-    fn a_gap_suppresses_every_test_that_reads_the_instants() {
-        let rows = session("2026-03-08 02:10:17", "2026-03-08 02:40:44", "9:00:00")
-            .resolve(&test_source(), 2);
-        assert_eq!(
-            rows[0].session.anomalies,
-            vec![AnomalyKind::FellInDstGap],
-            "only the gap should be reported"
-        );
-    }
-
-    /// The reported wall times survive on the row even though no instant does. They are what the
-    /// workbook's local columns show, and re-deriving them from the sentinels would give nonsense.
-    #[test]
-    fn a_gap_row_keeps_the_wall_times_the_report_stated() {
+    fn a_session_spanning_the_transition_has_its_reported_duration() {
         let rows =
-            session("2026-03-08 02:30", "2026-03-08 04:00", "0:30:00").resolve(&test_source(), 2);
-        assert_eq!(rows[0].start_local, dt("2026-03-08 02:30"));
-        assert_eq!(rows[0].end_local, dt("2026-03-08 04:00"));
-    }
-
-    /// A fold start where no reading of the record makes its three fields agree. The evidence that
-    /// ordinarily settles the fold — `Conn_Duration` — has failed, so there is nothing left to
-    /// choose with and no instant is assigned. `DstUnresolvable` says the ambiguity is why;
-    /// `InconsistentDuration` says the record disagrees with itself under every reading.
-    #[test]
-    fn an_unresolvable_fold_gets_no_instant() {
-        // 01:30 local is the repeated hour. Neither reading of it plus 9 hours lands anywhere near
-        // the reported 02:00, which is at most 90 minutes later under either.
-        let rows =
-            session("2026-11-01 01:30", "2026-11-01 02:00", "9:00:00").resolve(&test_source(), 2);
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].session.conn_start, UNPLACEABLE_START);
-        assert_eq!(rows[0].session.conn_end, UNPLACEABLE_END);
+            session("2026-11-01 00:30", "2026-11-01 02:30", "2:00:00").resolve(&test_source(), 2);
+        let row = &rows[0];
         assert_eq!(
-            timing_anomalies(&rows[0].session.anomalies),
-            vec![
-                AnomalyKind::DstUnresolvable,
-                AnomalyKind::InconsistentDuration
-            ]
+            row.session.conn_end.duration_since(row.session.conn_start),
+            SignedDuration::from_hours(2)
         );
+        assert!(timing_anomalies(&row.session.anomalies).is_empty());
     }
 
-    /// The same disagreement on a date with only one reading to test is `InconsistentDuration`
-    /// alone, and the record keeps its instants: they are real readings, and the listing prints
-    /// them. This is the line between the two kinds.
+    /// A record whose three fields cannot all be true is flagged, and keeps its instants: they are
+    /// real readings, and the excluded listing prints them.
     #[test]
-    fn an_inconsistent_record_off_the_fold_keeps_its_instants() {
+    fn an_inconsistent_record_keeps_its_instants() {
         let rows =
             session("2026-06-15 01:30", "2026-06-15 02:00", "9:00:00").resolve(&test_source(), 2);
         assert_eq!(rows.len(), 1);
-        assert!(rows[0].session.is_placeable());
-        assert_eq!(local_of(rows[0].session.conn_start), dt("2026-06-15 01:30"));
+        assert_eq!(
+            rows[0].session.conn_start,
+            "2026-06-15T06:30:00Z".parse::<Timestamp>().unwrap()
+        );
         assert_eq!(
             timing_anomalies(&rows[0].session.anomalies),
             vec![AnomalyKind::InconsistentDuration]
         );
     }
 
-    /// Every kind that leaves a record without instants also excludes it, on its own rather than by
-    /// relying on `InconsistentDuration` travelling alongside.
+    /// The reported wall times survive on the row alongside the resolved instants. They are what
+    /// the workbook's local columns show, verbatim as the report stated them.
     #[test]
-    fn no_instant_implies_exclusion() {
-        for kind in [AnomalyKind::FellInDstGap, AnomalyKind::DstUnresolvable] {
-            assert!(kind.leaves_no_instant(), "{kind:?}");
-            assert!(kind.excludes_session(), "{kind:?}");
-        }
-    }
-
-    /// The case local arithmetic gets wrong: a session spanning the fold. Wall clock says 2 hours,
-    /// elapsed is 3.
-    #[test]
-    fn fold_spanning_session_has_true_elapsed_duration() {
+    fn a_row_keeps_the_wall_times_the_report_stated() {
         let rows =
-            session("2026-11-01 00:30", "2026-11-01 02:30", "3:00:00").resolve(&test_source(), 2);
-        let row = &rows[0];
-        let elapsed = row
-            .session
-            .adj_conn_end()
-            .duration_since(row.session.conn_start);
-        assert!(
-            elapsed >= SignedDuration::from_hours(3),
-            "elapsed {elapsed:?} lost the repeated hour"
-        );
-        // The same subtraction done on local wall times loses the repeated hour.
-        let wall_secs = serial_of_civil(row.adj_end_local()) - serial_of_civil(row.start_local);
-        assert!(
-            wall_secs * 86_400.0 < elapsed.as_secs() as f64,
-            "local subtraction should undercount here"
-        );
+            session("2026-03-08 02:30", "2026-03-08 04:00", "1:30:00").resolve(&test_source(), 2);
+        assert_eq!(rows[0].start_local, dt("2026-03-08 02:30"));
+        assert_eq!(rows[0].end_local, dt("2026-03-08 04:00"));
     }
 
     /// Zero `Active_Charge_Time` is flagged whatever the energy: the `avg_kw` cell shows `#DIV/0!`

@@ -208,10 +208,8 @@ fn session_outcome(ui: &mut egui::Ui, outcome: &SessionWorkbook) {
     )));
     widgets::note(
         ui,
-        "These are recorded in the workbook's Anomalies column and do not stop the conversion. Row \
-         numbers are rows of the CSV, so a record duplicated to resolve a DST fold appears twice \
-         against the one row it came from; the -EDT/-EST suffix on the session id tells the two \
-         apart.",
+        "These are recorded in the workbook's Anomalies column and do not stop the conversion. \
+         Row numbers are rows of the CSV, counting the header.",
     );
     ui.add_space(6.0);
     widgets::monospace_lines(ui, &outcome.anomalies.join("\n"));

@@ -2,7 +2,7 @@ EV Peak Power Contribution
 ==========================
 
 Source     Session_Report_Diagram.csv
-Interval   2026-06-15 16:00 - 17:00 EDT  (1 hour)
+Interval   2026-06-15 17:00 - 18:00 EDT  (1 hour)
 
 
 Estimates
@@ -10,10 +10,10 @@ Estimates
 
 | Estimate     | Unit |    Min |    Max | Segment |
 |:-------------|:-----|-------:|-------:|:--------|
-| Energy-based | kW   | 18.212 | 19.483 | 16:15   |
-| Energy-based | kVA  | 18.684 | 19.968 | 16:15   |
-| Count-based  | kW   | 19.614 | 20.944 | 16:15   |
-| Count-based  | kVA  | 20.100 | 21.445 | 16:15   |
+| Energy-based | kW   | 18.212 | 19.483 | 17:15   |
+| Energy-based | kVA  | 18.684 | 19.968 | 17:15   |
+| Count-based  | kW   | 19.614 | 20.944 | 17:15   |
+| Count-based  | kVA  | 20.100 | 21.445 | 17:15   |
 
 Every figure is a bracket: the reported session times are stated only to the
 minute, so each estimate runs from what those times least support to what
@@ -34,28 +34,30 @@ Segments
 
 | Segment | Count-based |  Energy-based |
 |:--------|------------:|--------------:|
-| 16:00   | 2.400-2.467 | 14.880-15.293 |
-| 16:15   | 2.933-3.133 | 17.940-19.200 |
-| 16:30   | 2.800-3.133 | 17.420-19.560 |
-| 16:45   | 1.400-1.533 |   8.440-9.253 |
+| 17:00   | 2.400-2.467 | 14.880-15.293 |
+| 17:15   | 2.933-3.133 | 17.940-19.200 |
+| 17:30   | 2.800-3.133 | 17.420-19.560 |
+| 17:45   | 1.400-1.533 |   8.440-9.253 |
 
-Times are local (ET), and each segment is 15 minutes long, named by the
-minute it starts on. Segments are half-open: each runs from its own start up
-to but not including the next one's, so no instant falls in two of them and
-they tile the interval exactly. The two columns are the aggregates the
-estimates of the same name are derived from. "Count-based" is a session
-count weighted by how much of the segment each session covered, so it is
-fractional; "Energy-based" weights each session's average power the same
-way, and is in kW.
+Times are local, on the zone the Interval line above names, and each segment
+is 15 minutes long, named by the minute it starts on. That is an hour later
+than the session report states the same instants, which are on standard time
+all year. Segments are half-open: each runs from its own start up to but not
+including the next one's, so no instant falls in two of them and they tile
+the interval exactly. The two columns are the aggregates the estimates of
+the same name are derived from. "Count-based" is a session count weighted by
+how much of the segment each session covered, so it is fractional;
+"Energy-based" weights each session's average power the same way, and is in
+kW.
 
 
 Sessions by segment
 -------------------
 
-- 16:00 - A, B, C
-- 16:15 - A, B, C, D, E
-- 16:30 - A, C, D, E, F
-- 16:45 - A, G
+- 17:00 - A, B, C
+- 17:15 - A, B, C, D, E
+- 17:30 - A, C, D, E, F
+- 17:45 - A, G
 
 
 Anomalies

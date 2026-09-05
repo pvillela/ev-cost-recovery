@@ -55,7 +55,7 @@ enum Source {
     Number(&'static str),
     /// Parsed from the named CSV column and written as an Excel duration.
     Duration(&'static str),
-    /// The session id, which carries a `-EDT`/`-EST` suffix on duplicated records.
+    /// The session id, verbatim from `Charge_Session_ID`.
     SessionId,
     ConnStartLocal,
     ConnStartUtc,
@@ -71,26 +71,6 @@ enum Source {
     AvgKw,
     /// Comma-separated [`AnomalyKind`] tokens for this row; empty when the row is clean.
     Anomalies,
-}
-
-impl Source {
-    /// Whether this column is derived from a session's resolved instants.
-    ///
-    /// The set a record flagged unplaceable has no value for — see [`Session::is_placeable`]. Both
-    /// the writer, which leaves these cells empty, and the reader, which rebuilds the sentinels
-    /// instead of parsing them, are stated by this one list, so the two cannot drift apart.
-    fn reads_instants(self) -> bool {
-        matches!(
-            self,
-            Self::ConnStartUtc
-                | Self::ConnEndUtc
-                | Self::AdjConnStartLocal
-                | Self::AdjConnStartUtc
-                | Self::AdjConnEndLocal
-                | Self::AdjConnEndUtc
-                | Self::AdjConnDuration
-        )
-    }
 }
 
 /// The output sheet's columns, in order. Drives both the header row and every data row,
@@ -139,7 +119,7 @@ const COLUMNS: &[(&str, Source)] = &[
 /// with the extension replaced.
 ///
 /// The parse is `csv::csv_session_rows`; nothing about the session report is interpreted here. The
-/// domain rules — the UTC conversion and its DST policy, the definitions of `adj_conn_end` and
+/// domain rules — the UTC conversion, the definitions of `adj_conn_end` and
 /// `adj_conn_duration`, and the treatment of zero-`Energy_Use` sessions — are specified in
 /// `docs/time/README.md` under "Time zone" and in `docs/session/README.md` under "Excel workbook"
 /// and "Anomalies". They are shared with the peak power contribution logic and are not restated
@@ -154,7 +134,7 @@ const COLUMNS: &[(&str, Source)] = &[
 ///   justified; duration columns are Excel durations formatted `[h]:mm:ss`, which does not wrap
 ///   past 24 hours, and are centered.
 /// - `adj_conn_duration` and `avg_kw` are live formulas. `adj_conn_duration` subtracts the two
-///   *UTC* columns, so it is true elapsed time even across a DST fold; `avg_kw` is
+///   *UTC* columns rather than the local ones, so nothing about the zone can enter it; `avg_kw` is
 ///   `=Energy_Use/(Active_Charge_Time*24)`, in kW, displayed to 3 decimal
 ///   places, matching `Energy_Use`. The formula is written on every row, so a session with
 ///   zero `Active_Charge_Time` shows `#DIV/0!` rather than an empty cell:
@@ -273,17 +253,6 @@ fn write_sheet(
 
         for (i, (_, source)) in COLUMNS.iter().enumerate() {
             let col = i as u32 + 1;
-            // A record whose reported times name no instant has nothing for the columns derived
-            // from them, so those cells are left empty rather than filled with the sentinels. The
-            // duration goes with them: it is a formula over two of the cells, and subtracting two
-            // empty ones would evaluate to a plausible-looking `0:00:00`.
-            //
-            // `ConnStartLocal` and `ConnEndLocal` are deliberately not here. They come from the CSV
-            // text rather than from the instants, so they still show the wall times the report
-            // stated -- which for a gap record are exactly the ones that never occurred.
-            if !row.session.is_placeable() && source.reads_instants() {
-                continue;
-            }
             match source {
                 Source::Text(name) => {
                     let value = data.field(row, name);
@@ -372,10 +341,10 @@ fn write_sheet(
                     );
                 }
                 Source::AdjConnDuration => {
-                    // Subtracting the UTC columns, not the local ones: local arithmetic is wrong by
-                    // an hour for a session spanning the DST fold. Both ends are the adjusted ones,
-                    // so the cell equals `Session::adj_duration` — the span the estimating logic
-                    // places the session on, which is the point of showing it.
+                    // Subtracting the UTC columns, not the local ones, so no zone enters the
+                    // arithmetic. Both ends are the adjusted ones, so the cell equals
+                    // `Session::adj_duration` — the span the estimating logic places the session
+                    // on, which is the point of showing it.
                     sheet.cell_mut((col, excel_row)).set_formula(format!(
                         "{adj_end_utc_col}{excel_row}-{adj_start_utc_col}{excel_row}"
                     ));
@@ -499,9 +468,8 @@ fn add_comments(sheet: &mut Worksheet) {
         (
             Source::AdjConnDuration,
             "adj_conn_end_utc - adj_conn_start_utc: the width of the window above, which is the \
-             span every estimate places this session on. Computed from the UTC columns so it is \
-             true elapsed time even for a session spanning the DST fold, where local arithmetic \
-             would be wrong by an hour.",
+             span every estimate places this session on. Computed from the UTC columns so that no \
+             time zone enters the arithmetic.",
         ),
         (
             Source::AvgKw,
@@ -767,14 +735,14 @@ CKT-7,,Toronto,,Station-7,Evolute Inc.,FLO,G5,S13577,,2026-06-02 08:00,2026-06-0
     }
 
     /// The conversion report's anomalies carry rows of the file they were read from, which for a
-    /// conversion is the CSV. The two halves of a resolved DST fold therefore share a row number:
-    /// they came from one record, and the `-EDT`/`-EST` suffix on the id is what tells them apart.
+    /// conversion is the CSV — header on row 1, so the first record is row 2.
     #[test]
     fn conversion_report_anomalies_carry_source_rows() {
         const CSV: &str = "\
 Charge_Session_ID,Conn_DateTime_Start,Conn_DateTime_End,Conn_Duration,Active_Charge_Time,Energy_Use
 S1,2026-11-01 01:10,2026-11-01 01:40,0:30:00,0:29:00,2.9
 S2,2026-11-02 08:00,2026-11-02 08:00,0:00:00,0:00:00,4.2
+S3,2026-11-03 09:00,2026-11-03 09:30,9:00:00,0:29:00,2.9
 ";
         let dir = temp_dir("excel_rows");
         let csv_path = dir.join("Session_Report_Test.csv");
@@ -790,11 +758,8 @@ S2,2026-11-02 08:00,2026-11-02 08:00,0:00:00,0:00:00,4.2
         assert_eq!(
             items,
             [
-                (2, "S1-EDT", AnomalyKind::DstAmbiguousDuplicated),
-                (2, "S1-EST", AnomalyKind::DstAmbiguousDuplicated),
-                // CSV row 3. It sits on workbook row 4, the duplication above having pushed it
-                // down, but the workbook row is the workbook's business and not this report's.
                 (3, "S2", AnomalyKind::ZeroActiveChargeTime),
+                (4, "S3", AnomalyKind::InconsistentDuration),
             ]
         );
 

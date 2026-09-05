@@ -66,8 +66,8 @@ that of the libraries that read CSV, XML and PDF files. Those entries say so and
 
 **Changes the figures**
 
-- Session report: [`DstUnresolvable`](#dstunresolvable), [`DuplicateId`](#duplicateid),
-  [`FellInDstGap`](#fellindstgap), [`InconsistentDuration`](#inconsistentduration),
+- Session report: [`DuplicateId`](#duplicateid),
+  [`InconsistentDuration`](#inconsistentduration),
   [`ZeroActiveChargeTime`](#zeroactivechargetime)
 - Green Button export: [`DuplicateInterval`](#duplicateinterval),
   [`ImplausibleGap`](#implausiblegap), [`MisalignedInterval`](#misalignedinterval),
@@ -80,8 +80,7 @@ that of the libraries that read CSV, XML and PDF files. Those entries say so and
 - [periods that do not hold a full billing period's intervals](#periods-that-do-not-hold-a-full-billing-periods-intervals)
 - [the run's log was not written](#the-runs-log-was-not-written)
 - [the workbook was written, but its run log was not](#the-workbook-was-written-but-its-run-log-was-not)
-- Session report: [`DstAmbiguousDuplicated`](#dstambiguousduplicated),
-  [`ExcessiveAvgKw`](#excessiveavgkw), [`OffGridTimes`](#offgridtimes)
+- Session report: [`ExcessiveAvgKw`](#excessiveavgkw), [`OffGridTimes`](#offgridtimes)
 
 ---
 
@@ -493,18 +492,6 @@ workbook. The token is the same in all three.
 
 Why each of these rules exists is in [docs/session/README.md](session/README.md).
 
-### `DstUnresolvable`
-
-> DST fold: a reported time falls in the repeated hour and no reading of the record makes its start,
-> end and duration agree, so no instant was assigned and the session is excluded from every estimate
-
-When the clocks go back, an hour is lived through twice, and a reported time inside it names two
-moments. Which one is normally settled by checking the reported duration. Here neither reading makes
-the record's own fields agree, so there is nothing left to choose with, and the session is left out
-of every figure rather than placed by a guess.
-
-`src/session/common.rs:997-1001`
-
 ### `DuplicateId`
 
 > another session in the report carries the same `Charge_Session_ID`; the id is not unique in
@@ -519,18 +506,6 @@ Where two records share an id *and* every compared field, one copy is dropped in
 says so.
 
 `src/session/common.rs:1006-1009`
-
-### `FellInDstGap`
-
-> reported start or end is a local time that never occurred, in the hour the clocks jump over when
-> DST begins; it names no instant, so none was assigned and the session is excluded from every
-> estimate
-
-When the clocks go forward, an hour never happens. A reported time inside it names nothing, so the
-session cannot be placed on a timeline at all and is left out of every figure. Shifting it to either
-side of the gap would be a guess presented as a reading.
-
-`src/session/common.rs:992-996`
 
 ### `InconsistentDuration`
 
@@ -694,17 +669,6 @@ screen beneath this message; it just has no copy on disk.
 ## Session report anomalies that leave the figures standing
 
 Why each of these rules exists is in [docs/session/README.md](session/README.md).
-
-### `DstAmbiguousDuplicated`
-
-> ambiguous DST fold; record duplicated as EDT and EST
-
-The session's reported start fell in the hour that is lived through twice when the clocks go back,
-and both readings of it reproduce the reported end. Neither can be ruled out, so the record is
-counted under both — which is why a converted workbook shows two rows for the one row of the CSV,
-told apart by an `-EDT` or `-EST` suffix on the session id.
-
-`src/session/common.rs:991`
 
 ### `ExcessiveAvgKw`
 

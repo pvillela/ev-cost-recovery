@@ -26,6 +26,11 @@
 //! `TIME_GRID_STEP`. That is why `F` overlaps `D` and `E` rather than merely abutting them: all
 //! three are reported to the minute, and the minute they share may hold any of them.
 //!
+//! The times above are the ones the *report states*, on the fixed standard-time offset Evolute
+//! uses. June is daylight saving locally, so the same instants display an hour later: the quarter
+//! the diagram calls 16:00 is named `17:00` in the rendered report, and `QUARTERS` below states the
+//! displayed names. The geometry is unaffected — every session moves by the same hour.
+//!
 //! No assertion here names an electrical constant. The numbers this file does state are clock
 //! times and session counts, which are properties of the fixture rather than of the site model.
 
@@ -37,26 +42,28 @@ use crate::{golden, time::Interval};
 use jiff::{Timestamp, Zoned, tz::TimeZone};
 use std::rc::Rc;
 
-/// The interval of interest: 16:00–17:00 local on a date with no DST transition.
-const LO: &str = "2026-06-15T20:00:00Z";
-const HI: &str = "2026-06-15T21:00:00Z";
+/// The interval of interest: the hour the fixture reports as 16:00–17:00, which at
+/// `time::SESSION_OFFSET` is 21:00–22:00 UTC.
+const LO: &str = "2026-06-15T21:00:00Z";
+const HI: &str = "2026-06-15T22:00:00Z";
 
-/// The four quarters, in order, as the report names them.
-const QUARTERS: [&str; 4] = ["16:00", "16:15", "16:30", "16:45"];
+/// The four quarters, in order, as the report names them — displayed in prevailing local time,
+/// an hour ahead of the reported times in the diagram above.
+const QUARTERS: [&str; 4] = ["17:00", "17:15", "17:30", "17:45"];
 
 /// Which sessions each quarter holds, given the spans in the diagram above.
 const MEMBERSHIP: [(&str, &[&str]); 4] = [
     // `D`, `E`, `F` and `G` all start after 16:15, so the first quarter holds only the three
     // sessions already running.
-    ("16:00", &["A", "B", "C"]),
+    ("17:00", &["A", "B", "C"]),
     // `B` reaches this quarter by a single minute: reported to end at 16:15, its true end lies
     // anywhere in [16:15, 16:16), so it may still have been drawing when the quarter opened.
-    ("16:15", &["A", "B", "C", "D", "E"]),
+    ("17:15", &["A", "B", "C", "D", "E"]),
     // `D` and `E` are reported to end at 16:34 and `F` to start at 16:34, so all three are here:
     // the reported times cannot say whether they overlapped or merely abutted.
-    ("16:30", &["A", "C", "D", "E", "F"]),
+    ("17:30", &["A", "C", "D", "E", "F"]),
     // Only `A`, which outruns the whole interval, and `G`.
-    ("16:45", &["A", "G"]),
+    ("17:45", &["A", "G"]),
 ];
 
 /// Local clock time, the way the report names a segment.
@@ -126,7 +133,7 @@ fn each_quarter_holds_the_sessions_that_meet_it() {
 fn a_shared_minute_leaves_the_count_bracketed() {
     let report = estimates();
     let (third, _) = &report.seg_estimates[2];
-    assert_eq!(hm(third.start()), "16:30");
+    assert_eq!(hm(third.start()), "17:30");
 
     let count = third.agg_count();
     assert!(
@@ -182,7 +189,7 @@ fn the_maximal_segment_is_one_of_the_busy_middle_quarters() {
     let (count_seg, _) = &report.count_based_seg_estimate;
     for name in [hm(energy_seg.start()), hm(count_seg.start())] {
         assert!(
-            name == "16:15" || name == "16:30",
+            name == "17:15" || name == "17:30",
             "maximal segment {name} is not one of the busy quarters"
         );
     }
