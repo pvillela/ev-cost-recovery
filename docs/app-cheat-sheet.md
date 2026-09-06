@@ -20,7 +20,7 @@ Only the **June 2026** period can be run with the sample data. The sample Green 
 | Toronto Hydro bill | `data/hydro_bills/TH_5728140000_2026_06_29.pdf` |
 | Green Button export | `data/green_button/TH_Electric_Usage_23-11-2024_to_24-06-2026.XML` |
 | Session report 1 | `data/evolute/Session_Report_May_1_2026-May_31_2026-mock.csv` |
-| Session report 2 | `data/evolute/Session_Report_June_1_2026-June_30_2026.csv` — optional; leave empty if report 1 covers the whole period |
+| Session report 2 | `data/evolute/Session_Report_June_1_2026-June_30_2026.csv` |
 
 Then the rates. **Effective from** `2026-05-01`, and `0.1100` / `0.0900` / `0.0700`.
 

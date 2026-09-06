@@ -170,7 +170,7 @@ Much, but not all, of this documentation pertains to software structure or elect
 - [docs/session/Evolute-Simultaneous_Charging.pdf](docs/session/Evolute-Simultaneous_Charging.pdf) -- Evolute technical documentation about simultaneous charging limits in terms of voltages, currents, kW, kVA, transformer parameters, and number of charging stations.
 - [docs/green_button/README.md](docs/green_button/README.md) -- What the meter export is, when a reading is treated as an anomaly, and when a billing period counts as complete.
 - [docs/green_button/Toronto_Hydro_Object_Model.md](docs/green_button/Toronto_Hydro_Object_Model.md) -- The conceptual domain model for the Green Button ESPI XML feed.
-- [docs/time/README.md](docs/time/README.md) -- Date-time-related functions and constants, the time grid, and the two clocks the software keeps apart.
+- [docs/time/README.md](docs/time/README.md) -- Date-time-related functions and constants.
 - [docs/Development_Approach_and_Roles.md](docs/Development_Approach_and_Roles.md) -- How the software was developed.
 
 ## Appendix
@@ -199,15 +199,17 @@ The TOU cost-recovery rates apply to EV charger energy consumption, but electric
 
 There are three bill components that depend on peak power. One depends on the 15-minute interval with the highest kW in the billing period, another depends on the 15-minute interval with the highest kVA in the billing period, and the third depends on the 15-minute interval with the highest kW *not* in an off-peak hour during the billing period.
 
-#### Challenge 3: Toronto Hydro billing period vs. Evolute reporting
+#### Challenge 3: Toronto Hydro billing period, Evolute reporting, time zones
 
 A Toronto Hydro bill for the building states that it covers from the 23rd of a month to the 23rd of the following month. In practice, the bill covers the period from 00:00:00 (inclusive) EST (Eastern Standard Time, not Eastern Time) on the 24th of a month to 00:00:00 EST (exclusive) on the 24th of the following month. In other words, all of the 24th of a month (EST) to all of 23rd of the following month (EST). So, while DST (daylight saving time) impacts the TOU periods, it does not impact billing period determination. That is good, because the billing period stays stable throughout the year, regardless of DST.
 
 Toronto Hydro Green Button metering data is reported in UTC (Coordinated Universal Time = EST + 5h, no DST).
 
-Evolute's session reports state their times in EST as well, all year round, so they are not impacted by DST either. This was confirmed after gaining access to the Evolute portal; the software previously read them as ET and had to disambiguate the hour that repeats when DST ends. Reports shown to the user are stated in prevailing local time (ET), so a summer session appears an hour later than the portal shows it — which is why every displayed time names its zone.
+Evolute's session reports state their times in EST as well, all year round, so they are not impacted by DST either. This was confirmed after gaining access to the Evolute portal; the software previously read them as ET and had to disambiguate the hour that repeats when DST ends.
 
-Correlating a Toronto Hydro bill with Evolute's reports is challenging as they cover different periods and use different time standards.
+Evolute's charges reports cover calendar months, not Toronto Hydro billing periods.
+
+Reports produced by the application to be shown to the user are stated in prevailing local time (ET), so a summer session appears an hour later than the portal shows it — which is why every displayed time names its zone.
 
 #### Challenge 4: Time resolution
 
@@ -244,30 +246,17 @@ cargo build --release      # the desktop app, ev_cost_recovery -- and nothing el
 cargo test                 # everything
 ```
 
-The command-line tools are `ev_csv_to_xlsx` (session report to workbook), `gb_peak_values` (Green
-Button feed to workbook) and `hydro_bill_dump` (a bill PDF's figures). Each prints its usage when
-run with no arguments.
+The command-line tools are listed below. Each prints its usage when run with no arguments.
 
-Six more report on one billing period. `peak_power_cli` gives the kW and kVA peaks, estimated from
-a Green Button export and the session reports spanning the period. `energy_cli` gives the
-kilowatt-hours drawn, split by time-of-use band. Two of them price those against a Toronto Hydro
-bill: `energy_cost_cli` for the consumption lines and `peak_power_cost_cli` for the three
-demand-priced delivery lines. Every rate they use is read off the bill; no tariff is assumed.
+-  `ev_csv_to_xlsx` -- session report to workbook.
+- `gb_peak_values` -- Green Button feed to workbook.
+- `hydro_bill_dump` -- a bill PDF's figures.
 
-The two costing tools ask for no closing date, because the bill states which period it covers.
+- `peak_power_cli` -- gives the kW and kVA peaks for a billing period, estimated from a Green Button export and the session reports spanning the period.
+- `energy_cli` -- gives the kilowatt-hours drawn by EV charging sessions during a billing period, split by time-of-use band.
+- `energy_cost_cli` -- gives the energy-related costs attributable to EV charging sessions for a billing period.
+- `peak_power_cost_cli` -- gives the peak power-related costs attributable to EV charging sessions for a billing period.
+- `cost_recovery_cli` -- is the other side of the ledger: it prices the kilowatt-hours consumed by EV charging activity during a billing period, using cost-recovery rates you give on the command line. A second set of rates can be entered if the cost-recovery rates change during the billing period.
 
-`cost_recovery_cli` is the other side of the ledger: it prices the same kilowatt-hours at EV
-cost-recovery rates you give on the command line, and reports what they recover. No bill is read
-and no tax is added — the rates are yours, and what they have to cover is your decision. A schedule
-is written `EFFECTIVE_DATE:ON_PEAK,MID_PEAK,OFF_PEAK`; give a second one when the rates changed
-during the period, and the energy is split at local midnight on its effective date.
+- `cost_recovery_surplus_cli` -- puts the two sides together: what the rates recover, less the delivery and energy costs, and the difference. A positive surplus means the rates covered the chargers' share of the bill; a negative one means they fell short.
 
-`cost_recovery_surplus_cli` puts the two sides together: what the rates recover, less the delivery
-and energy costs, and the difference. A positive surplus means the rates covered the chargers'
-share of the bill; a negative one means they fell short. It prints all three reports beneath the
-summary, so every figure in the subtraction can be checked. Only the delivery and energy sides are
-counted as EV cost — the customer charge and the standard supply administration charge are in
-neither, being flat.
-
-These six need two adjacent months' session reports, since a billing period runs from the
-24th to the 23rd.

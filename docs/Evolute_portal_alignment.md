@@ -2,7 +2,7 @@
 
 Changes to the crate due to newly confirmed information after gaining access to the Evolute portal.
 
-**Status: done.** Every change below is on `evolute-portal-align`. What was built differs from what
+**Status: done.** Every change below is on branch `evolute-portal-align`. What was built differs from what
 was first written here in a few places; each difference is noted where it arises, and
 [As built](#as-built) summarises the outcome.
 

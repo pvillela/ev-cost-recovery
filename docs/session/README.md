@@ -68,9 +68,7 @@ Given a time interval of interest **`I`** as described above, the estimation of 
 
 Sessions, segments, and intervals of interest are all **half-open**: each includes its left end-point and excludes its right one. Consecutive segments therefore meet at a single instant belonging to the later one, so no instant falls in two segments, and *abutting* stays distinguishable from *overlapping* — a distinction the estimates count on. See [Half-open boundaries](#half-open-boundaries).
 
-A session occupies `[Conn_DateTime_Start, Conn_DateTime_End)`, exactly as the report states them. The portal states both to the second, so there is nothing to adjust and every overlap has one width.
-
-That was not always so. Reports used to state start and end times truncated to the minute, and the software padded each session's end out to the following minute to bound where the true end might have been. The consequence was that every figure came out as a range rather than a number: where one session was reported to end in the minute another was reported to start, the reported times could not say whether the two overlapped or merely abutted. The padding, and the brackets it forced, are gone.
+A session occupies `[Conn_DateTime_Start, Conn_DateTime_End)`, exactly as the report states them. The portal states both to the second.
 
 #### Interval of interest with no EVs charging
 
@@ -84,7 +82,7 @@ Half-open is what makes segments properly cover all of the interval of interest 
 
 It applies to sessions too, and it is what settles the shared-instant case. A session reported to end at `16:34:00` and one reported to start at `16:34:00` abut: that instant belongs to the second alone, so neither counts it twice and the two do not overlap.
 
-The interval of interest must still be a whole number of `SEGMENT_DURATION`s — 15 minutes — or the segments cannot partition it. `estimates_from_sessions` asserts that rather than rounding.
+The interval of interest must be a whole number of `SEGMENT_DURATION`s — 15 minutes — or the segments cannot partition it.
 
 #### kW and kVA calculations
 
@@ -145,8 +143,6 @@ An anomaly is something about a reported session that needed a judgement call. T
 
 One of the five excludes a session from every estimate — `InconsistentDuration`. Nothing else removes a session.
 
-It was three of nine until session times were confirmed to be stated on a fixed standard-time offset. At a fixed offset every reported wall time names exactly one instant, so the two daylight-saving exclusions — a wall time that never occurred, and one that occurred twice — cannot arise, and neither can the sentinel timestamps they were given in place of a reading. See `docs/time/README.md`, "Time zone".
-
 Excluded sessions get a section of their own in the report, listing **every** one in the session data rather than only those near the interval of interest, with an `In interval` column saying whether each *appears* to fall in that interval. Appears only: a record whose own fields contradict each other cannot be trusted to say where it belongs, so filtering on that judgement could hide exactly the session a reader most needs to see. Such a record may even report an end before its start, and the column answers for it.
 
 - **`InconsistentDuration`** — the record's reported start, end and duration contradict each other. The invariant is that the three agree, and `duration_is_consistent` in `src/session/common.rs` is the one place it appears in code:
@@ -155,12 +151,11 @@ Excluded sessions get a section of their own in the report, listing **every** on
   | Conn_start + Conn_Duration - Conn_end |  <=  DURATION_TOLERANCE
   ```
 
-  `DURATION_TOLERANCE` is one second. It is not slack chosen for comfort: in the one real portal export, four of five rows satisfy the invariant exactly and one is a second out, and `Active_Charge_Time` misses `Conn_Duration` by a second on three of the five. Something in the source rounds at second level. Exact equality would exclude a fifth of the only genuine export there is; anything wider starts admitting records whose fields really do disagree.
+  `DURATION_TOLERANCE` is one second. It is not slack chosen for comfort: in the one real portal export available at the time of this writing, four of five rows satisfy the invariant exactly and one is a second out, and `Active_Charge_Time` misses `Conn_Duration` by a second on three of the five. Something in the source rounds at second level. Exact equality would exclude bona fide sessions; anything wider starts admitting records whose fields really do disagree.
 
-  - An inverted record — one whose end precedes its start — fails this by whatever the inversion is worth, and that is what keeps it out. `Session::intersects` panics on an inverted span and names exclusion by this test as the reason it cannot reach one.
-  - A session failing it is excluded from the estimates, in either direction. If a record's own fields disagree by more than the source's rounding explains, neither its duration nor the span the estimating logic would place it on can be relied on.
+  - A session failing it is excluded from the estimates. If a record's own fields disagree by more than the source's rounding explains, neither its duration nor the span the estimating logic would place it on can be relied on.
+  - An inverted record — one whose end precedes its start — fails this invariant. `Session::intersects` panics on an inverted span and names exclusion by this test as the reason the panic condition should be unreachable.
 
-  This was three checks with a window a whole minute wide, while reported times were truncated to the minute. `docs/archive/session/time-reporting-uncertainty.md` carries that derivation.
 - **`DuplicateId`** — another session in the report carries the same `Charge_Session_ID`. `Charge_Session_ID` is **not unique**: Evolute's sample June 2026 report carries `S37487` on two sessions a week apart, within the one file, and reports for adjacent months overlap so a session near the boundary appears in both.
 
   - Two records stating the same session identically — same start and end, charge time and energy — are one session, and only one copy is kept, whether the two came from different files or from the same one. This is what lets a billing period be estimated from the two monthly reports spanning it without every shared session counting twice. Each dropped copy is noted in the run log of the file it came from, in wording that says the fields were equal, so a collapse cannot be mistaken for a `DuplicateId`.

@@ -1,23 +1,37 @@
 # Questions for Evolute
 
-## Report frequency and formatting
+## Charges report
 
-- The software we have built to support our impact assessment of EV charging on the building's electric bill depends on the formats of the sample Session Report and Charges Report CSV files you have provided to us. If you make any changes at all to the formatting of data in the files or the naming convention of those files, we need to be given reasonable advance notice so we can adjust our software accordingly.
-- We need both the Session Report and Charges Report CSVs every month to conduct our impact assessment of EV charging on the building's electric bill. Confirm when these reports will be available each month, and how they will be provided (e.g., portal download, email attachment).
+- What are the cut-offs for the monthly charges data? Are they based on midnight on Standard Time all year (no change with DST) or midnight local time (changes with DST)?
 
-## Session Report
+## Not asked
+
+### Session report
 
 - How are sessions that start in one month and end in the next reported? Does the report always include an extra day at each end to ensure all sessions that touch the month are fully reported?
-- Session start and end times as currently reported are truncated to minutes.
-  - Can the reporting of session start and end times be modified to include the seconds? (This would allow us to have a clear view of whether sessions overlapping over a period of 1 minute really overlap or abut each other.)
-  - Either way: does the reported session end times denote the last second during which the EV was drawing power, or the first second during which it was not? We currently assume the former, and pad the reported end accordingly; under the latter, no padding would be needed. We can work with either, but the two call for different arithmetic, so we would rather not guess.
 - Can you provide `Energy_Use` with 3 decimal places instead of just 1?
 - The Charges Report contains a panel ID column. Can you also provide the panel ID in the session report?
 
-## Charges Report
+### Charges report
 
-- What do `Start_Date` and `End_Date` mean on each row? In the sample Charges Report we have seen, every row carries the first and last day of the month the report is for. Please explain what these dates are and whether we can expect them to never deviate from the month's first and last day.
 - What values can `Bill_Status` take and what do they mean? In the sample report, all lines show `Issued`.
+
+## Answers pending
+
+### Session Report
+
+- We would like to confirm the time zone used for the session start and end times in the report. In a previous email, you said that those timestamps were in local time (ET), which implies they would be subject to DST changes. However, the portal gives the clear impression that the timestamps are in Standard Time, with a fixed UTC offset that does not change with DST. Please confirm that indeed the UTC offset is fixed and the timestamps in the report are always in EST (no DST change) if I select the EST time zone.
+- The sample session report you sent us for June had session start and end timestamps truncated to minutes. The session report I downloaded from the portal shows start and end times with seconds precision and `Conn_DateTime_Start + Conn_Duration == Conn_DateTime_End`. Please confirm we can rely on the seconds precision going forward.
+
+### Charges Report
+
+- What do `Start_Date` and `End_Date` mean on each row? In the sample Charges Report we have seen, every row carries the first and last day of the month the report is for. (**BTW**, I downloaded a charges report from the portal but it was empty because the billing account has not yet been set up.)
+- What values can `Bill_Status` take and what do they mean? In the sample report, all lines show `Issued`.
+- When the charges report spans two months, will the charges for a user be combined in one line or will there be two lines for each user? And what will the start and end dates be in that case?
+
+### Report naming and formatting
+
+- The software depends on the formats of the Session Report and Charges Report CSV files. Please give us reasonable advance notice if you make any changes at all to the formatting of data in the files or the naming convention of those files.
 
 
 ## Answers received
