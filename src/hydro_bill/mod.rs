@@ -28,8 +28,8 @@
 //   `pub(crate) use`     also reachable as `crate::hydro_bill::X` from elsewhere in the crate
 //   `pub use`            also reachable as `ev_cost_recovery::hydro_bill::X` from outside
 //
-// What belongs in the public tier is settled by `docs/public-surface-usage.md`, which records what
-// the binaries, examples and integration tests actually name.
+// What belongs in the public tier is settled by `docs/archive/public-surface-usage.md`, which
+// records what the binaries, examples and integration tests actually name.
 
 mod bill_pdf;
 
@@ -37,6 +37,8 @@ mod billing_period;
 
 mod bill;
 
+// A module rather than a set of re-exports, and the only one here. `hydro_bill_dump` and
+// `tests/hydro_bill/all_bills` both write `pdf_text::`.
 pub mod pdf_text;
 
 // --- Named outside the crate -------------------------------------------------------------------

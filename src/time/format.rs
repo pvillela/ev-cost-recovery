@@ -2,9 +2,9 @@
 //!
 //! Every displayed time in this crate is stated on prevailing local time -- the clock a customer
 //! reads -- and names its offset, `EST` or `EDT`. Naming it is not decoration here. A session
-//! report states its times on a fixed standard-time offset (`time::SESSION_OFFSET`), so a session
-//! shown at `17:57 EDT` is the one the portal displays as `16:57`. Without the label the two
-//! readings look like a disagreement rather than the same instant on two clocks.
+//! report states its times on a fixed standard-time offset (`session::common::SESSION_OFFSET`),
+//! so a session shown at `17:57 EDT` is the one the portal displays as `16:57`. Without the label
+//! the two readings look like a disagreement rather than the same instant on two clocks.
 //!
 //! A single report can carry both labels. The kW and kVA peaks of one billing period can fall on
 //! opposite sides of a transition, and then the two headings differ by an hour of offset as well

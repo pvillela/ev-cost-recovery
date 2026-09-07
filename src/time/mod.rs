@@ -5,8 +5,8 @@
 //   `pub use`            also reachable as `ev_cost_recovery::time::X` from outside
 //
 // The public tier is the shorter list on purpose. What belongs in it is settled by
-// `docs/public-surface-usage.md`, which records what the binaries, examples and integration tests
-// actually name; adding to it means a caller outside the crate needs the name.
+// `docs/archive/public-surface-usage.md`, which records what the binaries, examples and
+// integration tests actually name; adding to it means a caller outside the crate needs the name.
 
 mod base;
 mod excel;

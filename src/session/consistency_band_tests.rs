@@ -40,7 +40,7 @@ use jiff::Timestamp;
 use std::path::PathBuf;
 
 /// The hour the fixture reports as 16:00–17:00, which contains every record. At
-/// `time::SESSION_OFFSET` that is 21:00–22:00 UTC, an hour later than the prevailing-local reading
+/// `common::SESSION_OFFSET` that is 21:00–22:00 UTC, an hour later than the prevailing-local reading
 /// this file used before the reports were confirmed to be stated on standard time.
 const LO: &str = "2026-06-15T21:00:00Z";
 const HI: &str = "2026-06-15T22:00:00Z";

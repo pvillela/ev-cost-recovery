@@ -4,8 +4,8 @@
 //   `pub(crate) use`     also reachable as `crate::green_button::X` from elsewhere in the crate
 //   `pub use`            also reachable as `ev_cost_recovery::green_button::X` from outside
 //
-// What belongs in the public tier is settled by `docs/public-surface-usage.md`, which records what
-// the binaries, examples and integration tests actually name.
+// What belongs in the public tier is settled by `docs/archive/public-surface-usage.md`, which
+// records what the binaries, examples and integration tests actually name.
 
 #![deny(private_interfaces, private_bounds, unnameable_types)]
 
@@ -41,9 +41,13 @@ pub use peaks::{MeterNotes, Peak, PeriodValues};
 
 pub(crate) use common::METER_INTERVAL;
 
-// `parse_espi_xml`, `Readings`, `Series` and `Reading` stay module-local. They are the parsed feed
-// in its working form, and everything outside this module reaches it through `Feed` and the two
-// readers above.
+// `parse_espi_xml` stays module-local. It is the parse step, and everything outside this module
+// reaches a feed through the two readers above.
+//
+// `Readings`, `Series` and `Reading` do not, though nothing outside the crate names one. They are
+// the parsed feed in its working form, and they type public fields of what the readers return --
+// `Feed`'s three series, `Readings::rows`. The `deny` at the top of this file is what says so:
+// leaving them module-local would make those fields readable and unnameable.
 
 // Two test modules of their own, rather than `#[cfg(test)]` blocks inside a source file: both need
 // `period_values`, which is `pub(crate)`, and neither belongs beside any one of the modules it

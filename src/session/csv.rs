@@ -4,10 +4,10 @@
 //! reported wall time is converted to a UTC instant, and every judgement call is recorded as an
 //! [`AnomalyKind`]. Nothing here knows about workbooks.
 //!
-//! The zone arithmetic itself is [`crate::time`]'s — a report states its times at
-//! `time::SESSION_OFFSET`, and `time::session_instant` does the conversion. This module holds only
-//! the policy: whether a record's own start, end and duration agree, and which anomaly to raise
-//! when they do not.
+//! The zone arithmetic itself is [`super::common`]'s — a report states its times at
+//! `common::SESSION_OFFSET`, and `common::session_instant` does the conversion. This module holds
+//! only the policy: whether a record's own start, end and duration agree, and which anomaly to
+//! raise when they do not.
 //!
 //! Two ways out, sharing all of that:
 //!
@@ -366,9 +366,9 @@ impl CsvSession {
     /// Resolves this session's reported wall times to UTC instants.
     ///
     /// Always one row. Evolute states its times on a clock that does not observe daylight saving —
-    /// `time::SESSION_OFFSET` — so a reported wall time names exactly one instant, all year. There
-    /// is no repeated hour to choose between and no skipped hour to refuse, which is why nothing
-    /// here consults `Conn_Duration` to place the record. That value is still checked, by
+    /// `common::SESSION_OFFSET` — so a reported wall time names exactly one instant, all year.
+    /// There is no repeated hour to choose between and no skipped hour to refuse, which is why
+    /// nothing here consults `Conn_Duration` to place the record. That value is still checked, by
     /// [`duration_is_consistent`], but it is now evidence about the record's own consistency rather
     /// than about which instant it sits on.
     fn resolve(&self, source: &Rc<PathBuf>, row: usize) -> Vec<Row> {

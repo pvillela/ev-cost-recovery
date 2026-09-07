@@ -161,18 +161,25 @@ impl Interval {
     }
 
     /// The overlap of the two intervals, `None` when they do not meet.
+    ///
+    /// An empty interval stands for the instant at its start, and meets an interval holding that
+    /// instant. The result is then empty too, so an empty `Some` is a meeting and not a miss:
+    /// callers must distinguish it from `None` rather than asking [`Self::is_empty`].
+    ///
+    /// Two abutting intervals do not meet, half-open ends being what they are, and two empty ones
+    /// never meet at all.
     pub fn intersection(&self, other: &Interval) -> Option<Self> {
         let start = self.start.max(other.start);
         let end = self.end().min(other.end());
-        if end < start
-            || self.duration == Duration::ZERO
-                && (self.start == other.start || self.start == other.end())
-            || other.duration == Duration::ZERO
-                && (other.start == self.start || other.start == self.end())
-        {
-            return None;
+        if start < end {
+            return Some(Self::from_start_end(start, end));
         }
-        Some(Self::from_start_end(start, end))
+        // Everything left touches at a point at most, and `contains` decides which of those count.
+        // It excludes its own end, so `[a, b)` and `[b, c)` abut rather than overlap; it holds
+        // nothing when the receiver is empty, so two empty intervals answer `false` both ways
+        // round. Where one is empty, whichever `contains` holds puts `start` at the instant.
+        let meets = other.contains(self.start) || self.contains(other.start);
+        meets.then(|| Self::new(start, Duration::ZERO))
     }
 
     /// The fraction of `self` that overlaps `other`.

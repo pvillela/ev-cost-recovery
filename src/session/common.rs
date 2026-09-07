@@ -97,13 +97,16 @@ pub(crate) fn duration_is_consistent(
 /// The offset a session report's timestamps are stated in, under the name a reader will recognise.
 ///
 /// The standard-time entry of [`TZ_OFFSETS`], named rather than indexed so the reason is visible at
-/// the use site, as [`BILLING_OFFSET`] is. `test::the_session_offset_is_the_standard_time_one` pins
-/// it, so reordering that array cannot silently move every session.
+/// the use site, as `time::base::BILLING_OFFSET` is.
+///
+/// Nothing here pins the index. `time::base::test::the_billing_offset_is_the_standard_time_one`
+/// pins the same entry, so reordering the array is caught today — but only because the two
+/// constants share an index, which the block above says they need not.
 pub const SESSION_OFFSET: (&str, i8) = TZ_OFFSETS[0];
 
 /// The zone a session report's wall times are read in: a fixed offset, with no daylight-saving rule.
 ///
-/// Built on the spot rather than resolved once, for the reason [`billing_zone`] gives.
+/// Built on the spot rather than resolved once, for the reason `time::base::billing_zone` gives.
 const fn session_zone() -> TimeZone {
     TimeZone::fixed(Offset::constant(SESSION_OFFSET.1))
 }
@@ -162,8 +165,9 @@ pub struct Session {
     pub conn_duration: Duration,
     /// Active charge time from `session report`.
     ///
-    /// Differs from [`Self::conn_span`] and from `conn_duration` by about a second. It does **not** measure charging as distinct from
-    /// connection. Evolute, 22 Jul 2026:
+    /// Differs from the reported span — [`Self::conn_end`] less [`Self::conn_start`], which
+    /// `Session::interval` places the session on — and from `conn_duration` by about a second. It
+    /// does **not** measure charging as distinct from connection. Evolute, 22 Jul 2026:
     ///
     /// > All 3 will show as almost the same, with Active charging being off by maybe 1 second due
     /// > to rounding as it is on a slightly different timer. These fields are here for grant
@@ -187,9 +191,10 @@ impl Session {
     /// Whether the session meets an interval.
     ///
     /// A session reported to start and end at the same instant meets the interval containing that
-    /// instant. It has no width to intersect with, so an intersection test alone would answer
-    /// `false` everywhere and the session would reach no segment — and its energy would be missing
-    /// from every demand figure.
+    /// instant, rather than meeting nothing for want of a width to intersect with. The rule is
+    /// [`Interval::intersection`]'s, and stated there; what turns on it is here, because such a
+    /// session would otherwise reach no segment and its energy would go missing from every demand
+    /// figure.
     ///
     /// # Panics
     ///
@@ -248,9 +253,9 @@ impl Session {
     ///
     /// **A statement about the record, not an input to any estimate.** The only things that read it
     /// are the [`AnomalyKind::ExcessiveAvgKw`] test and the figure the report prints beside that
-    /// flag. What a session contributes to a 15-minute average is the crate-private `interval_kw`,
-    /// which
-    /// prorates energy over the connection span and never divides by charge time.
+    /// flag. What a session contributes to a 15-minute average is the crate-private
+    /// `interval_kwh_allocation`, which [`Segment::agg_kw`] sums and divides by the segment's own
+    /// length; it prorates energy over the connection span and never divides by charge time.
     ///
     /// Non-finite when `charge_time` is zero, and left that way: inventing a figure for a record
     /// that states none would put it in front of a reader as though the record had said it.
@@ -280,11 +285,26 @@ impl Session {
     }
 
     /// The energy the session drew inside `interval`, in kWh.
+    ///
+    /// The session's energy prorated over its own span, which is the only assumption the data
+    /// supports: a report states energy and a span and nothing about how the draw was shaped in
+    /// between. A session half inside contributes half its energy.
+    ///
+    /// About *the session* — how much of it happened here — and so divided by the session's own
+    /// length. [`Self::interval_overlap_ratio`] asks the other question and divides by the
+    /// interval's. The two sit together and share no denominator.
+    ///
+    /// [`super::tou_kwh`] applies the same rule when it cuts a session at a price-period boundary,
+    /// so the energy side of a report and its demand side agree about where a session's energy went.
     pub(crate) fn interval_kwh_allocation(&self, interval: &Interval) -> f64 {
         self.interval().overlap_ratio(interval) * self.energy_use
     }
 
     /// The fraction of `interval` that the session overlaps.
+    ///
+    /// A session count weighted by presence: one covering the whole interval contributes 1, one
+    /// covering half contributes 0.5. This is what [`Segment::agg_count`] sums, and it is about
+    /// *the interval* — how much of it was occupied.
     pub(crate) fn interval_overlap_ratio(&self, interval: &Interval) -> f64 {
         match self.interval().intersection(interval) {
             None => 0.0,
@@ -917,8 +937,8 @@ impl Sessions {
     /// [`Self::spikes`].
     ///
     /// [`Self::excluded`] is left out rather than overlooked. Those records' start, end and
-    /// duration contradict each other, and an inverted one panics in `conn_span` before any
-    /// figure comes of it.
+    /// duration contradict each other, and an inverted one panics in `Interval::from_start_end`,
+    /// which `Session::interval` builds on, before any figure comes of it.
     ///
     /// A spike is counted because the contradiction in it is between energy and *charge time*: the
     /// energy is still energy, and the connection window it was drawn over is still a window. Only

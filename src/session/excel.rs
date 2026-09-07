@@ -307,8 +307,8 @@ fn write_sheet(
                 }
                 Source::ConnSpan => {
                     // Subtracting the UTC columns, not the local ones, so no zone enters the
-                    // arithmetic. The cell equals `Session::conn_span` — the span the estimating
-                    // logic places the session on, which is the point of showing it.
+                    // arithmetic. The cell equals `Session::interval`'s width — the span the
+                    // estimating logic places the session on, which is the point of showing it.
                     sheet.cell_mut((col, excel_row)).set_formula(format!(
                         "{end_utc_col}{excel_row}-{start_utc_col}{excel_row}"
                     ));
@@ -551,7 +551,7 @@ CKT-7,,Toronto,,Station-7,Evolute Inc.,FLO,G5,S13577,,2026-06-02 08:00:00,2026-0
         assert!((end_utc - expected).abs() < 1e-9, "{end_utc} vs {expected}");
 
         // Formulas, not cached values. Both operands are the *adjusted* UTC columns, so the cell
-        // equals `Session::conn_span` rather than a span starting at the reported start.
+        // equals `Session::interval`'s width rather than a span starting at the reported start.
         let expect_formula = format!(
             "{}2-{}2",
             column_letters(column_index(Source::ConnEndUtc)),

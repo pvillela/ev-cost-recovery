@@ -44,7 +44,7 @@ use jiff::{Timestamp, Zoned, tz::TimeZone};
 use std::rc::Rc;
 
 /// The interval of interest: the hour the fixture reports as 16:00–17:00, which at
-/// `time::SESSION_OFFSET` is 21:00–22:00 UTC.
+/// `common::SESSION_OFFSET` is 21:00–22:00 UTC.
 const LO: &str = "2026-06-15T21:00:00Z";
 const HI: &str = "2026-06-15T22:00:00Z";
 

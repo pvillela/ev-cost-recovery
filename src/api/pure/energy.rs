@@ -553,7 +553,7 @@ mod test {
 
     /// A record whose end precedes its start is flagged `InconsistentDuration` and takes no part.
     ///
-    /// Not merely a wrong figure if it did: `Session::conn_span` panics on an inverted span, so
+    /// Not merely a wrong figure if it did: `Session::interval` panics on an inverted span, so
     /// summing the list as given would bring the whole call down.
     #[test]
     fn a_record_that_contradicts_itself_is_left_out_rather_than_summed() {

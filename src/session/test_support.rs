@@ -47,8 +47,7 @@ pub(crate) fn session(
 ///
 /// [`session`] cannot express this: it derives the end from a positive elapsed time. The
 /// inversion has to be built by hand, and it is worth having because such a record is the one shape
-/// that no calculation may be handed --
-/// [`Session::conn_span`](super::Session::conn_span) panics on it rather than returning a
+/// that no calculation may be handed -- `Session::interval` panics on it rather than returning a
 /// negative span, so a caller that forgets to drop it brings the call down instead of reporting a
 /// wrong figure.
 ///

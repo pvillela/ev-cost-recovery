@@ -38,25 +38,27 @@ impl TouKwh {
 /// shaped in between. That is an assumption, and it is the only one the data supports; it is also
 /// why a figure over a short interval is worth less than the same figure over a long one.
 ///
-/// The span a session is spread over is [`Session::conn_span`], the reported start to the reported
+/// The span a session is spread over is `Session::interval`, the reported start to the reported
 /// end, taken at face value: the portal states both to the second.
 ///
 /// Sessions wholly outside `time_range` contribute nothing, so a caller may hand over more than the
 /// interval needs. A session reported to start and end at the same instant has no span to spread
-/// over, so its energy is filed whole under the band that instant falls in — see the comment on
-/// that branch.
+/// over, and all of its energy goes to the band holding that instant.
 pub fn tou_kwh(time_range: Interval, sessions: &[impl Deref<Target = Session>]) -> TouKwh {
     let mut on_peak_kwh = 0.0;
     let mut mid_peak_kwh = 0.0;
     let mut off_peak_kwh = 0.0;
 
+    // The range is partitioned once rather than each session's overlap with it separately. The
+    // bands are a property of the calendar, not of any session, and this is what makes the split
+    // exhaustive: they tile `time_range`, so a session's contributions to them add up to its
+    // contribution to the whole range, and no case has to be made for a session of no duration --
+    // the bands are half-open, so exactly one of them holds its instant and takes all its energy.
+    let bands = tou_partition(time_range);
+
     for s in sessions {
-        let overlap = match s.interval().intersection(&time_range) {
-            None => continue,
-            Some(overlap) => overlap,
-        };
-        for (tou, itvl) in tou_partition(overlap) {
-            let tou_kwh = s.interval_kwh_allocation(&itvl);
+        for &(tou, band) in &bands {
+            let tou_kwh = s.interval_kwh_allocation(&band);
             match tou {
                 Tou::OnPeak => on_peak_kwh += tou_kwh,
                 Tou::MidPeak => mid_peak_kwh += tou_kwh,

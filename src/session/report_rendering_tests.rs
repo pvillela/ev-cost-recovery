@@ -37,7 +37,7 @@ use jiff::Timestamp;
 /// `(fixture stem, interval start UTC, interval end UTC)`.
 ///
 /// Both sit on 2026-06-15 and cover the hour the fixtures report as 16:00–17:00. The reports state
-/// their times at `time::SESSION_OFFSET`, so that hour is 21:00–22:00 UTC; rendered in prevailing
+/// their times at `common::SESSION_OFFSET`, so that hour is 21:00–22:00 UTC; rendered in prevailing
 /// local time it reads as 17:00–18:00 EDT, which is what the goldens show.
 const CASES: [(&str, &str, &str); 2] = [
     (
