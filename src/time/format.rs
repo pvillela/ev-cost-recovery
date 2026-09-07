@@ -14,7 +14,7 @@
 //! disagree with the instant beside it. Deriving it from `TZ_OFFSETS` instead would be a second
 //! copy of the zone's rules to keep in step.
 
-use super::base::time_zone;
+use super::time_zone;
 use jiff::{Timestamp, Zoned};
 
 /// The local reading of an instant. Every function here starts from this.

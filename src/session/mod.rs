@@ -10,8 +10,6 @@
 mod common;
 use common::*;
 
-mod energy;
-
 // Crate-private. Its two readers -- `csv_sessions` (from `api::io` and the `#[cfg(test)]`
 // modules below) and `csv_session_rows` (from `excel`) -- are why those tests live in `src/`
 // rather than `tests/`. Nothing outside the crate calls either: the API takes paths and hands
@@ -19,10 +17,9 @@ mod energy;
 // type both return -- off the public surface too.
 mod csv;
 
-mod file_name;
-
+mod energy;
 mod excel;
-
+mod file_name;
 mod peak;
 mod report;
 
@@ -34,26 +31,22 @@ mod site_model;
 pub use common::{Segment, Session, Sessions};
 pub use excel::{SessionWriteReport, session_csv_to_xlsx};
 pub use file_name::{SessionReportNameError, parse_session_report_name, report_coverage};
-pub use peak::IntervalEstimates;
 pub use report::site_load_report;
 
 // --- Reachable outside the crate -------------------------------------------------------------------
 
-// Not named directly by anything outside the crate. `SessionReportCoverage` is public because
-// `api::pure` re-exports it; the rest are public because a caller reaches them by reading a field
-// of something the API returns -- `SessionNotes` and `TouKwh` off an `Energy`, `AnomalyKind` off a
-// `SessionNotes`, `RSession` off a `Sessions`. `api/mod.rs` explains why a field type is not
-// re-exported: reading one never requires naming it, but the type still has to be public.
-pub use common::{AnomalyKind, BREAKER_MAX_NORMAL_KW, BREAKER_RATING_KW, RSession, SessionNotes};
+pub use common::{AnomalyKind, BREAKER_RATING_KW};
 pub use energy::TouKwh;
 pub use file_name::SessionReportCoverage;
 pub use peak::EstimateSet;
 
 // --- Named elsewhere inside the crate ----------------------------------------------------------
 
+pub(crate) use common::{BREAKER_MAX_NORMAL_KW, RSession, SessionNotes};
 pub(crate) use csv::csv_sessions;
 pub(crate) use energy::tou_kwh;
 pub(crate) use file_name::reports_cover;
+pub(crate) use peak::IntervalEstimates;
 pub(crate) use peak::estimates_from_sessions;
 
 // --- Tests -------------------------------------------------------------------------------------

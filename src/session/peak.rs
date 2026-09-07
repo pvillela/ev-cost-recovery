@@ -350,7 +350,7 @@ mod test {
             .iter()
             .map(|seg| {
                 seg.sessions.iter().fold(0.0, |acc, s| {
-                    acc + s.interval_kwh(&Interval::new(seg.start(), SEGMENT_DURATION))
+                    acc + s.interval_kwh_allocation(&Interval::new(seg.start(), SEGMENT_DURATION))
                 })
             })
             .collect();
@@ -691,7 +691,7 @@ mod test {
         let elsewhere = session("X", "2026-06-16T20:00:00Z", "2026-06-16T21:00:00Z", 5.0);
         let first = Interval::from_start_end(hour().start, hour().start + SEGMENT_DURATION);
 
-        assert!(elsewhere.interval_overlap(&first).is_zero());
+        assert!(!elsewhere.intersects(&first));
         assert_eq!(elsewhere.interval_overlap_ratio(&first), 0.0);
 
         // And it never reaches a segment in the first place.

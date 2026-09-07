@@ -17,17 +17,15 @@
 //! [`super::pdf_text`] supplies the positioned text and knows nothing of bills; everything that
 //! knows what a Toronto Hydro bill looks like is here.
 
+use super::{
+    HydroBill,
+    pdf_text::{Fragment, Line, PdfTextError, read_pages},
+};
+use jiff::civil::Date;
 use std::{
     error::Error,
     fmt,
     path::{Path, PathBuf},
-};
-
-use jiff::civil::Date;
-
-use super::{
-    bill::HydroBill,
-    pdf_text::{self, Fragment, Line, PdfTextError},
 };
 
 /// Where the charges column ends, in PDF points from the left edge of the page.
@@ -59,7 +57,7 @@ const MONTHS: [&str; 12] = [
 /// left out of the totals: these numbers get reconciled against metered consumption, and a charge
 /// that silently reads as zero is worse than no answer.
 pub fn hydro_bill_from_pdf(path: &Path) -> Result<HydroBill, BillError> {
-    let pages = pdf_text::read_pages(path).map_err(|source| BillError::Unreadable {
+    let pages = read_pages(path).map_err(|source| BillError::Unreadable {
         path: path.to_path_buf(),
         source,
     })?;

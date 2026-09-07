@@ -13,6 +13,7 @@ use ev_cost_recovery::{
     },
     log::SourceLog,
     session::parse_session_report_name,
+    time::time_zone,
 };
 use jiff::civil;
 use std::path::{Path, PathBuf};
@@ -216,9 +217,7 @@ fn checked_figure(value: f64, what: &str, text: &str) -> Result<f64, String> {
 
 /// Today, in the zone the rest of the app works in.
 fn today() -> civil::Date {
-    jiff::Zoned::now()
-        .with_time_zone(ev_cost_recovery::time::time_zone())
-        .date()
+    jiff::Zoned::now().with_time_zone(time_zone()).date()
 }
 
 // --------------------------------------------------------------------------------------------

@@ -115,52 +115,90 @@ pub(crate) fn standard_midnight(d: Date) -> Timestamp {
 }
 
 // ---------------------------------------------------------------------------
-// Session report time
+// Interval
 // ---------------------------------------------------------------------------
-//
-// Evolute states `Conn_DateTime_Start` and `Conn_DateTime_End` on a clock that does not observe
-// daylight saving. A reported wall time therefore names exactly one instant, all year: there is no
-// hour that occurs twice and none that is skipped, so nothing has to be inferred from
-// `Conn_Duration` to place a session on a timeline.
-//
-// Separate from `BILLING_OFFSET` although the two hold the same value. They are the same value for
-// unrelated reasons -- one is how Toronto Hydro cuts a period, the other is how Evolute stamps a
-// row -- and either could change without the other. Sharing the constant would make a change to
-// the billing rule move every session by an hour.
 
-/// The offset a session report's timestamps are stated in, under the name a reader will recognise.
-///
-/// The standard-time entry of [`TZ_OFFSETS`], named rather than indexed so the reason is visible at
-/// the use site, as [`BILLING_OFFSET`] is. `test::the_session_offset_is_the_standard_time_one` pins
-/// it, so reordering that array cannot silently move every session.
-pub const SESSION_OFFSET: (&str, i8) = TZ_OFFSETS[0];
-
-/// The zone a session report's wall times are read in: a fixed offset, with no daylight-saving rule.
-///
-/// Built on the spot rather than resolved once, for the reason [`billing_zone`] gives.
-const fn session_zone() -> TimeZone {
-    TimeZone::fixed(Offset::constant(SESSION_OFFSET.1))
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd)]
+/// Time interval, half-open: it includes its start and excludes its end.
+pub struct Interval {
+    pub start: Timestamp,
+    pub duration: Duration,
 }
 
-/// The instant a session report's reported wall time names.
-///
-/// Cannot fail, and that is the point of the fixed offset: there is no gap for a wall time to fall
-/// into and no fold for it to be ambiguous in, so every reported time places exactly one session.
-pub(crate) fn session_instant(dt: DateTime) -> Timestamp {
-    dt.to_zoned(session_zone())
-        .expect("a fixed offset has neither gaps nor folds")
-        .timestamp()
+impl Interval {
+    pub fn new(start: Timestamp, duration: Duration) -> Interval {
+        Self { start, duration }
+    }
+
+    /// Construct `Self` from `start` and `end`.
+    ///
+    /// # Panics
+    /// If `end < start`.
+    pub fn from_start_end(start: Timestamp, end: Timestamp) -> Interval {
+        let duration = duration(start, end);
+        Self { start, duration }
+    }
+
+    pub fn end(&self) -> Timestamp {
+        self.start + self.duration
+    }
+
+    /// Whether `at` lies inside, counting the start and excluding the end as everything here does.
+    pub fn contains(&self, at: Timestamp) -> bool {
+        self.start <= at && at < self.end()
+    }
+
+    pub fn is_subset(&self, other: &Self) -> bool {
+        self.start >= other.start && self.end() <= other.end()
+    }
+
+    pub fn is_superset(&self, other: &Self) -> bool {
+        other.is_subset(self)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.duration == Duration::ZERO
+    }
+
+    /// The overlap of the two intervals, `None` when they do not meet.
+    pub fn intersection(&self, other: &Interval) -> Option<Self> {
+        let start = self.start.max(other.start);
+        let end = self.end().min(other.end());
+        if end < start
+            || self.duration == Duration::ZERO
+                && (self.start == other.start || self.start == other.end())
+            || other.duration == Duration::ZERO
+                && (other.start == self.start || other.start == self.end())
+        {
+            return None;
+        }
+        Some(Self::from_start_end(start, end))
+    }
+
+    /// The fraction of `self` that overlaps `other`.
+    ///
+    /// If `self` and `other` don't overlap then it is `0.0`,
+    /// else if `self` is contained in `other` it is 1.0,
+    /// else it is the ratio of the overlap duration to `self` duration.
+    ///
+    /// The result is always finite, even when `self` has zero duration.
+    pub fn overlap_ratio(&self, other: &Self) -> f64 {
+        match self.intersection(other) {
+            None => 0.0,
+            Some(overlap) => {
+                if overlap == *self {
+                    1.0
+                } else {
+                    overlap.duration.as_secs_f64() / self.duration.as_secs_f64()
+                }
+            }
+        }
+    }
 }
 
-/// The wall time a session report would state for an instant: the inverse of [`session_instant`].
-///
-/// Test-only. The workbook writes the CSV's own text for its two local columns and derives none of
-/// its own, so nothing in a release build converts back. A test that checks what the reader did
-/// with a reported time has to speak in reported time, and this is how.
-#[cfg(test)]
-pub(crate) fn session_wall_time(ts: Timestamp) -> DateTime {
-    ts.to_zoned(session_zone()).datetime()
-}
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
 
 // cargo test --lib -- time::base::test --nocapture
 #[cfg(test)]
@@ -228,56 +266,5 @@ mod test {
                 "{y}-{m}-{d}"
             );
         }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Interval
-// ---------------------------------------------------------------------------
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd)]
-/// Time interval, half-open: it includes its start and excludes its end.
-pub struct Interval {
-    pub start: Timestamp,
-    pub duration: Duration,
-}
-
-impl Interval {
-    pub fn new(start: Timestamp, duration: Duration) -> Interval {
-        Self { start, duration }
-    }
-
-    pub fn from_start_end(start: Timestamp, end: Timestamp) -> Interval {
-        let duration = duration(start, end);
-        Self { start, duration }
-    }
-
-    pub fn end(&self) -> Timestamp {
-        self.start + self.duration
-    }
-
-    /// Whether `at` lies inside, counting the start and excluding the end as everything here does.
-    pub fn contains(&self, at: Timestamp) -> bool {
-        self.start <= at && at < self.end()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.duration == Duration::ZERO
-    }
-
-    /// The overlap of the two intervals, empty when they do not meet.
-    ///
-    /// Only [`Self::is_empty`] is meaningful about an empty result: `start` is then the later of
-    /// the two starts, which is a point in neither overlap nor either interval. Ask whether the
-    /// result is empty before reading anything else off it.
-    pub fn intersection(&self, other: &Interval) -> Self {
-        let start = self.start.max(other.start);
-        let end = self.end().min(other.end());
-        let duration = if start <= end {
-            duration(start, end)
-        } else {
-            Duration::ZERO
-        };
-        Self { start, duration }
     }
 }

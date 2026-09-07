@@ -25,9 +25,8 @@
 //! current schedule applies throughout: see `docs/maintenance-manual.md`, "The Ontario holiday
 //! calendar is not the ESA list", for what would force a re-check.
 
-use std::collections::BTreeSet;
-
 use jiff::civil::{Date, Weekday, date};
+use std::collections::BTreeSet;
 
 /// One holiday on the OEB TOU schedule.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]

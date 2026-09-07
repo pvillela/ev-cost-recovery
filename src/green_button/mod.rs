@@ -7,6 +7,8 @@
 // What belongs in the public tier is settled by `docs/public-surface-usage.md`, which records what
 // the binaries, examples and integration tests actually name.
 
+#![deny(private_interfaces, private_bounds, unnameable_types)]
+
 // No re-export at all: this module adds one inherent method to `hydro_bill::BillingPeriod` and
 // defines nothing of its own. Declaring it is what puts the method on the type.
 mod billing;
@@ -26,20 +28,18 @@ mod read_xml;
 
 // --- Named outside the crate -------------------------------------------------------------------
 
-pub use common::Anomaly;
-pub use espi::Feed;
+pub use common::{Anomaly, Reading};
+pub use espi::{Feed, Readings, Series};
 pub use excel::{GbWriteReport, write_gb_workbook};
-pub use read_xml::{read_gb_feed, read_gb_for_billing_period};
+pub use read_xml::{GbReadError, read_gb_feed, read_gb_for_billing_period};
 // Not named directly by anything outside the crate, but `api` re-exports both, which makes them
 // public by that route: `PeriodValues` is a parameter of `pure::peak_power` and `MeterNotes` is a
 // field of what it returns.
-pub use peaks::{MeterNotes, PeriodValues};
+pub use peaks::{MeterNotes, Peak, PeriodValues};
 
 // --- Named elsewhere inside the crate ----------------------------------------------------------
 
 pub(crate) use common::METER_INTERVAL;
-pub(crate) use peaks::Peak;
-pub(crate) use read_xml::GbReadError;
 
 // `parse_espi_xml`, `Readings`, `Series` and `Reading` stay module-local. They are the parsed feed
 // in its working form, and everything outside this module reaches it through `Feed` and the two

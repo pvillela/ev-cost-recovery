@@ -9,11 +9,8 @@
 // actually name; adding to it means a caller outside the crate needs the name.
 
 mod base;
-
 mod excel;
-
 mod format;
-
 mod tou;
 
 // A module rather than a re-export: `gb_peak_values` calls `holidays::holidays(year)`, and
@@ -22,25 +19,17 @@ pub mod holidays;
 
 // --- Named outside the crate -------------------------------------------------------------------
 
-pub use base::{Interval, local_date, time_zone};
-// Every rendered time in the crate goes through these, so there is one answer to "which zone is
-// this shown in" rather than one per module. Public because the desktop app renders interval
-// headings of its own. See `format`'s own docs for why the label is there.
-pub use format::{zoned_minute, zoned_span, zoned_span_end};
-// Not named directly by anything outside the crate, but `api::pure::energy` re-exports it, which
-// makes it public by that route: `TouKwh` is keyed on it, so a caller reading one has to be able
-// to write the key.
-pub use tou::Tou;
+pub use base::{local_date, time_zone};
+pub use format::zoned_span;
 
 // --- Named elsewhere inside the crate ----------------------------------------------------------
 
-#[cfg(test)]
-pub(crate) use base::session_wall_time;
 pub(crate) use base::{
-    duration, local_datetime, local_hour, local_midnight, session_instant, standard_date,
+    Interval, TZ_OFFSETS, local_datetime, local_hour, local_midnight, standard_date,
     standard_midnight,
 };
 pub(crate) use excel::{
     serial_of_civil, serial_of_date, serial_of_duration, serial_of_instant, serial_of_local,
 };
-pub(crate) use tou::{is_off_peak, tou_of, tou_partition};
+pub(crate) use format::{zoned_minute, zoned_span_end};
+pub(crate) use tou::{Tou, is_off_peak, tou_of, tou_partition};

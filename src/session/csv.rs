@@ -32,7 +32,7 @@ use super::{
 use crate::{
     csv::{CsvReadError, Document, Table},
     log::{RunLog, SourceLog},
-    time::session_instant,
+    session::common::session_instant,
 };
 use jiff::{Timestamp, civil};
 use std::{
@@ -431,7 +431,7 @@ impl CsvSession {
 // cargo test --lib -- session::csv::test --nocapture
 mod test {
     use super::*;
-    use crate::session::test_support::timing_anomalies;
+    use crate::session::{common::session_wall_time, test_support::timing_anomalies};
     use jiff::{SignedDuration, tz::TimeZone};
     use std::{env, fs, path::PathBuf, process};
 
@@ -471,7 +471,7 @@ mod test {
     /// Not prevailing local time, which runs an hour ahead of this through the summer. A test about
     /// what the reader did with a reported time has to speak in reported time.
     fn reported_of(ts: Timestamp) -> civil::DateTime {
-        crate::time::session_wall_time(ts)
+        session_wall_time(ts)
     }
 
     /// A scratch directory of its own per test, since these run in parallel within one process.

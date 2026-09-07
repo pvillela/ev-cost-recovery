@@ -12,14 +12,13 @@
 //! All of these are infallible. The fallible forms could only fail on a civil date-time that UTC
 //! cannot represent, and UTC has no gaps or folds, so the error was unreachable.
 
+use super::local_datetime;
 use jiff::{
     Timestamp,
     civil::{Date, DateTime},
     tz::TimeZone,
 };
 use std::time::Duration;
-
-use super::local_datetime;
 
 /// Excel's day zero for the 1900 date system, as a Unix timestamp: 1899-12-30T00:00:00Z.
 /// Verified by [`test::the_epoch_constant_matches_jiff`].

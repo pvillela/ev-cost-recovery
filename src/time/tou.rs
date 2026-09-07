@@ -161,10 +161,11 @@ pub fn tou_partition(interval: Interval) -> Vec<(Tou, Interval)> {
                 Some(&(next_hour, _)) => local_hour(day, next_hour),
                 None => local_midnight(tomorrow(day)),
             };
-            let piece = interval.intersection(&Interval::from_start_end(block_start, block_end));
-            if piece.is_empty() {
-                continue;
-            }
+            let piece =
+                match interval.intersection(&Interval::from_start_end(block_start, block_end)) {
+                    None => continue,
+                    Some(piece) => piece,
+                };
             match pieces.last_mut() {
                 // Merging is what makes the partition maximal, and it has to work across the day
                 // boundary too -- a weekend is three calendar days of one off-peak run.

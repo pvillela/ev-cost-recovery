@@ -4,9 +4,13 @@ use super::site_model::{
 };
 use crate::{
     log::SourceLog,
-    time::{Interval, duration, time_zone},
+    time::{Interval, TZ_OFFSETS, time_zone},
 };
-use jiff::{Timestamp, Zoned};
+use jiff::{
+    Timestamp, Zoned,
+    civil::DateTime,
+    tz::{Offset, TimeZone},
+};
 use std::{
     collections::BTreeMap,
     error::Error,
@@ -77,6 +81,54 @@ pub(crate) fn duration_is_consistent(
 }
 
 // ---------------------------------------------------------------------------
+// Session report time
+// ---------------------------------------------------------------------------
+//
+// Evolute states `Conn_DateTime_Start` and `Conn_DateTime_End` on a clock that does not observe
+// daylight saving. A reported wall time therefore names exactly one instant, all year: there is no
+// hour that occurs twice and none that is skipped, so nothing has to be inferred from
+// `Conn_Duration` to place a session on a timeline.
+//
+// Separate from `BILLING_OFFSET` although the two hold the same value. They are the same value for
+// unrelated reasons -- one is how Toronto Hydro cuts a period, the other is how Evolute stamps a
+// row -- and either could change without the other. Sharing the constant would make a change to
+// the billing rule move every session by an hour.
+
+/// The offset a session report's timestamps are stated in, under the name a reader will recognise.
+///
+/// The standard-time entry of [`TZ_OFFSETS`], named rather than indexed so the reason is visible at
+/// the use site, as [`BILLING_OFFSET`] is. `test::the_session_offset_is_the_standard_time_one` pins
+/// it, so reordering that array cannot silently move every session.
+pub const SESSION_OFFSET: (&str, i8) = TZ_OFFSETS[0];
+
+/// The zone a session report's wall times are read in: a fixed offset, with no daylight-saving rule.
+///
+/// Built on the spot rather than resolved once, for the reason [`billing_zone`] gives.
+const fn session_zone() -> TimeZone {
+    TimeZone::fixed(Offset::constant(SESSION_OFFSET.1))
+}
+
+/// The instant a session report's reported wall time names.
+///
+/// Cannot fail, and that is the point of the fixed offset: there is no gap for a wall time to fall
+/// into and no fold for it to be ambiguous in, so every reported time places exactly one session.
+pub(crate) fn session_instant(dt: DateTime) -> Timestamp {
+    dt.to_zoned(session_zone())
+        .expect("a fixed offset has neither gaps nor folds")
+        .timestamp()
+}
+
+/// The wall time a session report would state for an instant: the inverse of [`session_instant`].
+///
+/// Test-only. The workbook writes the CSV's own text for its two local columns and derives none of
+/// its own, so nothing in a release build converts back. A test that checks what the reader did
+/// with a reported time has to speak in reported time, and this is how.
+#[cfg(test)]
+pub(crate) fn session_wall_time(ts: Timestamp) -> DateTime {
+    ts.to_zoned(session_zone()).datetime()
+}
+
+// ---------------------------------------------------------------------------
 // Session
 // ---------------------------------------------------------------------------
 
@@ -128,6 +180,10 @@ pub struct Session {
 }
 
 impl Session {
+    pub(crate) fn interval(&self) -> Interval {
+        Interval::from_start_end(self.conn_start, self.conn_end)
+    }
+
     /// Whether the session meets an interval.
     ///
     /// A session reported to start and end at the same instant meets the interval containing that
@@ -150,11 +206,7 @@ impl Session {
     /// one caller that legitimately holds excluded sessions — the report, which lists them on
     /// purpose — asks [`Self::lenient_intersects`] instead.
     pub(crate) fn intersects(&self, interval: &Interval) -> bool {
-        let sess_itvl = Interval::from_start_end(self.conn_start, self.conn_end);
-        match sess_itvl.is_empty() {
-            true => interval.contains(self.conn_start),
-            false => !sess_itvl.intersection(interval).is_empty(),
-        }
+        self.interval().intersection(interval).is_some()
     }
 
     /// [`Self::intersects`], but answering for a session whose span is inverted rather than
@@ -176,9 +228,9 @@ impl Session {
             true => (self.conn_start, self.conn_end),
             false => (self.conn_end, self.conn_start),
         };
-        !Interval::from_start_end(lo, hi)
+        Interval::from_start_end(lo, hi)
             .intersection(interval)
-            .is_empty()
+            .is_some()
     }
 
     /// Reported connection start in local time (ET).
@@ -189,20 +241,6 @@ impl Session {
     /// Reported connection end in local time (ET).
     pub fn conn_end_local(&self) -> Zoned {
         Zoned::new(self.conn_end, time_zone())
-    }
-
-    /// The reported connection span, `conn_end - conn_start`.
-    ///
-    /// Distinct from [`Self::conn_duration`], which is the elapsed time the report *states*. The
-    /// two agree within `DURATION_TOLERANCE` for any record `duration_is_consistent` accepts; this
-    /// is the one the estimating logic places the session on.
-    ///
-    /// # Panics
-    ///
-    /// On an inverted span. Such a record fails `duration_is_consistent` and is sorted into
-    /// [`Sessions::excluded`], so nothing that estimates reaches this.
-    pub fn conn_span(&self) -> Duration {
-        duration(self.conn_start, self.conn_end)
     }
 
     /// What the record says about its own average power: [`Self::energy_use`] over
@@ -241,53 +279,17 @@ impl Session {
                 || self.energy_use != other.energy_use)
     }
 
-    /// How long the session and the interval overlap, zero when they do not meet.
-    ///
-    /// Exact: reported times are stated to the second and taken at face value.
-    pub(crate) fn interval_overlap(&self, interval: &Interval) -> Duration {
-        let sess_itvl = Interval::from_start_end(self.conn_start, self.conn_end);
-        sess_itvl.intersection(interval).duration
-    }
-
-    /// How much of `interval` the session covers, as a fraction of the interval.
-    ///
-    /// A session count weighted by presence: one covering the whole interval contributes 1, one
-    /// covering half contributes 0.5. This is what [`Segment::agg_count`] sums, and it is about
-    /// *the interval* — how much of it was occupied.
-    pub(crate) fn interval_overlap_ratio(&self, interval: &Interval) -> f64 {
-        self.interval_overlap(interval).as_secs_f64() / interval.duration.as_secs_f64()
-    }
-
     /// The energy the session drew inside `interval`, in kWh.
-    ///
-    /// The session's energy prorated over its own span, which is the only assumption the data
-    /// supports: a report states energy and a span and nothing about how the draw was shaped in
-    /// between. A session half inside contributes half its energy. This is about *the session* —
-    /// how much of it happened here — and is the counterpart of [`Self::interval_overlap_ratio`],
-    /// which asks the other question.
-    ///
-    /// The same rule [`super::tou_kwh`] applies when it cuts a session at a price-period boundary,
-    /// so the energy side of a report and its demand side agree about where a session's energy went.
-    pub(crate) fn interval_kwh(&self, interval: &Interval) -> f64 {
-        let span = self.conn_span();
-        if span.is_zero() {
-            // Nothing to prorate over: the session is one instant. All of its energy is inside if
-            // that instant is, and none of it otherwise.
-            return match interval.contains(self.conn_start) {
-                true => self.energy_use,
-                false => 0.0,
-            };
-        }
-        self.energy_use * self.interval_overlap(interval).as_secs_f64() / span.as_secs_f64()
+    pub(crate) fn interval_kwh_allocation(&self, interval: &Interval) -> f64 {
+        self.interval().overlap_ratio(interval) * self.energy_use
     }
 
-    /// The session's contribution to `interval`'s average power, in kW.
-    ///
-    /// The energy it drew inside the interval, over the interval's length. Nothing here divides by
-    /// `Active_Charge_Time`: the figure wanted is an average over a fixed window, and a session
-    /// contributes to it in proportion to the energy it put into that window.
-    pub(crate) fn interval_kw(&self, interval: &Interval) -> f64 {
-        self.interval_kwh(interval) / (interval.duration.as_secs_f64() / 3600.0)
+    /// The fraction of `interval` that the session overlaps.
+    pub(crate) fn interval_overlap_ratio(&self, interval: &Interval) -> f64 {
+        match self.interval().intersection(interval) {
+            None => 0.0,
+            Some(overlap) => interval.overlap_ratio(&overlap),
+        }
     }
 }
 
@@ -460,9 +462,10 @@ impl Segment {
 
     /// The sessions' average power, weighted the same way. Seeded as [`Self::agg_count`] is.
     pub fn agg_kw(&self) -> f64 {
-        self.sessions
-            .iter()
-            .fold(0.0, |acc, s| acc + s.interval_kw(&self.interval))
+        let agg_kwh = self.sessions.iter().fold(0.0, |acc, s| {
+            acc + s.interval_kwh_allocation(&self.interval)
+        });
+        agg_kwh / self.interval.duration.as_secs_f64() * Duration::from_hours(1).as_secs_f64()
     }
 
     /// Site load implied by how many vehicles were connected over the segment.

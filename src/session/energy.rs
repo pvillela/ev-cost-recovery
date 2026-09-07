@@ -1,6 +1,6 @@
 use super::Session;
-use crate::time::{Interval, Tou, tou_of, tou_partition};
-use std::{ops::Deref, time::Duration};
+use crate::time::{Interval, Tou, tou_partition};
+use std::ops::Deref;
 
 /// Energy split across the three Ontario time-of-use bands, in kilowatt-hours.
 ///
@@ -51,30 +51,12 @@ pub fn tou_kwh(time_range: Interval, sessions: &[impl Deref<Target = Session>]) 
     let mut off_peak_kwh = 0.0;
 
     for s in sessions {
-        // A session reported to start and end at the same instant has no span to prorate over.
-        // `Session::interval_kwh` carries that rule -- all of the energy is inside if the instant
-        // is -- and it is applied here to the whole range rather than band by band, because a
-        // session of no duration cannot straddle a boundary.
-        if s.conn_span().is_zero() {
-            let kwh = s.interval_kwh(&time_range);
-            if kwh == 0.0 {
-                continue;
-            }
-            // One second at the instant, only to name the band. Ontario's price periods all change
-            // on the hour, so a second lies in exactly one of them.
-            let probe = Interval::new(s.conn_start, Duration::from_secs(1));
-            match tou_of(probe).expect("a one-second interval lies in a single price period") {
-                Tou::OnPeak => on_peak_kwh += kwh,
-                Tou::MidPeak => mid_peak_kwh += kwh,
-                Tou::OffPeak => off_peak_kwh += kwh,
-            }
-            continue;
-        }
-
-        let session_interval = Interval::new(s.conn_start, s.conn_span());
-        let overlap = session_interval.intersection(&time_range);
+        let overlap = match s.interval().intersection(&time_range) {
+            None => continue,
+            Some(overlap) => overlap,
+        };
         for (tou, itvl) in tou_partition(overlap) {
-            let tou_kwh = s.interval_kwh(&itvl);
+            let tou_kwh = s.interval_kwh_allocation(&itvl);
             match tou {
                 Tou::OnPeak => on_peak_kwh += tou_kwh,
                 Tou::MidPeak => mid_peak_kwh += tou_kwh,

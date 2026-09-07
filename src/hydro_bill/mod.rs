@@ -37,8 +37,6 @@ mod billing_period;
 
 mod bill;
 
-// A module rather than a set of re-exports, and the only one here. `hydro_bill_dump` and
-// `tests/hydro_bill/all_bills` both write `pdf_text::`.
 pub mod pdf_text;
 
 // --- Named outside the crate -------------------------------------------------------------------
@@ -48,11 +46,12 @@ pub use billing_period::{BILL_END_DAY, bill_start_day};
 // Not named directly by anything outside the crate, but `api::pure` re-exports it: `energy` and
 // `peak_power_cost` both take one, so a caller has to be able to write the type.
 pub use bill::{HydroBill, ZeroDenominator};
-// A variant payload of four public error enums in `api::pure`, so a caller matching past the first
-// level has to be able to write it.
-pub use billing_period::NotABillingPeriodEnding;
 
 // --- Named elsewhere inside the crate ----------------------------------------------------------
+
+// A variant payload of four public error enums in `api::pure`, so a caller matching past the first
+// level has to be able to write it.
+pub(crate) use billing_period::NotABillingPeriodEnding;
 
 pub(crate) use billing_period::{
     BillingPeriod, MAX_BILL_END_DAY, billing_period_dates, billing_period_span,

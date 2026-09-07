@@ -17,16 +17,14 @@
 //! Series are told apart by `uom`, the unit of measure. `kind` is not usable: kWh and kVA both
 //! carry `kind=12` in this feed.
 
+use super::{Anomaly, METER_INTERVAL, Reading, is_on_grid};
+use jiff::Timestamp;
+use roxmltree::{Document, Node};
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
     error::Error,
     path::{Path, PathBuf},
 };
-
-use jiff::Timestamp;
-use roxmltree::{Document, Node};
-
-use super::{Anomaly, METER_INTERVAL, Reading, is_on_grid};
 
 /// [`METER_INTERVAL`] in seconds, which is the form the feed states it in.
 const METER_INTERVAL_SECS: i64 = METER_INTERVAL.as_secs() as i64;
