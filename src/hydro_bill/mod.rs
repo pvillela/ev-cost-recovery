@@ -28,8 +28,9 @@
 //   `pub(crate) use`     also reachable as `crate::hydro_bill::X` from elsewhere in the crate
 //   `pub use`            also reachable as `ev_cost_recovery::hydro_bill::X` from outside
 //
-// What belongs in the public tier is settled by `docs/archive/public-surface-usage.md`, which
-// records what the binaries, examples and integration tests actually name.
+// What belongs in the public tier is settled by what the binaries, examples and integration tests
+// actually name -- plus whatever `api` re-exports, since that publishes a type by a second route,
+// and whatever the `deny` in `lib.rs` refuses to leave unnameable.
 
 mod bill_pdf;
 
@@ -48,13 +49,16 @@ pub use billing_period::{BILL_END_DAY, bill_start_day};
 // Not named directly by anything outside the crate, but `api::pure` re-exports it: `energy` and
 // `peak_power_cost` both take one, so a caller has to be able to write the type.
 pub use bill::{HydroBill, ZeroDenominator};
+// A variant payload of four public error enums in `api::pure`, so a caller matching past the first
+// level has to be able to write it.
+pub use billing_period::NotABillingPeriodEnding;
+// Not named directly by anything outside the crate, but it types `green_button::PeriodValues::
+// period`, a public field of what `api::pure::peak_power` takes. See the `deny` in `lib.rs`.
+pub use billing_period::BillingPeriod;
+// The bound `BillingPeriod::ending_on` states it panics outside. A caller reading that has to be
+// able to look the number up, which a private constant does not allow.
+pub use billing_period::MAX_BILL_END_DAY;
 
 // --- Named elsewhere inside the crate ----------------------------------------------------------
 
-// A variant payload of four public error enums in `api::pure`, so a caller matching past the first
-// level has to be able to write it.
-pub(crate) use billing_period::NotABillingPeriodEnding;
-
-pub(crate) use billing_period::{
-    BillingPeriod, MAX_BILL_END_DAY, billing_period_dates, billing_period_span,
-};
+pub(crate) use billing_period::{billing_period_dates, billing_period_span};

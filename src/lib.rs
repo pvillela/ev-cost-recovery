@@ -1,3 +1,9 @@
+// A type reachable through a public field, return or variant payload but with no public path is one
+// a caller can read and cannot name. Nothing else reports it: the crate compiles clean and `cargo
+// doc` raises only a warning. At the crate root these reach every module -- on a `mod.rs` they
+// would cover only the types defined beneath it, which is how five of them were missed.
+#![deny(private_interfaces, private_bounds, unnameable_types)]
+
 pub mod api;
 
 pub mod charges_report;
