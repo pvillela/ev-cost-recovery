@@ -13,6 +13,8 @@
 // Panel and vehicle constants
 // ---------------------------------------------------------------------------
 
+use std::ops::Add;
+
 /// Secondary (panel) line-to-line voltage.
 pub const PANEL_VOLTAGE_V: f64 = 208.0;
 
@@ -120,6 +122,18 @@ impl Load {
             real_kw: self.real_kw * factor,
             reactive_kvar: self.reactive_kvar * factor,
             distortion_kvar: self.distortion_kvar * factor,
+        }
+    }
+}
+
+impl Add for Load {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Load {
+            real_kw: self.real_kw + rhs.real_kw,
+            reactive_kvar: self.reactive_kvar + rhs.reactive_kvar,
+            distortion_kvar: self.distortion_kvar + rhs.distortion_kvar,
         }
     }
 }

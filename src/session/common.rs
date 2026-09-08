@@ -1,6 +1,6 @@
 use super::site_model::{
-    Load, NORMAL_VOLTAGE_FLUCTUATION_FACTOR, PANEL_BREAKER_COUNT, PANEL_COUNT, ev_load,
-    ev_real_power_kw, single_panel_load,
+    Load, NORMAL_VOLTAGE_FLUCTUATION_FACTOR, PANEL_BREAKER_COUNT, PANEL_COUNT, ev_real_power_kw,
+    single_panel_load,
 };
 use crate::{
     log::SourceLog,
@@ -15,7 +15,6 @@ use std::{
     collections::BTreeMap,
     error::Error,
     fmt::{self, Debug},
-    ops::Add,
     path::PathBuf,
     rc::Rc,
     time::Duration,
@@ -416,18 +415,6 @@ fn duplicate_id_anomalies(sessions: &[RSession]) -> Vec<Anomaly> {
         .collect()
 }
 
-impl Add for Load {
-    type Output = Self;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        Load {
-            real_kw: self.real_kw + rhs.real_kw,
-            reactive_kvar: self.reactive_kvar + rhs.reactive_kvar,
-            distortion_kvar: self.distortion_kvar + rhs.distortion_kvar,
-        }
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Segment
 // ---------------------------------------------------------------------------
@@ -498,7 +485,7 @@ impl Segment {
     /// The aggregate power is converted to an equivalent vehicle count first, so both derivations
     /// go through the same `scaled_load` and can be compared directly.
     pub fn energy_based_load(&self) -> Load {
-        Self::scaled_load(self.agg_kw() / ev_load().real_kw)
+        Self::scaled_load(self.agg_kw() / ev_real_power_kw())
     }
 
     /// Site load for a vehicle count, which may be fractional, and may exceed aggregate panel
