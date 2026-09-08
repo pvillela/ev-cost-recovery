@@ -174,10 +174,11 @@ impl Interval {
         if start < end {
             return Some(Self::from_start_end(start, end));
         }
-        // Everything left touches at a point at most, and `contains` decides which of those count.
-        // It excludes its own end, so `[a, b)` and `[b, c)` abut rather than overlap; it holds
-        // nothing when the receiver is empty, so two empty intervals answer `false` both ways
-        // round. Where one is empty, whichever `contains` holds puts `start` at the instant.
+        // At this point, `start >= end`.
+        // Two non-empty intervals either abut or don't touch each other ==> `meets == false`.
+        // Two empty intervals either are identical or don't touch each other ==> `meets == false`.
+        // So, `meets == true` iff one interval is empty and the other one is non-empty and the
+        // non-empty one contains the empty one.
         let meets = other.contains(self.start) || self.contains(other.start);
         meets.then(|| Self::new(start, Duration::ZERO))
     }
