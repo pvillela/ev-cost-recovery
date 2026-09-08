@@ -21,6 +21,7 @@
 
 use super::{
     Anomaly, AnomalyKind, IntervalEstimates, RSession, Segment, Session, SessionNotes,
+    report_coverage,
     site_model::{
         BREAKER_RATING_A, CONTINUOUS_DUTY_DERATE, PANEL_BREAKER_COUNT, PANEL_VOLTAGE_V,
         XFMR_RATING_KVA, ev_load, ev_pilot_current_a, loading_ratio, single_panel_load,
@@ -30,8 +31,8 @@ use crate::{
     markdown::{Align, Left, Right, h1, h2, table, wrap},
     time::{Interval, time_zone, zoned_minute, zoned_span, zoned_span_end},
 };
-use jiff::{Timestamp, Zoned};
-use std::{collections::BTreeMap, fmt, path::PathBuf};
+use jiff::{Timestamp, Zoned, civil::Date};
+use std::{cmp::Ordering, collections::BTreeMap, fmt, path::PathBuf};
 
 fn local(ts: Timestamp) -> Zoned {
     Zoned::new(ts, time_zone())
@@ -75,6 +76,34 @@ fn anomaly_cell(kind: AnomalyKind, avg_kw: f64) -> String {
     }
 }
 
+/// Source files ordered by the first date their names say they cover.
+///
+/// Every list of files in a report goes through this, so a reader meets them running forward in
+/// time however the run was given them. The order they were read in is not that order: the app's
+/// two pickers are filled in whichever order suits the user, and the command line takes its reports
+/// as they were typed.
+///
+/// The *name* is what states the dates — see [`report_coverage`], and the module docs there for why
+/// the contents cannot be asked. A name that states none sorts last rather than first: it is the
+/// odd one out, and it reads as such at the foot of a list that is otherwise in order.
+///
+/// The sort is stable and the date is the whole key, so files the name cannot date — and two files
+/// covering the same dates — stay in the order they were given. Sorting those on the path instead
+/// would order the one population that has no order of its own by something a reader cannot see.
+fn chronological(sources: &[PathBuf]) -> Vec<&PathBuf> {
+    let mut dated: Vec<(Option<Date>, &PathBuf)> = sources
+        .iter()
+        .map(|path| (report_coverage(path).map(|c| c.from), path))
+        .collect();
+    dated.sort_by(|(a, _), (b, _)| match (a, b) {
+        (Some(a), Some(b)) => a.cmp(b),
+        (Some(_), None) => Ordering::Less,
+        (None, Some(_)) => Ordering::Greater,
+        (None, None) => Ordering::Equal,
+    });
+    dated.into_iter().map(|(_, path)| path).collect()
+}
+
 /// One glossary entry per kind present, in first-appearance order.
 ///
 /// The prose comes from each kind's [`fmt::Display`], so there is one wording to maintain rather
@@ -113,14 +142,19 @@ impl SessionNotes {
 
         out.push(h2("Session data"));
         out.push(String::new());
-        for source in &self.sources {
+        for source in chronological(&self.sources) {
             out.push(format!("- {}", source.display()));
         }
         out.push(String::new());
         if self.sources.len() > 1 {
+            // Says why a period needs covering, and not how many files that takes. Any number is
+            // wrong somewhere: one export spanning the whole period is a single file, a period can
+            // be covered by three, and a file named twice puts two entries above with one report
+            // behind them.
             out.push(wrap(
-                "A billing period straddles two calendar months and a session report covers one, \
-                 so two are read.",
+                "A billing period runs from the 24th of one month to the 23rd of the next, so it \
+                 takes as many session reports as it takes to reach across those dates. They are \
+                 listed above in the order their names say they begin.",
                 "",
             ));
             out.push(String::new());
@@ -164,7 +198,7 @@ impl SessionNotes {
         out.push(String::new());
         out.push(wrap(
             "These sessions count towards the figures above, and something about them needed a \
-             judgement call. Only what bears on these figures is listed.",
+             judgement call. Only what bears on the above figures is listed.",
             "",
         ));
         out.push(String::new());
@@ -184,11 +218,19 @@ impl SessionNotes {
 /// One table rather than one per file. The lists are ordinarily short -- a period with nothing
 /// wrong in it renders neither section at all -- and a single table lines its columns up across
 /// files, which several tables of two rows each would not.
+///
+/// The groups run in [`chronological`] order, which is the order the section above lists the same
+/// files in. Within a group the rows keep report order, so a `Row` column reads downwards.
 fn by_source_table(rows: impl IntoIterator<Item = (RSession, Option<AnomalyKind>)>) -> String {
     // Keyed by the whole path as the reader was given it, not by the file's name: two reports of
     // the same name in different directories are two files, and grouping them together would put
     // rows from both under one heading with nothing to tell them apart. The `File` column still
     // shows the name alone -- see `file_name`.
+    //
+    // `paths` records first appearance, which is the order the files were read in. It is what
+    // `chronological` falls back on for a name that states no dates, and a map's own order -- by
+    // path, or by hash -- would be no order to a reader.
+    let mut paths: Vec<PathBuf> = Vec::new();
     let mut by_file: BTreeMap<PathBuf, Vec<Vec<String>>> = BTreeMap::new();
     for (session, kind) in rows {
         let flags = match kind {
@@ -201,17 +243,22 @@ fn by_source_table(rows: impl IntoIterator<Item = (RSession, Option<AnomalyKind>
                 .collect::<Vec<_>>()
                 .join(", "),
         };
-        by_file
-            .entry(session.path.as_ref().clone())
-            .or_default()
-            .push(vec![
-                file_name(&session),
-                session.row.to_string(),
-                session.id.clone(),
-                flags,
-            ]);
+        let path = session.path.as_ref().clone();
+        if !by_file.contains_key(&path) {
+            paths.push(path.clone());
+        }
+        by_file.entry(path).or_default().push(vec![
+            file_name(&session),
+            session.row.to_string(),
+            session.id.clone(),
+            flags,
+        ]);
     }
-    let rows: Vec<Vec<String>> = by_file.into_values().flatten().collect();
+    let rows: Vec<Vec<String>> = chronological(&paths)
+        .into_iter()
+        .filter_map(|path| by_file.remove(path))
+        .flatten()
+        .collect();
     table(
         &["File", "Row", "Session", "Anomaly"],
         &rows,
@@ -245,8 +292,8 @@ impl IntervalEstimates {
         out.push(String::new());
         out.push(format!(
             "Source     {}",
-            self.sources
-                .iter()
+            chronological(&self.sources)
+                .into_iter()
                 .map(|p| p
                     .file_name()
                     .map(|n| n.to_string_lossy().into_owned())
@@ -380,10 +427,37 @@ impl IntervalEstimates {
         // The two columns are named for the two derivations in Estimates above, because that is
         // what they are: each derivation is a function of the column of the same name, and calling
         // them "Count" and "kW" here made the same pair of quantities look like a different pair.
+        // The unit is in the header all the same: without it a reader has two columns of bare
+        // numbers, one of vehicles and one of kilowatts, that look like the same kind of quantity.
         out.push(table(
-            &["Segment", "Count-based", "Energy-based"],
+            &["Segment", "Count-based (EVs)", "Energy-based (kW)"],
             &rows,
             &[Left, Right, Right],
+        ));
+        out.push(String::new());
+        // The columns before the clock. What the numbers are is what a reader has come to this
+        // table for; when they were is a caveat on reading the first column of it.
+        out.push(wrap(
+            "The two columns are what the estimates above are computed from: each estimate is the \
+             site load implied by the column of its own name, taken from the segment where that \
+             column peaks. \"Count-based\" is how much of the segment was occupied - each session \
+             contributes the fraction of the segment its connection covers, so one connected \
+             throughout adds 1 and one connected for half of it adds 0.5, which makes the column a \
+             fractional count of vehicles. \"Energy-based\" is the average power over the segment: \
+             each session's reported energy is spread evenly over its own connection span, the \
+             part of it falling in this segment is taken, and the sum is divided by the segment's \
+             length.",
+            "",
+        ));
+        out.push(String::new());
+        out.push(wrap(
+            "The two weight a session differently, and neither can be read off the other. The \
+             count divides a session's overlap with the segment by the segment's length, which is \
+             what makes it a fraction of the segment; the energy divides that same overlap by the \
+             session's own length, which is what makes it that session's share of its own energy. \
+             A short heavy session and a long light one can therefore rank differently in the two \
+             columns.",
+            "",
         ));
         out.push(String::new());
         out.push(wrap(
@@ -392,10 +466,7 @@ impl IntervalEstimates {
              session report states the same instants, which are on standard time all year. \
              Segments are half-open: each runs from its own start up to but not \
              including the next one's, so no instant falls in two of them and they tile the \
-             interval exactly. The two columns are the aggregates the estimates of the same name \
-             are derived from. \"Count-based\" is a session count weighted by how much of the \
-             segment each session covered, so it is fractional; \"Energy-based\" weights each \
-             session's average power the same way, and is in kW.",
+             interval exactly.",
             "",
         ));
         out.push(String::new());
@@ -598,7 +669,7 @@ pub fn site_load_report() -> String {
         CONTINUOUS_DUTY_DERATE * PERCENT
     ));
     out.push_str(&format!(
-        "  Per vehicle      {:.2} kVA = {:.2} kW + {:.2} kvar + {:.2} kvar distortion\n",
+        "  Per vehicle      {:.3} kVA = {:.3} kW + {:.3} kvar + {:.3} kvar distortion\n",
         per_ev.apparent_kva(),
         per_ev.real_kw,
         per_ev.reactive_kvar,
@@ -625,7 +696,7 @@ pub fn site_load_report() -> String {
         };
 
         out.push_str(&format!(
-            "{:>4}  {:>9.2}  {:>9.2}  {:>11.2}  {:>9.2}  {:>7.3}  {:>7.1}%{}\n",
+            "{:>4}  {:>9.3}  {:>9.3}  {:>11.3}  {:>9.3}  {:>7.3}  {:>7.1}%{}\n",
             ev_count,
             load.real_kw,
             load.reactive_kvar,
@@ -639,11 +710,77 @@ pub fn site_load_report() -> String {
 
     let full = single_panel_load(PANEL_BREAKER_COUNT as f64);
     out.push_str(&format!(
-        "\nAt full occupancy: {:.2} kW, {:.2} kVA, {:.1}% of nameplate.\n",
+        "\nAt full occupancy: {:.3} kW, {:.3} kVA, {:.1}% of nameplate.\n",
         full.real_kw,
         full.apparent_kva(),
         loading_ratio(full) * PERCENT
     ));
 
     out
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    fn ordered(names: &[&str]) -> Vec<String> {
+        let paths: Vec<PathBuf> = names.iter().map(PathBuf::from).collect();
+        chronological(&paths)
+            .into_iter()
+            .map(|p| p.display().to_string())
+            .collect()
+    }
+
+    /// Every list of files a report prints is in this order, and the order is the dates the names
+    /// state rather than the order the run was given them. A user fills the app's two pickers in
+    /// whichever order suits them.
+    ///
+    /// A unit test on the ordering alone: the rendering fixtures name their files `May.csv` and
+    /// `June.csv`, which state no dates at all, so nothing in them could pin this.
+    #[test]
+    fn source_files_are_listed_by_the_date_their_names_begin() {
+        assert_eq!(
+            ordered(&[
+                "/data/Session_Report_June_1_2026-June_30_2026.csv",
+                "/data/Session_Report_May_1_2026-May_31_2026.csv",
+            ]),
+            [
+                "/data/Session_Report_May_1_2026-May_31_2026.csv",
+                "/data/Session_Report_June_1_2026-June_30_2026.csv",
+            ]
+        );
+
+        // The first date, not the last: a report reaching further back comes first however far
+        // forward the other one runs.
+        assert_eq!(
+            ordered(&[
+                "/data/Session_Report_June_1_2026-June_30_2026.csv",
+                "/data/Session_Report_May_1_2026-June_30_2026.csv",
+            ]),
+            [
+                "/data/Session_Report_May_1_2026-June_30_2026.csv",
+                "/data/Session_Report_June_1_2026-June_30_2026.csv",
+            ]
+        );
+    }
+
+    /// A file whose name states no dates has no place in the order, so it keeps the one it came in
+    /// with and goes at the end, where it reads as the exception it is.
+    #[test]
+    fn a_file_the_name_cannot_date_sorts_last_and_keeps_its_place() {
+        assert_eq!(
+            ordered(&[
+                "/data/sessions.csv",
+                "/data/Session_Report_June_1_2026-June_30_2026.csv",
+                "/data/anything.csv",
+                "/data/Session_Report_May_1_2026-May_31_2026.csv",
+            ]),
+            [
+                "/data/Session_Report_May_1_2026-May_31_2026.csv",
+                "/data/Session_Report_June_1_2026-June_30_2026.csv",
+                "/data/sessions.csv",
+                "/data/anything.csv",
+            ]
+        );
+    }
 }

@@ -133,14 +133,15 @@ Session data
 - May.csv
 - June.csv
 
-A billing period straddles two calendar months and a session report covers
-one, so two are read.
+A billing period runs from the 24th of one month to the 23rd of the next, so
+it takes as many session reports as it takes to reach across those dates.
+They are listed above in the order their names say they begin.
 
 Sessions needing a look
 -----------------------
 
 These sessions count towards the figures above, and something about them
-needed a judgement call. Only what bears on these figures is listed.
+needed a judgement call. Only what bears on the above figures is listed.
 
 | File     | Row | Session | Anomaly        |
 |:---------|----:|:--------|:---------------|

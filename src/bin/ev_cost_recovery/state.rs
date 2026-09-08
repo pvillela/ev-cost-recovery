@@ -12,7 +12,7 @@ use ev_cost_recovery::{
         reconcile_evolute_reimbursement, session_csv_to_xlsx,
     },
     log::SourceLog,
-    session::parse_session_report_name,
+    session::{parse_session_report_name, report_coverage},
     time::time_zone,
 };
 use jiff::civil;
@@ -129,6 +129,23 @@ impl Input {
     /// Whether this input is an Evolute session report, whose file name states what it covers.
     fn is_session_report(self) -> bool {
         matches!(self, Self::Sessions1 | Self::Sessions2)
+    }
+
+    /// Whether the run goes ahead without this input. The second session report alone.
+    ///
+    /// What it decides is whether the picker offers to empty itself. Emptying a required picker
+    /// only disables the run, which the user can reach by choosing a different file; emptying the
+    /// optional one is a choice with a result, and until now there was no way to make it.
+    pub fn is_optional(self) -> bool {
+        matches!(self, Self::Sessions2)
+    }
+
+    /// The other session-report picker, for a message that has to name it.
+    fn other_session_report(self) -> Self {
+        match self {
+            Self::Sessions1 => Self::Sessions2,
+            _ => Self::Sessions1,
+        }
     }
 }
 
@@ -263,21 +280,108 @@ impl SurplusState {
     /// the file dialog is still fresh in mind.
     pub fn select(&mut self, which: Input, path: PathBuf) {
         self.input_notes.retain(|(w, _)| *w != which);
-        if which.is_session_report()
-            && let Err(e) = parse_session_report_name(&file_stem(&path))
-        {
-            // The error's own wording, which states the form expected. Writing it out here again
-            // would be a second copy to keep in step with the parser.
-            self.input_notes.push((which, e.to_string()));
+        *self.slot(which) = Some(path);
+        if which.is_session_report() {
+            self.recheck_session_reports();
         }
-        let slot = match which {
+        self.clear_results();
+    }
+
+    /// Empties one picker.
+    ///
+    /// For [`Input::is_optional`], which is the second session report. A period covered by a single
+    /// export needs no second file, and a second one chosen before that was realised had to be
+    /// lived with: the pickers took a file and never gave one back.
+    pub fn clear(&mut self, which: Input) {
+        self.input_notes.retain(|(w, _)| *w != which);
+        *self.slot(which) = None;
+        if which.is_session_report() {
+            self.recheck_session_reports();
+        }
+        self.clear_results();
+    }
+
+    fn slot(&mut self, which: Input) -> &mut Option<PathBuf> {
+        match which {
             Input::Bill => &mut self.bill,
             Input::Meter => &mut self.meter,
             Input::Sessions1 => &mut self.sessions1,
             Input::Sessions2 => &mut self.sessions2,
+        }
+    }
+
+    /// Rebuilds what is wrong with the two session-report pickers, from what they now hold.
+    ///
+    /// Both at once and from nothing, because one of the two things it checks is a *relation*
+    /// between the slots: replacing the file in one can make the other redundant, or stop it being
+    /// so, without that other having been touched.
+    fn recheck_session_reports(&mut self) {
+        self.input_notes.retain(|(w, _)| !w.is_session_report());
+        for which in [Input::Sessions1, Input::Sessions2] {
+            let Some(path) = self.picked(which) else {
+                continue;
+            };
+            // The parser's own wording, which states the form expected. Writing it out here again
+            // would be a second copy to keep in step with it.
+            if let Err(e) = parse_session_report_name(&file_stem(path)) {
+                self.input_notes.push((which, e.to_string()));
+            }
+        }
+        if let Some((which, note)) = self.redundant_report() {
+            self.input_notes.push((which, note));
+        }
+    }
+
+    /// The session report whose dates the other one already covers, if there is one.
+    ///
+    /// Two reports over the same dates are not two months of a period; they are one month read
+    /// twice. Every session in the narrower file is in the wider one, so the merge meets each of
+    /// them a second time -- as a copy to drop where the two files agree, and as a
+    /// `DuplicateId` to report where they do not. A pair of reports a portal revision apart
+    /// disagrees on every row, and the figures then arrive under a list of anomalies as long as the
+    /// report.
+    ///
+    /// Refused at the picker, and by the names alone. Whether the reports reach across the billing
+    /// period is `api::pure::check_reports_cover_period`'s question and needs the bill, which is
+    /// read only when the run starts; whether one file makes the other pointless needs neither.
+    ///
+    /// Reported against the redundant slot -- the covered one -- because that is the picker to
+    /// change. Two ranges that are equal, which includes the same file chosen twice, are read as
+    /// the first covering the second, so the answer is then the optional slot.
+    fn redundant_report(&self) -> Option<(Input, String)> {
+        let one = report_coverage(self.sessions1.as_deref()?)?;
+        let two = report_coverage(self.sessions2.as_deref()?)?;
+        let (covered, covering) = if one.from <= two.from && two.to <= one.to {
+            (Input::Sessions2, &one)
+        } else if two.from <= one.from && one.to <= two.to {
+            (Input::Sessions1, &two)
+        } else {
+            return None;
         };
-        *slot = Some(path);
-        self.clear_results();
+        let covered_dates = match covered {
+            Input::Sessions1 => &one,
+            _ => &two,
+        };
+        // The way out differs by slot, because only the optional one has a Clear button. Told to
+        // clear a picker that offers no such control, a user is left looking for it.
+        let remedy = match covered {
+            Input::Sessions1 => {
+                "Move that file to this slot and clear the second, or choose a report reaching \
+                 dates it does not."
+            }
+            _ => "Choose a report reaching dates it does not, or press Clear to empty this slot.",
+        };
+        Some((
+            covered,
+            format!(
+                "{} covers {} to {}, which already includes this file's {} to {}. {remedy}",
+                covered.other_session_report().label(),
+                covering.from,
+                covering.to,
+                covered_dates.from,
+                covered_dates.to,
+            ),
+        ))
     }
 
     /// The file a picker holds.
@@ -1084,6 +1188,110 @@ mod test {
             Input::Sessions1 => "/data/Session_Report_May_1_2026-May_31_2026.csv",
             Input::Sessions2 => "/data/Session_Report_June_1_2026-June_30_2026.csv",
         }
+    }
+
+    /// One export covering the whole period leaves the second picker nothing to add, and a file
+    /// put there anyway would bring the same sessions in a second time.
+    #[test]
+    fn a_second_report_the_first_already_covers_is_refused() {
+        let mut state = SurplusState::default();
+        state.select(Input::Bill, PathBuf::from(sample_name(Input::Bill)));
+        state.select(Input::Meter, PathBuf::from(sample_name(Input::Meter)));
+        state.select(
+            Input::Sessions1,
+            PathBuf::from("/data/Session_Report_May_1_2026-June_30_2026.csv"),
+        );
+        assert!(state.can_run(), "one report covering the period is enough");
+
+        state.select(
+            Input::Sessions2,
+            PathBuf::from("/data/Session_Report_June_1_2026-June_30_2026.csv"),
+        );
+        // The whole message, because `docs/app-cheat-sheet.md` quotes it.
+        assert_eq!(
+            state.note_for(Input::Sessions2),
+            Some(
+                "Session report 1 covers 2026-05-01 to 2026-06-30, which already includes this \
+                 file's 2026-06-01 to 2026-06-30. Choose a report reaching dates it does not, or \
+                 press Clear to empty this slot."
+            ),
+            "June is inside May-June"
+        );
+        assert!(
+            !state.can_run(),
+            "a refused file must not let the run start"
+        );
+
+        // The same file in both slots is the same relation, not a special case.
+        state.select(
+            Input::Sessions2,
+            PathBuf::from("/data/Session_Report_May_1_2026-June_30_2026.csv"),
+        );
+        assert!(state.note_for(Input::Sessions2).is_some());
+    }
+
+    /// Emptying the optional picker is how the refusal above is answered, and it must leave the
+    /// form as it was before the file was chosen.
+    #[test]
+    fn clearing_the_second_report_lifts_what_it_was_refused_for() {
+        let mut state = SurplusState::default();
+        state.select(Input::Bill, PathBuf::from(sample_name(Input::Bill)));
+        state.select(Input::Meter, PathBuf::from(sample_name(Input::Meter)));
+        state.select(
+            Input::Sessions1,
+            PathBuf::from("/data/Session_Report_May_1_2026-June_30_2026.csv"),
+        );
+        state.select(
+            Input::Sessions2,
+            PathBuf::from("/data/Session_Report_June_1_2026-June_30_2026.csv"),
+        );
+
+        state.clear(Input::Sessions2);
+        assert!(state.picked(Input::Sessions2).is_none());
+        assert!(state.note_for(Input::Sessions2).is_none());
+        assert!(state.can_run(), "the run is offered again");
+    }
+
+    /// The refusal is a relation between the two slots, so it has to be re-asked when either of
+    /// them moves -- including the one that was not refused.
+    #[test]
+    fn narrowing_the_first_report_lifts_the_second_ones_refusal() {
+        let mut state = SurplusState::default();
+        state.select(
+            Input::Sessions1,
+            PathBuf::from("/data/Session_Report_May_1_2026-June_30_2026.csv"),
+        );
+        state.select(
+            Input::Sessions2,
+            PathBuf::from("/data/Session_Report_June_1_2026-June_30_2026.csv"),
+        );
+        assert!(state.note_for(Input::Sessions2).is_some());
+
+        state.select(
+            Input::Sessions1,
+            PathBuf::from("/data/Session_Report_May_1_2026-May_31_2026.csv"),
+        );
+        assert!(
+            state.note_for(Input::Sessions2).is_none(),
+            "May and June cover different dates"
+        );
+
+        // And the other way round: the wider file second makes the first the redundant one, so the
+        // refusal is reported where the change has to be made.
+        state.select(
+            Input::Sessions2,
+            PathBuf::from("/data/Session_Report_April_1_2026-June_30_2026.csv"),
+        );
+        assert!(state.note_for(Input::Sessions1).is_some());
+        assert!(state.note_for(Input::Sessions2).is_none());
+    }
+
+    /// Only the second session report offers to empty itself. Emptying any of the other three can
+    /// do nothing but disable the run.
+    #[test]
+    fn the_second_session_report_is_the_only_optional_picker() {
+        let optional: Vec<Input> = Input::ALL.into_iter().filter(|i| i.is_optional()).collect();
+        assert_eq!(optional, [Input::Sessions2]);
     }
 
     /// A session report is taken when its name reads, whatever range it states.

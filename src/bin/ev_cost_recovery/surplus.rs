@@ -59,7 +59,7 @@ fn inputs(ui: &mut egui::Ui, state: &mut SurplusState, working: &mut WorkingDir)
     // length, and ragged buttons read as four unrelated controls rather than one list.
     egui::Grid::new("inputs")
         .spacing([12.0, 8.0])
-        .num_columns(3)
+        .num_columns(4)
         .show(ui, |ui| {
             for which in Input::ALL {
                 ui.label(which.label());
@@ -74,6 +74,15 @@ fn inputs(ui: &mut egui::Ui, state: &mut SurplusState, working: &mut WorkingDir)
                     }
                 }
                 widgets::picked_file(ui, state.picked(which), "None chosen");
+                // Only where emptying the picker is a choice the run respects, and only while
+                // there is something in it to empty. A button that greys out on three rows of four
+                // reads as a control that is broken rather than as one that does not apply.
+                if which.is_optional()
+                    && state.picked(which).is_some()
+                    && ui.button("Clear").clicked()
+                {
+                    state.clear(which);
+                }
                 ui.end_row();
 
                 // Said against the picker it belongs to, while the dialog is still fresh in mind.
@@ -89,8 +98,9 @@ fn inputs(ui: &mut egui::Ui, state: &mut SurplusState, working: &mut WorkingDir)
     widgets::note(
         ui,
         "A billing period runs from the 24th to the 23rd, so it usually spans two monthly session \
-         reports. One report covering the whole period is enough on its own, and the second slot \
-         may be left empty. \
+         reports. One report covering the whole period is enough on its own: leave the second slot \
+         empty, or press Clear to empty it. A second report is refused when the first already \
+         covers the dates it holds, since it would only bring the same sessions in twice. \
          Either order will do — the names say what each holds.",
     );
 }

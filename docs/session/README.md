@@ -36,11 +36,13 @@ Given a time interval of interest **`I`** as described above, the estimation of 
 - For each segment:
   - Identify the charging sessions that intersect the segment.
   - For each session:
-    - Compute the average power drawn by the session by dividing its energy consumed by the charge time in hours to obtain `avg_kw`.
-    - Compute the overlap ratio `overlap_ratio` of the session over the segment's duration.
-    - `avg_kw * overlap_ratio` is the session's contribution to the segment's aggregate kW and `overlap_ratio` is session's contribution to the segment's aggregate session count.
+    - Compute `overlap` — how much of the segment the session's connection covers, as a duration.
+    - `overlap / segment duration` is the session's contribution to the segment's aggregate session count.
+    - `overlap / session duration * Energy_Use` is the session's contribution to the segment's aggregate kWh: the session's energy spread evenly over its own connection span, and the part of it that falls in this segment.
 
-  - Compute the segment's aggregate kW `agg_kw` and `agg_count` by summing the above-described per-session contributions over all sessions.
+  - Compute the segment's `agg_count` by summing the per-session count contributions, and its aggregate kWh by summing the per-session energy contributions. The aggregate kW `agg_kw` is that aggregate kWh over the segment's length in hours.
+
+  - The two aggregates divide the same overlap by different things — the segment's own length for the count, the session's for the energy — so neither can be read off the other. `Active_Charge_Time` takes no part in either; it bears only on `avg_kw`, which is a statement about a record and an input to no estimate.
 
   - From these two key values, compute the following ones:
 

@@ -92,8 +92,13 @@ Two aggregates are computed per segment, and every estimate is derived from them
 - **`agg_count`** — each session's *overlap ratio*, the fraction of the segment its span covers,
   summed over the segment's sessions. A session covering the whole segment contributes 1; one
   covering half contributes 0.5. It is a session count weighted by presence, so it is fractional.
-- **`agg_kw`** — the same ratios, each multiplied by its session's own average power
-  (`Energy_Use` over `Active_Charge_Time`), summed the same way.
+- **`agg_kw`** — each session's `Energy_Use` spread evenly over its own connection span, the part
+  of it falling in this segment summed the same way, and the total divided by the segment's length
+  in hours.
+
+The two divide the same overlap by different things — the segment's own length for the count, the
+session's for the energy — so a short heavy session and a long light one can rank differently in
+them. `Active_Charge_Time` takes no part in either.
 
 Both are single numbers. Reported times are exact, so an overlap has one width. They were a pair of
 bounds while those times were stated only to the minute and a session's edge could lie anywhere
@@ -101,10 +106,10 @@ inside the minute it named.
 
 | Segment | `agg_count` | `agg_kw` |
 |---------|------------:|---------:|
-| `16:00` |       2.467 |   15.293 |
-| `16:15` |       3.067 |   18.773 |
-| `16:30` |       2.867 |   17.867 |
-| `16:45` |       1.467 |    8.847 |
+| `16:00` |       2.467 |   14.553 |
+| `16:15` |       3.067 |   17.482 |
+| `16:30` |       2.867 |   16.165 |
+| `16:45` |       1.467 |    8.440 |
 
 ## Which segment is reported
 
@@ -112,7 +117,7 @@ The estimates are reported for the **maximal** segment: the one where the deriva
 two derivations are ranked separately and need not agree, so each names its own segment.
 
 Here they do agree, and narrowly. 16:15 leads 16:30 by 0.200 on `agg_count` (3.067 against 2.867)
-and by 0.906 kW on `agg_kw` (18.773 against 17.867). Both maxima are 16:15, and that is the segment
+and by 1.317 kW on `agg_kw` (17.482 against 16.165). Both maxima are 16:15, and that is the segment
 the report names.
 
 The narrowness is the point rather than an accident of the fixture. Two segments this close mean
