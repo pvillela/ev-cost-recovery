@@ -831,7 +831,7 @@ mod test {
     /// than with the closing date it is named by.
     #[test]
     fn the_reports_head_themselves_with_the_period() {
-        let period = "Period       2026-05-24 - 2026-06-23  (31 days)";
+        let period = "Period: 2026-05-24 - 2026-06-23  (31 days)";
         let energy = energy(period_ending_date(), &sessions())
             .unwrap()
             .to_string();
@@ -850,7 +850,7 @@ mod test {
         let text = cost().to_string();
         assert!(text.contains("TH blended rate"), "{text}");
         // The loss factor is stated, because it is what separates the two kWh columns.
-        assert!(text.contains("Loss factor  1.0500"), "{text}");
+        assert!(text.contains("Loss factor: 1.0500"), "{text}");
         // The rebate is shown as the credit it is, not as a positive to be subtracted by the
         // reader. Read off the line rather than matched against a figure, so the test says what it
         // is checking and not merely that the arithmetic has not moved.

@@ -1,7 +1,7 @@
 EV Cost Recovery Surplus
 ========================
 
-Period       2026-05-24 - 2026-06-23  (31 days)
+Period: 2026-05-24 - 2026-06-23  (31 days)
 
 | Item             |  Amount |
 |:-----------------|--------:|
@@ -20,7 +20,7 @@ figures for display, so their columns may not.
 EV Cost Recovery
 ================
 
-Period       2026-05-24 - 2026-06-23  (31 days)
+Period: 2026-05-24 - 2026-06-23  (31 days)
 
 | Item                          | Amount |
 |:------------------------------|-------:|
@@ -28,7 +28,7 @@ Period       2026-05-24 - 2026-06-23  (31 days)
 | At rates effective 2026-06-01 |   2.04 |
 | Cost recovery                 |   2.24 |
 
-Note: figures are rounded for display. A column can therefore differ by a
+Note: values are rounded for display. A column can therefore differ by a
 cent, or by a thousandth of a kilowatt-hour, from the total stated for it,
 which is computed from the unrounded values.
 
@@ -56,8 +56,8 @@ EV rates effective 2026-06-01  (2026-06-01 - 2026-06-23)
 EV Energy Cost
 ==============
 
-Period       2026-05-24 - 2026-06-23  (31 days)
-Loss factor  1.0295
+Period: 2026-05-24 - 2026-06-23  (31 days)
+Loss factor: 1.0295
 
 | Item                            | Amount |
 |:--------------------------------|-------:|
@@ -67,7 +67,7 @@ Loss factor  1.0295
 | Ontario Electricity Rebate      |  -0.30 |
 | Energy cost                     |   3.07 |
 
-Note: figures are rounded for display. A column can therefore differ by a
+Note: values are rounded for display. A column can therefore differ by a
 cent, or by a thousandth of a kilowatt-hour, from the total stated for it,
 which is computed from the unrounded values.
 
@@ -92,8 +92,8 @@ Wholesale Market Service Charge
 EV Delivery Cost
 ================
 
-Period       2026-05-24 - 2026-06-23  (31 days)
-Days adj.    31/30 = 1.0333
+Period: 2026-05-24 - 2026-06-23  (31 days)
+Days adj.: 31/30 = 1.0333
 
 | Item                       | Amount |
 |:---------------------------|-------:|
@@ -102,7 +102,7 @@ Days adj.    31/30 = 1.0333
 | Ontario Electricity Rebate | -13.29 |
 | Delivery cost              | 136.92 |
 
-Note: figures are rounded for display. A column can therefore differ by a
+Note: values are rounded for display. A column can therefore differ by a
 cent, or by a thousandth of a kilowatt-hour, from the total stated for it,
 which is computed from the unrounded values.
 
@@ -116,12 +116,10 @@ Delivery charges by component
 | Transmission Network Charge    | kW 7-7 |     4.201 |       4.341 |          5.0000 |  21.70 |
 | Total                          |        |           |             |                 | 132.94 |
 
-Each EV demand is the "Energy-based" figure for the 15-minute segment that
-charge was priced on -- the energy-based estimate in every case, never the
-count-based one. Each is the energy the chargers put into that segment over
-the segment's length. The figures, and the interval each was drawn from, are
-in the peak power detail report for that charge.
-
+"Basis" names the demand each charge is priced on: kVA, kW and kW 7-7. The
+Peak power detail tab holds a section under each of those three names,
+stating the interval the demand was read from, the 15-minute segment inside
+it where the chargers drew most, and the sessions running at the time.
 
 
 Source Data

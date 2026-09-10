@@ -33,7 +33,10 @@ mod site_model;
 pub use common::{Segment, Session, Sessions};
 pub use excel::{SessionWriteReport, session_csv_to_xlsx};
 pub use file_name::{SessionReportNameError, parse_session_report_name, report_coverage};
-pub use report::site_load_report;
+// `Estimate` is what a caller passes `IntervalEstimates::to_markdown` to say which figure to mark,
+// and the two document helpers are what a caller assembles several of those reports with.
+pub use peak::Estimate;
+pub use report::{DEFINITIONS_POINTER, definitions, site_load_report};
 
 // --- Reachable outside the crate -------------------------------------------------------------------
 

@@ -101,15 +101,15 @@ pub(crate) fn h2(s: &str) -> String {
     format!("{s}\n{}", "-".repeat(s.chars().count()))
 }
 
-/// Width the header labels are padded to, so their values start in one column.
-const LABEL: usize = 12;
-
-/// A label and its value on one line.
+/// A label and its value on one line, as `Label: value`.
 ///
 /// What sits above a report's tables. A two-column table would render the same pairs, but reads as
 /// data to be scanned rather than as the heading it is.
+///
+/// The colon separates label from value both raw and rendered. Alignment by spaces would not: a
+/// markdown renderer collapses runs of them.
 pub(crate) fn field(label: &str, value: &str) -> String {
-    format!("{label:<LABEL$} {value}")
+    format!("{label}: {value}")
 }
 
 /// The standing caveat every report that rounds for display carries.
@@ -124,7 +124,7 @@ pub(crate) fn field(label: &str, value: &str) -> String {
 /// [`CostRecoverySurplus`](crate::api::pure::CostRecoverySurplus).
 pub(crate) fn rounding_note() -> String {
     wrap(
-        "Note: figures are rounded for display. A column can therefore differ by a cent, or by a \
+        "Note: values are rounded for display. A column can therefore differ by a cent, or by a \
          thousandth of a kilowatt-hour, from the total stated for it, which is computed from the \
          unrounded values.",
         "",

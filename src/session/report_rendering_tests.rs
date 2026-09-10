@@ -30,7 +30,7 @@
 //! UPDATE_REPORT_GOLDEN=1 cargo test --lib -- session::report_rendering_tests
 //! ```
 
-use super::{csv::csv_sessions, estimates_from_sessions};
+use super::{Estimate, csv::csv_sessions, estimates_from_sessions};
 use crate::{golden, time::Interval};
 use jiff::Timestamp;
 
@@ -64,10 +64,9 @@ fn render(stem: &str, lo: &str, hi: &str) -> String {
     let interval = Interval::from_start_end(lo, hi);
     let report = estimates_from_sessions(interval, sessions.sources.clone(), &sessions);
 
-    let rendered = report.to_markdown();
-    // Display must agree, or there would be two renderings to keep in step.
-    assert_eq!(format!("{report}"), rendered, "{stem}: Display disagrees");
-    rendered
+    // Rendered as the kW peak's report, so the title and the marked figure are pinned along with
+    // everything else.
+    report.to_markdown("kW", Estimate::EnergyBasedKw)
 }
 
 #[test]

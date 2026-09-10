@@ -46,6 +46,10 @@ pub mod pdf_text;
 
 pub use bill_pdf::{BillError, hydro_bill_from_pdf};
 pub use billing_period::{BILL_END_DAY, bill_start_day};
+// The calendar dates a period spans. `ev_cost_recovery`'s Cost recovery tab asks for them: it holds
+// a session report against the period the bill states, and both ends of that comparison have to be
+// dates. `api::pure::coverage` answers the containment question and not this one.
+pub use billing_period::billing_period_dates;
 // Not named directly by anything outside the crate, but `api::pure` re-exports it: `energy` and
 // `peak_power_cost` both take one, so a caller has to be able to write the type.
 pub use bill::{HydroBill, ZeroDenominator};
@@ -61,4 +65,4 @@ pub use billing_period::MAX_BILL_END_DAY;
 
 // --- Named elsewhere inside the crate ----------------------------------------------------------
 
-pub(crate) use billing_period::{billing_period_dates, billing_period_span};
+pub(crate) use billing_period::billing_period_span;

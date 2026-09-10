@@ -10,17 +10,22 @@
 //!   the padding; a plain reader depends on it entirely.
 //! - **No four-space indentation anywhere**, since markdown would turn it into a code block. Wrapped
 //!   list items indent by two.
-//! - **No emphasis markers.** Labels are quoted — `"Energy-based"` — which reads identically either
-//!   way.
+//! - **No emphasis markers** inside a report. Labels are quoted — `"Energy-based"` — which reads
+//!   identically either way. [`DEFINITIONS_POINTER`] is the one bold line, and it heads a document
+//!   of reports rather than sitting inside one.
 //! - **Session ids live in their own section**, not in a table cell, because a markdown table row is
 //!   a single line and a segment holding twelve sessions cannot be wrapped inside one.
 //!
-//! This is the crate's single rendering module. [`site_load_report`] lives here too, for the same
-//! reason [`fmt::Display`] delegates to [`IntervalEstimates::to_markdown`]: one rendering rather
-//! than two that could drift.
+//! **What the terms mean is said once per document.** Several interval reports are ordinarily read
+//! together — one per demand a charge is priced on — and they share every term, so a report carries
+//! figures and the document carries the definitions. A caller assembling them opens with
+//! [`DEFINITIONS_POINTER`] and closes with [`definitions`].
+//!
+//! This is the crate's single rendering module. [`site_load_report`] lives here too: one rendering
+//! rather than two that could drift.
 
 use super::{
-    Anomaly, AnomalyKind, IntervalEstimates, RSession, Segment, Session, SessionNotes,
+    Anomaly, AnomalyKind, Estimate, IntervalEstimates, RSession, Session, SessionNotes,
     report_coverage,
     site_model::{
         BREAKER_RATING_A, CONTINUOUS_DUTY_DERATE, PANEL_BREAKER_COUNT, PANEL_VOLTAGE_V,
@@ -28,11 +33,11 @@ use super::{
     },
 };
 use crate::{
-    markdown::{Align, Left, Right, h1, h2, table, wrap},
+    markdown::{Align, Left, Right, field, h1, h2, table, wrap},
     time::{Interval, time_zone, zoned_minute, zoned_span, zoned_span_end},
 };
 use jiff::{Timestamp, Zoned, civil::Date};
-use std::{cmp::Ordering, collections::BTreeMap, fmt, path::PathBuf};
+use std::{cmp::Ordering, collections::BTreeMap, path::PathBuf};
 
 fn local(ts: Timestamp) -> Zoned {
     Zoned::new(ts, time_zone())
@@ -106,8 +111,8 @@ fn chronological(sources: &[PathBuf]) -> Vec<&PathBuf> {
 
 /// One glossary entry per kind present, in first-appearance order.
 ///
-/// The prose comes from each kind's [`fmt::Display`], so there is one wording to maintain rather
-/// than a second copy here that could drift from it.
+/// The prose comes from each kind's [`Display`](std::fmt::Display), so there is one wording to
+/// maintain rather than a second copy here that could drift from it.
 fn glossary(kinds: impl IntoIterator<Item = AnomalyKind>, out: &mut Vec<String>) {
     let mut seen: Vec<AnomalyKind> = Vec::new();
     for kind in kinds {
@@ -284,28 +289,37 @@ impl IntervalEstimates {
     /// Renders the report as markdown that is also readable as plain text. See the module docs for
     /// what that constraint rules out.
     ///
-    /// [`fmt::Display`] delegates here, so there is one rendering rather than two that could drift.
-    pub fn to_markdown(&self) -> String {
+    /// `peak` names the building peak the interval was chosen for — `"kVA"`, `"kW"`, `"kW 7-7"` —
+    /// and titles the report. `share` is the estimate that is EV charging's share of that peak,
+    /// and is marked in the Estimates table. Both are the caller's to say: an interval is only an
+    /// interval, and which peak it was the one for is decided where it was chosen.
+    ///
+    /// No `Display`, for the same reason. There is no rendering of an interval that does not know
+    /// what it was chosen for.
+    ///
+    /// The terms the report uses are not defined in it; see the module docs.
+    pub fn to_markdown(&self, peak: &str, share: Estimate) -> String {
         let mut out: Vec<String> = Vec::new();
 
-        out.push(h1("EV Peak Power Contribution"));
+        out.push(h1(&format!("EV Peak {peak} Contribution")));
         out.push(String::new());
-        out.push(format!(
-            "Source     {}",
-            chronological(&self.sources)
+        out.push(field(
+            "Source",
+            &chronological(&self.sources)
                 .into_iter()
-                .map(|p| p
-                    .file_name()
-                    .map(|n| n.to_string_lossy().into_owned())
-                    .unwrap_or_else(|| p.to_string_lossy().into_owned()))
+                .map(|p| {
+                    p.file_name()
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| p.to_string_lossy().into_owned())
+                })
                 .collect::<Vec<_>>()
-                .join(", ")
+                .join(", "),
         ));
-        out.push(format!("Interval   {}", interval_line(self.interval)));
+        out.push(field("Interval", &interval_line(self.interval)));
         out.push(String::new());
         out.push(String::new());
 
-        self.push_estimates(&mut out);
+        self.push_estimates(&mut out, peak, share);
         self.push_segments(&mut out);
         self.push_membership(&mut out);
         self.push_excluded(&mut out);
@@ -323,51 +337,33 @@ impl IntervalEstimates {
             .all(|(seg, _)| seg.sessions.is_empty())
     }
 
-    /// The figures for the maximal segment on each derivation, and the prose that reads them.
-    fn push_estimates(&self, out: &mut Vec<String>) {
+    /// The figures for the maximal segment on each derivation, with `share` marked.
+    fn push_estimates(&self, out: &mut Vec<String>, peak: &str, share: Estimate) {
         out.push(h2("Estimates"));
         out.push(String::new());
 
-        let (energy_seg, energy_est) = &self.energy_based_seg_estimate;
-        let (count_seg, count_est) = &self.count_based_seg_estimate;
-        let row = |label: &str, unit: &str, value: f64, seg: &Segment| {
-            vec![
-                label.to_owned(),
-                unit.to_owned(),
-                format!("{value:.3}"),
-                hm(seg.start()),
-            ]
-        };
-        let rows = vec![
-            row("Energy-based", "kW", energy_est.energy_based_kw, energy_seg),
-            row(
-                "Energy-based",
-                "kVA",
-                energy_est.energy_based_kva,
-                energy_seg,
-            ),
-            row("Count-based", "kW", count_est.count_based_kw, count_seg),
-            row("Count-based", "kVA", count_est.count_based_kva, count_seg),
-        ];
+        // The mark is part of the cell, so it lines up in plain text as well as in a renderer: the
+        // column is right-aligned, and the marked figure's digits stay under the others'.
+        let rows: Vec<Vec<String>> = Estimate::ALL
+            .into_iter()
+            .map(|estimate| {
+                let figure = self.figure(estimate);
+                vec![
+                    estimate.derivation().to_owned(),
+                    estimate.unit().to_owned(),
+                    if estimate == share {
+                        format!("* {figure:.3}")
+                    } else {
+                        format!("{figure:.3}")
+                    },
+                    hm(self.segment_for(estimate).0.start()),
+                ]
+            })
+            .collect();
         out.push(table(&ESTIMATE_HEADERS, &rows, &ESTIMATE_ALIGN));
         out.push(String::new());
-
         out.push(wrap(
-            "\"Energy-based\" is derived from the sessions' own consumption, \"Count-based\" from \
-             how many of them were charging and the per-EV rating of the infrastructure. \
-             \"Segment\" names the 15-minute segment the figure was drawn from - the one where \
-             that derivation peaks, which the two need not agree on. Each figure is a single \
-             value: the reported session times are stated to the second and taken as given, so an \
-             overlap has one width. They were a range while those times were stated only to the \
-             minute.",
-            "",
-        ));
-        out.push(String::new());
-
-        out.push(wrap(
-            "The peak is always a 15-minute average, whatever the length of the interval asked \
-             for, because that is the basis the demand charge is billed on. An hour is reported as \
-             the highest of its four segments, not as an average over the whole hour.",
+            &format!("\"*\" - Portion of building's peak {peak} attributed to EV charging."),
             "",
         ));
 
@@ -433,41 +429,6 @@ impl IntervalEstimates {
             &["Segment", "Count-based (EVs)", "Energy-based (kW)"],
             &rows,
             &[Left, Right, Right],
-        ));
-        out.push(String::new());
-        // The columns before the clock. What the numbers are is what a reader has come to this
-        // table for; when they were is a caveat on reading the first column of it.
-        out.push(wrap(
-            "The two columns are what the estimates above are computed from: each estimate is the \
-             site load implied by the column of its own name, taken from the segment where that \
-             column peaks. \"Count-based\" is how much of the segment was occupied - each session \
-             contributes the fraction of the segment its connection covers, so one connected \
-             throughout adds 1 and one connected for half of it adds 0.5, which makes the column a \
-             fractional count of vehicles. \"Energy-based\" is the average power over the segment: \
-             each session's reported energy is spread evenly over its own connection span, the \
-             part of it falling in this segment is taken, and the sum is divided by the segment's \
-             length.",
-            "",
-        ));
-        out.push(String::new());
-        out.push(wrap(
-            "The two weight a session differently, and neither can be read off the other. The \
-             count divides a session's overlap with the segment by the segment's length, which is \
-             what makes it a fraction of the segment; the energy divides that same overlap by the \
-             session's own length, which is what makes it that session's share of its own energy. \
-             A short heavy session and a long light one can therefore rank differently in the two \
-             columns.",
-            "",
-        ));
-        out.push(String::new());
-        out.push(wrap(
-            "Times are local, on the zone the Interval line above names, and each segment is 15 \
-             minutes long, named by the minute it starts on. That is an hour later than the \
-             session report states the same instants, which are on standard time all year. \
-             Segments are half-open: each runs from its own start up to but not \
-             including the next one's, so no instant falls in two of them and they tile the \
-             interval exactly.",
-            "",
         ));
         out.push(String::new());
         out.push(String::new());
@@ -636,10 +597,47 @@ fn interval_length(lo: Timestamp, hi: Timestamp) -> String {
     }
 }
 
-impl fmt::Display for IntervalEstimates {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.to_markdown())
+/// The line that opens a document of interval reports, pointing to [`definitions`] at its end.
+pub const DEFINITIONS_POINTER: &str =
+    "**See definitions and conventions at the end of this report.**";
+
+/// The section that closes a document of interval reports: what its terms mean, and how to read
+/// its times.
+///
+/// One section for the whole document, because every interval report in it uses the same terms.
+pub fn definitions() -> String {
+    let paragraphs = [
+        "\"Interval\" is a metering interval during which a particular power metric peaks. An \
+         interval is half-open, i.e., it runs from its start time up to but not including its end \
+         time.",
+        "\"Segment\" designates the 15-minute segment where a particular value peaks. Segments are \
+         half-open: each runs from its own start up to but not including the next one's, so no \
+         instant falls in two of them and they tile the interval exactly.",
+        "A peak value is always a 15-minute average, whatever the length of the interval, because \
+         that is the basis the demand charge is billed on. Metering data for a one-hour interval \
+         reports the highest of its four segments, not an average over the whole hour.",
+        "\"Energy-based\" is derived from the sessions' own consumption. It is the average power \
+         over a segment: each session's reported energy is spread evenly over its own connection \
+         span, the part of it falling in the segment is taken, and the sum is divided by the \
+         segment's length.",
+        "\"Count-based\" is a reference value based on the number of active sessions and the \
+         nominal per-EV power rating of the infrastructure. It is how much of a segment was \
+         occupied - each session contributes the fraction of the segment that it covers, so one \
+         session connected throughout adds 1 and one connected for half of it adds 0.5, which \
+         makes the session count fractional.",
+        "The peak \"Energy-based\" and \"Count-based\" segments may differ.",
+        "Times are local, on the zone the interval names. During DST, that is an hour later than \
+         the session report states the same instants, which are on standard time all year. Each \
+         15-minute segment is named by the minute it starts on.",
+    ];
+    let mut out = vec![h1("Definitions and Conventions")];
+    for p in paragraphs {
+        out.push(String::new());
+        out.push(wrap(p, ""));
     }
+    let mut s = out.join("\n");
+    s.push('\n');
+    s
 }
 
 // ---------------------------------------------------------------------------

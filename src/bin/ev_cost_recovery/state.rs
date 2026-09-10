@@ -9,8 +9,9 @@ use ev_cost_recovery::{
     api::{
         CostRecoveryRates, CostRecoverySurplus, GbWriteReport, OnExistingWorkbook,
         ReimbursementReconciliation, cost_recovery_surplus, gb_xml_to_xlsx,
-        reconcile_evolute_reimbursement, session_csv_to_xlsx,
+        pure::check_reports_cover_period, reconcile_evolute_reimbursement, session_csv_to_xlsx,
     },
+    hydro_bill::{billing_period_dates, hydro_bill_from_pdf},
     log::SourceLog,
     session::{parse_session_report_name, report_coverage},
     time::time_zone,
@@ -131,11 +132,20 @@ impl Input {
         matches!(self, Self::Sessions1 | Self::Sessions2)
     }
 
+    /// Whether changing this input can change what is wrong with the session-report pickers.
+    ///
+    /// The two session slots themselves, and the bill: the period the bill names is what decides
+    /// whether one report already covers everything, so a new bill can settle that question
+    /// differently without either session slot having been touched.
+    fn bears_on_session_reports(self) -> bool {
+        matches!(self, Self::Bill | Self::Sessions1 | Self::Sessions2)
+    }
+
     /// Whether the run goes ahead without this input. The second session report alone.
     ///
     /// What it decides is whether the picker offers to empty itself. Emptying a required picker
     /// only disables the run, which the user can reach by choosing a different file; emptying the
-    /// optional one is a choice with a result, and until now there was no way to make it.
+    /// optional one is a choice with a result, and needs a control of its own to make.
     pub fn is_optional(self) -> bool {
         matches!(self, Self::Sessions2)
     }
@@ -253,6 +263,19 @@ pub struct SurplusState {
     pub meter: Option<PathBuf>,
     pub sessions1: Option<PathBuf>,
     pub sessions2: Option<PathBuf>,
+    /// The closing date of the period the chosen bill covers, read out of the PDF when it was
+    /// chosen.
+    ///
+    /// The bill is the only document that states which period is being reconciled, and its file
+    /// name does not say: the name is Toronto Hydro's, and the statement date it carries is not the
+    /// closing date. So this is the one place the app opens a file before the run — everything the
+    /// two session-report pickers decide is measured against this date, and neither can be offered
+    /// before it is known.
+    ///
+    /// `None` before a bill is chosen, and when the chosen one could not be read — which is
+    /// reported against the bill's own picker, since with no period there is nothing the session
+    /// pickers can be asked for.
+    pub bill_period_ending: Option<civil::Date>,
     pub rates_at_start: RatesForm,
     /// Whether a second schedule took effect during the period. The command line encodes this by
     /// how many arguments were given, which a form should not.
@@ -278,24 +301,64 @@ impl SurplusState {
     /// A session report is checked here rather than at run time, because its file name is the only
     /// thing that says which month it holds and a name that says nothing is worth catching while
     /// the file dialog is still fresh in mind.
+    ///
+    /// The bill is opened here, and it is the only input that is. See [`Self::bill_period_ending`]
+    /// for what is taken from it and why the reading cannot wait for the run.
     pub fn select(&mut self, which: Input, path: PathBuf) {
         self.input_notes.retain(|(w, _)| *w != which);
+        if which == Input::Bill {
+            match hydro_bill_from_pdf(&path) {
+                Ok(bill) => self.set_bill_period(Some(bill.period_end_date())),
+                // The library's own message, which names the file and says whether the trouble was
+                // the PDF or the layout. Reported at the picker, because a bill that does not read
+                // leaves the session pickers with nothing to measure against.
+                Err(e) => {
+                    self.set_bill_period(None);
+                    self.input_notes.push((Input::Bill, e.to_string()));
+                }
+            }
+        }
         *self.slot(which) = Some(path);
-        if which.is_session_report() {
+        if which.bears_on_session_reports() {
             self.recheck_session_reports();
         }
         self.clear_results();
     }
 
+    /// Takes the period a newly chosen bill states, and empties whichever session slots it
+    /// invalidates.
+    ///
+    /// **The second slot always.** Two reports are chosen as a pair, to reach across one period
+    /// between them; against a different period the pair means nothing, and the second is the half
+    /// that was chosen to fill a gap the first left.
+    ///
+    /// **The first slot unless its report touches the new period.** A report that overlaps the
+    /// period at all is plausibly still wanted — it may be one of the two months the period spans,
+    /// or the whole of it — so it is left for the user to keep or replace. One that does not
+    /// overlap at all can contribute nothing to the new period and is emptied rather than left to
+    /// be refused later.
+    ///
+    /// An unreadable bill passes `None`, which touches nothing and so empties both.
+    fn set_bill_period(&mut self, ending: Option<civil::Date>) {
+        self.bill_period_ending = ending;
+        self.sessions2 = None;
+        if !self.report_touches_period(Input::Sessions1) {
+            self.sessions1 = None;
+        }
+    }
+
     /// Empties one picker.
     ///
     /// For [`Input::is_optional`], which is the second session report. A period covered by a single
-    /// export needs no second file, and a second one chosen before that was realised had to be
-    /// lived with: the pickers took a file and never gave one back.
+    /// export needs no second file, so a file chosen before that was realised has to be retractable
+    /// rather than merely replaceable.
     pub fn clear(&mut self, which: Input) {
         self.input_notes.retain(|(w, _)| *w != which);
+        if which == Input::Bill {
+            self.set_bill_period(None);
+        }
         *self.slot(which) = None;
-        if which.is_session_report() {
+        if which.bears_on_session_reports() {
             self.recheck_session_reports();
         }
         self.clear_results();
@@ -318,17 +381,175 @@ impl SurplusState {
     fn recheck_session_reports(&mut self) {
         self.input_notes.retain(|(w, _)| !w.is_session_report());
         for which in [Input::Sessions1, Input::Sessions2] {
-            let Some(path) = self.picked(which) else {
-                continue;
-            };
-            // The parser's own wording, which states the form expected. Writing it out here again
-            // would be a second copy to keep in step with it.
-            if let Err(e) = parse_session_report_name(&file_stem(path)) {
-                self.input_notes.push((which, e.to_string()));
+            if let Some(note) = self.report_note(which) {
+                self.input_notes.push((which, note));
             }
         }
-        if let Some((which, note)) = self.redundant_report() {
+        // The relations between the slots, and only where each file stands up on its own. A pair
+        // holding a file that belongs to another period says nothing about the period in hand, and
+        // a second note underneath the first one would only be that first fact restated.
+        if self.input_notes.iter().any(|(w, _)| w.is_session_report()) {
+            return;
+        }
+        // One note per pass, and in this order. All three describe the same pair from different
+        // angles, and a row carrying two of them says one thing twice.
+        if let Some((which, note)) = self
+            .redundant_report()
+            .or_else(|| self.unneeded_report())
+            .or_else(|| self.uncovered_period())
+        {
             self.input_notes.push((which, note));
+        }
+    }
+
+    /// What is wrong with the report in one slot, judged on its own rather than against the other.
+    ///
+    /// Two things, in this order, because the second cannot be asked until the first has passed:
+    /// whether the name states the dates it covers, and whether those dates reach the billing
+    /// period at all. A report from another period contributes nothing to this one, and this note
+    /// is about the one file just picked, where the coverage check is about the reports as a set.
+    ///
+    /// Silent until a bill has been read, since with no period there is nothing to hold it against.
+    /// The pickers are shut until then, so nothing reaches this in that state by way of the app.
+    fn report_note(&self, which: Input) -> Option<String> {
+        let path = self.picked(which)?;
+        // The parser's own wording, which states the form expected. Writing it out here again
+        // would be a second copy to keep in step with it.
+        if let Err(e) = parse_session_report_name(&file_stem(path)) {
+            return Some(e.to_string());
+        }
+        if self.report_touches_period(which) {
+            return None;
+        }
+        let (start, ending) = billing_period_dates(self.bill_period_ending?).ok()?;
+        let report = report_coverage(path)?;
+        Some(format!(
+            "This report covers {} to {}, which is outside the billing period {start} to {ending}. \
+             Choose a report that reaches into the period.",
+            report.from, report.to,
+        ))
+    }
+
+    /// Whether the report in one slot reaches into the billing period at all.
+    ///
+    /// Overlap, not coverage: one day in common is enough. It is the least a report has to do to
+    /// belong to this period at all, and two callers ask it — [`Self::report_note`] of a file just
+    /// chosen, and [`Self::set_bill_period`] of one already in hand.
+    ///
+    /// `false` with no bill read, no file in the slot, or a name that does not state its dates —
+    /// the three ways the question cannot be answered. Both callers treat that as a reason to hold
+    /// the file back, which is the right way to be wrong: what it costs is one pick, and what it
+    /// avoids is a report from another period counted into this one's figures.
+    fn report_touches_period(&self, which: Input) -> bool {
+        let (Some(ending), Some(path)) = (self.bill_period_ending, self.picked(which)) else {
+            return false;
+        };
+        let (Ok((period_start, period_ending)), Some(report)) =
+            (billing_period_dates(ending), report_coverage(path))
+        else {
+            return false;
+        };
+        report.from <= period_ending && period_start <= report.to
+    }
+
+    /// The two reports do not reach across the billing period between them.
+    ///
+    /// Asked as soon as both slots hold a file: the second report is chosen to close a gap the first
+    /// leaves, so whether it closed one is the thing the user wants to know while the dialog is
+    /// still fresh in mind.
+    ///
+    /// Only with both slots filled. One report that does not cover the period is the ordinary state
+    /// of a form still being filled in — it is what opens the second picker — and reporting it would
+    /// put an error on screen for doing the expected thing.
+    ///
+    /// The library's own message, which names the period and what each file covers, so the app and
+    /// the command line say the same thing about the same pair. Reported against the second slot,
+    /// which is the one just chosen and the only one that can be emptied.
+    fn uncovered_period(&self) -> Option<(Input, String)> {
+        let ending = self.bill_period_ending?;
+        let (one, two) = (self.sessions1.as_deref()?, self.sessions2.as_deref()?);
+        check_reports_cover_period(ending, &[one, two])
+            .err()
+            .map(|e| (Input::Sessions2, e.to_string()))
+    }
+
+    /// Whether the report in one slot covers the whole billing period by itself, so that the other
+    /// slot has nothing left to hold.
+    ///
+    /// `false` until a bill has been read: which period is being reconciled is the bill's to say,
+    /// and without it no report can be shown to cover one. False is the permissive answer — it
+    /// leaves the second picker open — which is the right way to be wrong when the question cannot
+    /// be asked.
+    ///
+    /// The library answers it, from the file name alone, and the answer is the same one the run
+    /// will get: this asks `check_reports_cover_period` with that one report, which is what the run
+    /// asks with both of them.
+    fn covers_period_alone(&self, which: Input) -> bool {
+        let (Some(ending), Some(path)) = (self.bill_period_ending, self.picked(which)) else {
+            return false;
+        };
+        check_reports_cover_period(ending, &[path]).is_ok()
+    }
+
+    /// The session report that has nothing to add, because the other one already covers the whole
+    /// billing period.
+    ///
+    /// The picker for the second report is closed while the first covers the period, so the way a
+    /// slot comes to hold a file it did not need is the other order: a second report chosen first,
+    /// or a bill chosen last. The note is what says so once the order has played out.
+    ///
+    /// Reported against the slot with nothing to add, as [`Self::redundant_report`] is, and the
+    /// remedy differs by slot for the same reason: only the second has a Clear button.
+    fn unneeded_report(&self) -> Option<(Input, String)> {
+        if self.sessions1.is_none() || self.sessions2.is_none() {
+            return None;
+        }
+        let ending = self.bill_period_ending?;
+        let unneeded = if self.covers_period_alone(Input::Sessions1) {
+            Input::Sessions2
+        } else if self.covers_period_alone(Input::Sessions2) {
+            Input::Sessions1
+        } else {
+            return None;
+        };
+        let remedy = match unneeded {
+            Input::Sessions1 => "Move that file to this slot and clear the second.",
+            _ => "Press Clear to empty this slot.",
+        };
+        Some((
+            unneeded,
+            format!(
+                "{} covers the whole billing period ending {ending} on its own, so a second report \
+                 can only bring the same sessions in twice. {remedy}",
+                unneeded.other_session_report().label(),
+            ),
+        ))
+    }
+
+    /// Why the picker for `which` is closed, in a few words for the row it sits on, or `None` while
+    /// it is open.
+    ///
+    /// Only the two session reports are ever closed, and each is closed until the thing it is
+    /// judged against is in hand: the first until the bill has said which period this is, the
+    /// second until the first has shown that period is not covered already. A picker offered before
+    /// then can only take a file it will have to refuse, and a refusal after the fact is a worse
+    /// thing to hand a user than a button that will not press.
+    ///
+    /// The bill and the meter export are never closed. They are what everything else is judged
+    /// against, so there is nothing to judge them against in turn.
+    pub fn picker_closed(&self, which: Input) -> Option<&'static str> {
+        match which {
+            Input::Sessions1 if self.bill.is_none() => Some("Choose the bill first"),
+            // A bill in hand that did not read. Its own row carries the reason; this row says only
+            // that it is waiting on that one.
+            Input::Sessions1 if self.bill_period_ending.is_none() => {
+                Some("The bill above could not be read")
+            }
+            Input::Sessions2 if self.sessions1.is_none() => Some("Choose Session report 1 first"),
+            Input::Sessions2 if self.covers_period_alone(Input::Sessions1) => {
+                Some("Session report 1 covers the whole billing period")
+            }
+            _ => None,
         }
     }
 
@@ -1084,14 +1305,28 @@ mod test {
         assert!(state.note_for(Input::Sessions1).is_none());
     }
 
-    /// The bill and the meter export are not named by convention, so nothing is claimed about them.
+    /// The bill and the meter export are not named by convention, so neither is judged by its name.
+    ///
+    /// The bill is judged all the same, by what is inside it: a file that is not a readable bill is
+    /// reported at its own picker, and leaves no period for the session pickers to work against.
+    /// The meter export is judged by neither, and is read only when the run starts.
     #[test]
     fn only_session_reports_are_judged_by_their_name() {
         let mut state = SurplusState::default();
-        state.select(Input::Bill, PathBuf::from("/data/anything.pdf"));
         state.select(Input::Meter, PathBuf::from("/data/anything.xml"));
-        assert!(state.note_for(Input::Bill).is_none());
         assert!(state.note_for(Input::Meter).is_none());
+
+        state.select(Input::Bill, PathBuf::from("/data/anything.pdf"));
+        assert!(
+            state.note_for(Input::Bill).is_some(),
+            "a file that is not a bill has to be reported where it was chosen"
+        );
+        assert_eq!(state.bill_period_ending, None);
+        assert_eq!(
+            state.picker_closed(Input::Sessions1),
+            Some("The bill above could not be read")
+        );
+        assert!(!state.can_run());
     }
 
     /// The second schedule is sent only when it is asked for. The command line says this by how
@@ -1161,24 +1396,31 @@ mod test {
     /// Nothing runs until the bill, the meter export and one session report are in hand. The
     /// second session report is optional.
     ///
-    /// A count is the wrong test: what matters is whether the reports reach across the period,
-    /// which is checked when the run starts and also catches two files that leave a gap.
+    /// A count is the wrong test: what matters is whether the reports reach across the period, and
+    /// one file can do that as readily as two.
     #[test]
     fn the_run_needs_one_session_report_not_two() {
-        let required = [Input::Bill, Input::Meter, Input::Sessions1];
-        let mut state = SurplusState::default();
-        for (i, which) in required.into_iter().enumerate() {
-            assert!(!state.can_run(), "offered with {i} of 3 required files");
-            state.select(which, PathBuf::from(sample_name(which)));
-        }
+        let mut state = with_bill_period();
+        assert!(!state.can_run(), "no session report yet");
+
+        // May alone leaves 1 to 23 June uncovered, so the run will refuse it -- but the form is
+        // filled in, and saying so is the run's job rather than the picker's.
+        state.select(
+            Input::Sessions1,
+            PathBuf::from(sample_name(Input::Sessions1)),
+        );
         assert!(state.can_run(), "the second session report is optional");
 
-        // And adding it does not take the offer away.
+        // And adding the report that closes the gap does not take the offer away.
         state.select(
             Input::Sessions2,
             PathBuf::from(sample_name(Input::Sessions2)),
         );
-        assert!(state.can_run(), "both session reports are allowed");
+        assert!(state.note_for(Input::Sessions2).is_none());
+        assert!(
+            state.can_run(),
+            "May and June cover the period between them"
+        );
     }
 
     fn sample_name(which: Input) -> &'static str {
@@ -1190,53 +1432,56 @@ mod test {
         }
     }
 
-    /// One export covering the whole period leaves the second picker nothing to add, and a file
-    /// put there anyway would bring the same sessions in a second time.
+    /// A pair where one file's dates already hold the other's, in the order the pickers allow it to
+    /// be reached: a month in the first slot, and the range containing it in the second.
+    ///
+    /// June leaves 24 to 31 May uncovered, which is what opens the second slot; the May-June file
+    /// then holds every session June does. The wider file is the one to keep, so the note lands on
+    /// the first slot.
     #[test]
-    fn a_second_report_the_first_already_covers_is_refused() {
-        let mut state = SurplusState::default();
-        state.select(Input::Bill, PathBuf::from(sample_name(Input::Bill)));
-        state.select(Input::Meter, PathBuf::from(sample_name(Input::Meter)));
+    fn a_second_report_that_already_holds_the_first_is_refused() {
+        let mut state = with_bill_period();
         state.select(
             Input::Sessions1,
-            PathBuf::from("/data/Session_Report_May_1_2026-June_30_2026.csv"),
+            PathBuf::from("/data/Session_Report_June_1_2026-June_30_2026.csv"),
         );
-        assert!(state.can_run(), "one report covering the period is enough");
+        assert!(state.can_run(), "one report, and the run may say the rest");
 
         state.select(
             Input::Sessions2,
-            PathBuf::from("/data/Session_Report_June_1_2026-June_30_2026.csv"),
+            PathBuf::from("/data/Session_Report_May_1_2026-June_30_2026.csv"),
         );
         // The whole message, because `docs/app-cheat-sheet.md` quotes it.
         assert_eq!(
-            state.note_for(Input::Sessions2),
+            state.note_for(Input::Sessions1),
             Some(
-                "Session report 1 covers 2026-05-01 to 2026-06-30, which already includes this \
-                 file's 2026-06-01 to 2026-06-30. Choose a report reaching dates it does not, or \
-                 press Clear to empty this slot."
+                "Session report 2 covers 2026-05-01 to 2026-06-30, which already includes this \
+                 file's 2026-06-01 to 2026-06-30. Move that file to this slot and clear the \
+                 second, or choose a report reaching dates it does not."
             ),
             "June is inside May-June"
         );
+        assert!(state.note_for(Input::Sessions2).is_none());
         assert!(
             !state.can_run(),
             "a refused file must not let the run start"
         );
 
-        // The same file in both slots is the same relation, not a special case.
+        // The same file in both slots is the same relation, not a special case. Equal ranges are
+        // read as the first covering the second, so the note moves to the slot that can be emptied.
         state.select(
-            Input::Sessions2,
+            Input::Sessions1,
             PathBuf::from("/data/Session_Report_May_1_2026-June_30_2026.csv"),
         );
         assert!(state.note_for(Input::Sessions2).is_some());
+        assert!(state.note_for(Input::Sessions1).is_none());
     }
 
     /// Emptying the optional picker is how the refusal above is answered, and it must leave the
     /// form as it was before the file was chosen.
     #[test]
     fn clearing_the_second_report_lifts_what_it_was_refused_for() {
-        let mut state = SurplusState::default();
-        state.select(Input::Bill, PathBuf::from(sample_name(Input::Bill)));
-        state.select(Input::Meter, PathBuf::from(sample_name(Input::Meter)));
+        let mut state = with_bill_period();
         state.select(
             Input::Sessions1,
             PathBuf::from("/data/Session_Report_May_1_2026-June_30_2026.csv"),
@@ -1283,6 +1528,277 @@ mod test {
             PathBuf::from("/data/Session_Report_April_1_2026-June_30_2026.csv"),
         );
         assert!(state.note_for(Input::Sessions1).is_some());
+        assert!(state.note_for(Input::Sessions2).is_none());
+    }
+
+    /// A state that has read a bill closing on 23 June 2026, so its period runs from 24 May, with
+    /// the meter export chosen as well so that only the session slots decide whether it can run.
+    ///
+    /// The closing date is set rather than read out of a PDF: what these tests are about is the
+    /// decision taken once it is known, and the repository does not carry a bill.
+    fn with_bill_period() -> SurplusState {
+        SurplusState {
+            bill: Some(PathBuf::from(sample_name(Input::Bill))),
+            meter: Some(PathBuf::from(sample_name(Input::Meter))),
+            bill_period_ending: Some(civil::date(2026, 6, 23)),
+            ..Default::default()
+        }
+    }
+
+    /// The second picker is shut until there is a first report to measure, and shut again as soon
+    /// as that report turns out to cover the period on its own.
+    ///
+    /// Open in either state, it takes a June report alongside a May-June one, and the run then
+    /// meets every June session twice and reports an anomaly for each.
+    #[test]
+    fn the_second_picker_opens_only_when_the_first_report_leaves_something_uncovered() {
+        let mut state = with_bill_period();
+        assert_eq!(
+            state.picker_closed(Input::Sessions2),
+            Some("Choose Session report 1 first")
+        );
+
+        state.select(
+            Input::Sessions1,
+            PathBuf::from("/data/Session_Report_May_1_2026-June_30_2026.csv"),
+        );
+        assert_eq!(
+            state.picker_closed(Input::Sessions2),
+            Some("Session report 1 covers the whole billing period"),
+            "24 May to 23 June is inside May-June"
+        );
+
+        // A single month leaves the days before it uncovered, which is the case the second slot
+        // exists for.
+        state.select(
+            Input::Sessions1,
+            PathBuf::from("/data/Session_Report_June_1_2026-June_30_2026.csv"),
+        );
+        assert_eq!(state.picker_closed(Input::Sessions2), None);
+    }
+
+    /// Each session picker waits for what its file will be judged against, and says which it is
+    /// waiting for. The bill and the meter export wait for nothing.
+    #[test]
+    fn each_session_picker_waits_for_what_it_is_judged_against() {
+        let empty = SurplusState::default();
+        assert_eq!(
+            empty.picker_closed(Input::Sessions1),
+            Some("Choose the bill first")
+        );
+        assert_eq!(
+            empty.picker_closed(Input::Sessions2),
+            Some("Choose Session report 1 first")
+        );
+        assert_eq!(empty.picker_closed(Input::Bill), None);
+        assert_eq!(empty.picker_closed(Input::Meter), None);
+
+        // A bill that read opens the first slot.
+        assert_eq!(with_bill_period().picker_closed(Input::Sessions1), None);
+    }
+
+    /// Widening the first report can leave the second with nothing to add, and the note says so
+    /// even where neither file contains the other.
+    ///
+    /// April-to-5-June closes the gap May alone leaves, so the pair is accepted; the May-June file
+    /// then covers the period by itself, and containment cannot be what settles that -- it reaches
+    /// neither back to April nor forward past 5 June.
+    #[test]
+    fn widening_the_first_report_leaves_the_second_with_nothing_to_add() {
+        let mut state = with_bill_period();
+        state.select(
+            Input::Sessions1,
+            PathBuf::from("/data/Session_Report_June_1_2026-June_30_2026.csv"),
+        );
+        state.select(
+            Input::Sessions2,
+            PathBuf::from("/data/Session_Report_April_1_2026-June_5_2026.csv"),
+        );
+        assert!(state.note_for(Input::Sessions2).is_none());
+        assert!(state.can_run());
+
+        state.select(
+            Input::Sessions1,
+            PathBuf::from("/data/Session_Report_May_1_2026-June_30_2026.csv"),
+        );
+        assert_eq!(
+            state.note_for(Input::Sessions2),
+            Some(
+                "Session report 1 covers the whole billing period ending 2026-06-23 on its own, \
+                 so a second report can only bring the same sessions in twice. Press Clear to \
+                 empty this slot."
+            )
+        );
+        assert!(
+            !state.can_run(),
+            "a refused file must not let the run start"
+        );
+
+        state.clear(Input::Sessions2);
+        assert!(state.note_for(Input::Sessions2).is_none());
+        assert!(state.can_run(), "the run is offered again");
+    }
+
+    /// A report from another period is refused where it was chosen, at either slot, and says which
+    /// period it was held against.
+    ///
+    /// An August report against a June bill has not one day in common with the period. Taken
+    /// quietly it produces a run whose EV figures are near enough zero, which is a number someone
+    /// may go on to argue a bill from.
+    #[test]
+    fn a_report_that_does_not_reach_the_period_is_refused_at_its_own_picker() {
+        let outside = "This report covers 2026-08-01 to 2026-09-04, which is outside the billing \
+                       period 2026-05-24 to 2026-06-23. Choose a report that reaches into the \
+                       period.";
+        let august = "/data/Session_Report_August_1_2026-September_4_2026.csv";
+
+        let mut state = with_bill_period();
+        state.select(Input::Sessions1, PathBuf::from(august));
+        assert_eq!(state.note_for(Input::Sessions1), Some(outside));
+        assert!(
+            !state.can_run(),
+            "a refused file must not let the run start"
+        );
+
+        // The same of the second slot, and one day of overlap is enough to lift it: June reaches
+        // the period by 23 days, May-to-25 by two.
+        state.select(
+            Input::Sessions1,
+            PathBuf::from("/data/Session_Report_June_1_2026-June_30_2026.csv"),
+        );
+        state.select(Input::Sessions2, PathBuf::from(august));
+        assert_eq!(state.note_for(Input::Sessions2), Some(outside));
+
+        state.select(
+            Input::Sessions2,
+            PathBuf::from("/data/Session_Report_May_1_2026-May_25_2026.csv"),
+        );
+        assert_ne!(state.note_for(Input::Sessions2), Some(outside));
+    }
+
+    /// Two reports that both reach the period but leave a day of it between them are refused at the
+    /// second picker, not at the run, and in the library's own words.
+    #[test]
+    fn a_pair_that_leaves_a_gap_is_refused_as_soon_as_the_second_is_chosen() {
+        let mut state = with_bill_period();
+        state.select(
+            Input::Sessions1,
+            PathBuf::from("/data/Session_Report_June_1_2026-June_30_2026.csv"),
+        );
+        assert!(
+            state.can_run(),
+            "one report short of the period is a form still being filled in, not an error"
+        );
+
+        // May to the 25th reaches two days into the period, so it is not a report from elsewhere;
+        // what it leaves out is 26 to 31 May.
+        state.select(
+            Input::Sessions2,
+            PathBuf::from("/data/Session_Report_May_1_2026-May_25_2026.csv"),
+        );
+        let note = state
+            .note_for(Input::Sessions2)
+            .expect("26 to 31 May is in neither file");
+        assert!(
+            note.starts_with(
+                "the session reports do not cover the billing period 2026-05-24 to 2026-06-23:"
+            ),
+            "{note}"
+        );
+        assert!(
+            note.contains("Session_Report_May_1_2026-May_25_2026.csv"),
+            "{note}"
+        );
+        assert!(!state.can_run());
+
+        // The whole of May closes the gap, and the note goes with it.
+        state.select(
+            Input::Sessions2,
+            PathBuf::from(sample_name(Input::Sessions1)),
+        );
+        assert!(state.note_for(Input::Sessions2).is_none());
+        assert!(state.can_run());
+    }
+
+    /// A new bill is a new period, so the pair chosen for the old one does not carry over: the
+    /// second slot is emptied whatever it holds, and the first unless its report reaches into the
+    /// new period.
+    #[test]
+    fn choosing_a_different_bill_empties_the_session_slots_it_invalidates() {
+        let mut state = with_bill_period();
+        state.select(
+            Input::Sessions1,
+            PathBuf::from("/data/Session_Report_June_1_2026-June_30_2026.csv"),
+        );
+        state.select(
+            Input::Sessions2,
+            PathBuf::from(sample_name(Input::Sessions1)),
+        );
+
+        // The period ending 23 July runs from 24 June, which the June report reaches into by a
+        // week. It stays; May does not touch it and goes, and so would any second report.
+        state.set_bill_period(Some(civil::date(2026, 7, 23)));
+        assert_eq!(
+            state.picked(Input::Sessions1),
+            Some(Path::new(
+                "/data/Session_Report_June_1_2026-June_30_2026.csv"
+            ))
+        );
+        assert_eq!(state.picked(Input::Sessions2), None);
+
+        // A period neither report touches empties the first slot too.
+        state.set_bill_period(Some(civil::date(2026, 9, 23)));
+        assert_eq!(state.picked(Input::Sessions1), None);
+    }
+
+    /// A bill that will not read leaves no period, so both session slots are emptied and the first
+    /// picker shuts: there is nothing left for a session report to be judged against.
+    #[test]
+    fn a_bill_that_does_not_read_empties_both_session_slots() {
+        let mut state = with_bill_period();
+        state.select(
+            Input::Sessions1,
+            PathBuf::from("/data/Session_Report_June_1_2026-June_30_2026.csv"),
+        );
+        state.select(
+            Input::Sessions2,
+            PathBuf::from(sample_name(Input::Sessions1)),
+        );
+
+        state.select(Input::Bill, PathBuf::from("/data/not-a-bill.pdf"));
+        assert_eq!(state.picked(Input::Sessions1), None);
+        assert_eq!(state.picked(Input::Sessions2), None);
+        assert!(state.note_for(Input::Bill).is_some());
+        assert_eq!(
+            state.picker_closed(Input::Sessions1),
+            Some("The bill above could not be read")
+        );
+    }
+
+    /// The wider report in the second slot makes the first the one with nothing to add, and the
+    /// note goes to the picker that has to change.
+    ///
+    /// June-to-July reaches the period without covering it, which is what opens the second slot;
+    /// the May-June file then covers the period alone, and neither file contains the other.
+    #[test]
+    fn the_note_names_whichever_slot_has_nothing_to_add() {
+        let mut state = with_bill_period();
+        state.select(
+            Input::Sessions1,
+            PathBuf::from("/data/Session_Report_June_1_2026-July_31_2026.csv"),
+        );
+        state.select(
+            Input::Sessions2,
+            PathBuf::from("/data/Session_Report_May_1_2026-June_30_2026.csv"),
+        );
+        assert_eq!(
+            state.note_for(Input::Sessions1),
+            Some(
+                "Session report 2 covers the whole billing period ending 2026-06-23 on its own, \
+                 so a second report can only bring the same sessions in twice. Move that file to \
+                 this slot and clear the second."
+            )
+        );
         assert!(state.note_for(Input::Sessions2).is_none());
     }
 

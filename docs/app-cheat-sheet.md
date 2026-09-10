@@ -8,24 +8,18 @@ See [README.md - Getting and running the software](../README.md#getting-and-runn
 
 ## The sample session reports
 
-`data/evolute` holds two generations of the same sessions, and only one of them reads.
-
-The Evolute portal now states connection times to the second, with
-`Conn_DateTime_Start + Conn_Duration == Conn_DateTime_End`. The files without `-seconds` in their
-names predate that: they state a duration to the second against a start and an end stated only to
-the minute, so almost every row of them contradicts itself and is left out of every figure. Running
-them gives a total of 38.699 kWh rather than 1362, and a *Sessions left out* section hundreds of
-rows long.
-
-**Use the `-seconds` files everywhere below.** They are built from the older ones by
-`scripts/make-seconds-copies.py`, which also explains the one row per file that is deliberately a
-second off the invariant.
+Three files in `data/evolute`, and every figure below comes from them:
 
 | File | Covers |
 |:---|:---|
 | `Session_Report_May_1_2026-May_31_2026-seconds.csv` | May, a mock built from June by `scripts/make-may-mock.py` |
 | `Session_Report_June_1_2026-June_30_2026-seconds.csv` | June, real anonymized data |
 | `Session_Report_May_1_2026-June_30_2026-seconds.csv` | both months in one file, as a single portal export spanning the period would be |
+
+The Evolute portal states connection times to the second, with
+`Conn_DateTime_Start + Conn_Duration == Conn_DateTime_End`. `scripts/make-seconds-copies.py` writes
+these three, and explains the one row per file that is deliberately a second off that invariant so
+that `DURATION_TOLERANCE` is exercised.
 
 ## Tabs
 
@@ -56,34 +50,83 @@ EV delivery cost     -92.02
 Surplus             -156.24          (red, and "fell short" in the report)
 ```
 
-The report shown runs to 142 lines.
+The report shown runs to 140 lines.
 
 ### One file instead of two
 
 `Session_Report_May_1_2026-June_30_2026-seconds.csv` covers the whole period on its own. Put it in
-**Session report 1**, leave **Session report 2** empty, and the four amounts above are unchanged to
-the cent — the same sessions, read from one file rather than two. The report is 137 lines rather
-than 142, because *Session data* names one file and drops the sentence about covering the period.
+**Session report 1** and leave **Session report 2** empty. The four amounts are the ones above, to
+the cent: the same sessions, read from one file. The report runs to 135 lines, and *Session data*
+names the one file.
 
-With that file in the first slot, **Session report 2** will not take a file whose dates it already
-covers:
+### The pickers open in order
+
+Each session picker is shut until the thing its file will be judged against is in hand, and says
+which it is waiting for where it would otherwise say *None chosen*:
+
+| Slot | Shut while | It says |
+|:---|:---|:---|
+| Session report 1 | no bill is chosen | `Choose the bill first` |
+| Session report 1 | the bill chosen would not read | `The bill above could not be read` |
+| Session report 2 | the first slot is empty | `Choose Session report 1 first` |
+| Session report 2 | the first slot covers the whole period | `Session report 1 covers the whole billing period` |
+
+The bill is what says which period this is, so a file that is not a readable Toronto Hydro bill is
+reported at the bill's own picker, as soon as it is chosen. Pick any other PDF to see it.
+
+### Changing the bill
+
+Choosing a different bill is choosing a different period, and the session slots are emptied to
+match: the second always, and the first unless the report in it reaches into the new period. With
+the June bill and `Session_Report_June_1_2026-June_30_2026-seconds.csv` in the first slot, swap in
+`TH_5728140000_2026_07_28.pdf` — the period ending 23 July starts on 24 June, which that file
+reaches into by a week, so it stays. Swap in `TH_5728140000_2026_05_28.pdf` instead and the slot
+empties: nothing in June belongs to a period ending 23 May.
+
+### A report from another period
+
+Each file is held against the bill's period the moment it is chosen, at either slot. Put
+`Session_Report_August_1_2026-September_4_2026.csv` into **Session report 1** under the June bill:
 
 ```
-Session report 1 covers 2026-05-01 to 2026-06-30, which already includes this
-file's 2026-06-01 to 2026-06-30. Choose a report reaching dates it does not, or
-press Clear to empty this slot.
+This report covers 2026-08-01 to 2026-09-04, which is outside the billing period
+2026-05-24 to 2026-06-23. Choose a report that reaches into the period.
 ```
 
-**Work out the surplus** stays disabled until the second slot is emptied with **Clear**, which
-appears beside it whenever it holds a file. The check is on the file *names*, so it does not need
-the bill.
+One day of overlap is enough to lift it. `Session_Report_July_1_2026-July_31_2026-mock.csv` gets the
+same message under the June bill and none at all under `TH_5728140000_2026_07_28.pdf`, whose period
+runs 24 June to 23 July.
+
+### One report that already holds the other
+
+With the June bill, put `Session_Report_June_1_2026-June_30_2026-seconds.csv` in the first slot —
+June alone leaves 24 to 31 May uncovered, so the second slot opens — and then
+`Session_Report_May_1_2026-June_30_2026-seconds.csv` in the second:
+
+```
+Session report 2 covers 2026-05-01 to 2026-06-30, which already includes this
+file's 2026-06-01 to 2026-06-30. Move that file to this slot and clear the
+second, or choose a report reaching dates it does not.
+```
+
+The note lands on the slot that has to change, which here is the first: the wider file is the one to
+keep. **Work out the surplus** stays disabled until it is answered, and **Clear** appears beside the
+second slot whenever it holds a file.
+
+Two reports that each reach the period but leave a day of it between them are refused the same way,
+in the run's own words — `the session reports do not cover the billing period …`, followed by what
+each file covers. The sample files cannot be made to produce it: every pair of them that both reach
+one of the four sample bills' periods either covers it or is the case above.
+
+One report short of the period on its own is never an error. That is the state the second slot
+exists for, so nothing is said until a second file arrives.
 
 ### What to look at
 
 Collapse and expand the sections. *Session data* should name both CSVs, in the order their names
 begin — May before June, whichever picker each went into. *Sessions needing a look* lists four rows,
 all `DuplicateId`: `S83723` twice in May and `S37487` twice in June, with a glossary beneath. There
-is no *Sessions left out* section, because with the `-seconds` files nothing is left out.
+is no *Sessions left out* section: nothing in these files is left out.
 
 ### Things worth trying
 
@@ -92,29 +135,22 @@ is no *Sessions left out* section, because with the `-seconds` files nothing is 
 | Rates `0.30` / `0.30` / `0.30`                               | Surplus **+136.95**, coloured as the accent rather than red, and "covered" in the report |
 | Rates `0.20` / `0.20` / `0.20`                               | Surplus **+0.75** — all but break-even, so you can watch the sign flip either way |
 | Tick *rates changed*, leave `0.1100/0.0900/0.0700` from 1 May, add `0.30` flat from `2026-06-01` | Cost recovery **359.52**, surplus **+87.87**; the recovery report gains a second stretches table |
-| Change any picker after a run                                | Figures vanish, and the *Peak power* tab greys out           |
+| Change any picker after a run                                | Figures vanish, and the *Peak power detail* tab greys out    |
 | Clear the mid-peak rate (delete it, don't set it to zero) and run | `the mid-peak rate is blank` — refused, not read as zero     |
 | Type `eleven cents` into the mid-peak rate                   | `cannot read "eleven cents" as the mid-peak rate: …`         |
 
 ### Errors worth provoking
 
-All four are real messages from these files.
+All three are real messages from these files, and all three come from the run. What the pickers
+refuse before the run is above: a bill that will not read, a report from another period, and one
+report that already holds the other.
 
-**Wrong bill for the reports** — pick `TH_5728140000_2026_05_28.pdf` with the same two CSVs:
+Choosing the wrong bill is one of those. `TH_5728140000_2026_05_28.pdf` covers 24 April to 23 May,
+so the June CSV is refused at its picker.
 
-```
-the session reports do not cover the billing period 2026-04-24 to 2026-05-23:
-```
-
-**Reports that miss the start** — the June bill with the `June` seconds file and
-`Session_Report_July_1_2026-July_31_2026-mock.csv`:
-
-```
-the session reports do not cover the billing period 2026-05-24 to 2026-06-23:
-```
-
-**No meter data for the period** — `TH_5728140000_2026_07_28.pdf` with the same `June` and `July`
-CSVs:
+**No meter data for the period** — `TH_5728140000_2026_07_28.pdf` with the `June` and `July` CSVs.
+Choosing that bill empties the second slot, so put July back in it; the two cover 24 June to 23
+July between them, and the run gets as far as the meter:
 
 ```
 the meter data covers 24 of the 720 intervals in the billing period ending 2026-07-23,
@@ -128,21 +164,23 @@ the cost-recovery rates given for the start of the period take effect 2026-08-01
 after it starts on 2026-05-24
 ```
 
-**A session report whose name says nothing.** The picker filters to `.csv`, so to reach this, copy
-one to a name without dates:
+**A session report whose name says nothing.** The picker filters to `.csv`, so to reach this, pick
+the bill first and then copy a report to a name without dates:
 
 ```sh
 cp data/evolute/Session_Report_June_1_2026-June_30_2026-seconds.csv data/evolute/sessions.csv
 ```
 
-Picking `data/evolute/sessions.csv` is refused at the picker, before anything is read, and
+Picking `data/evolute/sessions.csv` is refused at the picker, on its name alone, and
 **Work out the surplus** stays disabled until you replace it. Delete the copy afterwards.
 
-## Peak power
+## Peak power detail
 
 The tab is greyed until the *Cost recovery* run succeeds. A report with three sections provides
-details on the peak power values that drive the delivery cost portion of *Cost recovery*. The value
-used for each delivery charge is that section's energy-based figure.
+details on the peak power values that drive the delivery cost portion of *Cost recovery*, one
+section per peak — *EV Peak kVA Contribution*, *EV Peak kW Contribution* and *EV Peak kW 7-7
+Contribution*. The value used for each delivery charge is the one marked `*` in that section's
+*Estimates* table. What the terms mean is under *Definitions and Conventions*, once, at the end.
 
 | Section | What to check |
 |:---|:---|
@@ -159,9 +197,9 @@ peaked, from the sessions — `19:00` for the kVA section, `14:45` for `kW 7-7`.
 billed on the segment.
 
 The *Segments* table under each set of estimates has a column per derivation, `Count-based (EVs)`
-and `Energy-based (kW)`, with the prose explaining both directly beneath it. For `kW 7-7` the first
-three segments are empty and the whole figure comes from `14:45`, which is the clearest of the three
-for seeing what a segment contributes.
+and `Energy-based (kW)`; *Definitions and Conventions* says how each is worked out. For `kW 7-7`
+the first three segments are empty and the whole figure comes from `14:45`, which is the clearest
+of the three for seeing what a segment contributes.
 
 ## Evolute reimbursement
 
@@ -248,8 +286,8 @@ how it is named are in [ERRORS.md](ERRORS.md#the-run-logs).
 What to check here is that the timestamps move: every log a tab writes should be rewritten on the
 run that reads the file, whether or not you save anything.
 
-Read against the `-seconds` files, a session report's log holds `ExcessiveAvgKw` rows and dropped
-copies, and nothing else. On the two-file run: 25 items for May, all `ExcessiveAvgKw`, and 27 for
+A session report's log holds `ExcessiveAvgKw` rows and dropped copies, and nothing else. On the
+two-file run: 25 items for May, all `ExcessiveAvgKw`, and 27 for
 June — the same 25 plus two records dropped as copies of May's rows 32 and 121. Those two are the
 sessions that run past midnight on 31 May, so both months' reports carry them and the merge counts
 each once; the log names the file and row each repeats. Reading the single May-June file instead

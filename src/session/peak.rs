@@ -78,6 +78,72 @@ impl EstimateSet {
     }
 }
 
+/// One of the four estimates, named by its derivation and its unit.
+///
+/// What a caller uses to say which estimate is EV charging's share of the peak an interval was
+/// chosen for. A report marks that one, and a charge priced on it reads it through
+/// [`IntervalEstimates::figure`], so the figure a reader is pointed to and the figure a charge was
+/// computed from are the same figure.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Estimate {
+    EnergyBasedKw,
+    EnergyBasedKva,
+    CountBasedKw,
+    CountBasedKva,
+}
+
+impl Estimate {
+    /// The four, in the order the report tabulates them — the order of [`EstimateSet::values`].
+    pub const ALL: [Self; 4] = [
+        Self::EnergyBasedKw,
+        Self::EnergyBasedKva,
+        Self::CountBasedKw,
+        Self::CountBasedKva,
+    ];
+
+    /// The derivation, as the report labels it.
+    pub fn derivation(self) -> &'static str {
+        match self {
+            Self::EnergyBasedKw | Self::EnergyBasedKva => "Energy-based",
+            Self::CountBasedKw | Self::CountBasedKva => "Count-based",
+        }
+    }
+
+    /// The unit, as the report labels it.
+    pub fn unit(self) -> &'static str {
+        match self {
+            Self::EnergyBasedKw | Self::CountBasedKw => "kW",
+            Self::EnergyBasedKva | Self::CountBasedKva => "kVA",
+        }
+    }
+}
+
+impl IntervalEstimates {
+    /// The segment an estimate is read off: the one where its own derivation peaks.
+    ///
+    /// Both units of a derivation come off the one segment it chose. The choice is made on kW, and
+    /// the load model is monotone in it — a segment drawing more real power draws more apparent
+    /// power — so the segment maximising kVA is the same one, and choosing again per unit could only
+    /// introduce a disagreement.
+    pub fn segment_for(&self, estimate: Estimate) -> &(RSegment, EstimateSet) {
+        match estimate {
+            Estimate::EnergyBasedKw | Estimate::EnergyBasedKva => &self.energy_based_seg_estimate,
+            Estimate::CountBasedKw | Estimate::CountBasedKva => &self.count_based_seg_estimate,
+        }
+    }
+
+    /// One estimate's figure, off the segment [`Self::segment_for`] names.
+    pub fn figure(&self, estimate: Estimate) -> f64 {
+        let set = &self.segment_for(estimate).1;
+        match estimate {
+            Estimate::EnergyBasedKw => set.energy_based_kw,
+            Estimate::EnergyBasedKva => set.energy_based_kva,
+            Estimate::CountBasedKw => set.count_based_kw,
+            Estimate::CountBasedKva => set.count_based_kva,
+        }
+    }
+}
+
 /// The estimate proper, once the sessions have been read.
 ///
 /// Separate from the reader because a [`Sessions`] can be assembled several ways —

@@ -63,7 +63,14 @@ fn inputs(ui: &mut egui::Ui, state: &mut SurplusState, working: &mut WorkingDir)
         .show(ui, |ui| {
             for which in Input::ALL {
                 ui.label(which.label());
-                if ui.button("Choose…").clicked() {
+                // A picker with nothing to take is shut, and the reason stands in the column that
+                // would otherwise say "None chosen": a greyed button with no explanation beside it
+                // reads as a broken control.
+                let closed = state.picker_closed(which);
+                if ui
+                    .add_enabled(closed.is_none(), egui::Button::new("Choose…"))
+                    .clicked()
+                {
                     let (description, extensions) = which.filter();
                     if let Some(path) = widgets::dialog(working)
                         .add_filter(description, extensions)
@@ -73,7 +80,7 @@ fn inputs(ui: &mut egui::Ui, state: &mut SurplusState, working: &mut WorkingDir)
                         state.select(which, path);
                     }
                 }
-                widgets::picked_file(ui, state.picked(which), "None chosen");
+                widgets::picked_file(ui, state.picked(which), closed.unwrap_or("None chosen"));
                 // Only where emptying the picker is a choice the run respects, and only while
                 // there is something in it to empty. A button that greys out on three rows of four
                 // reads as a control that is broken rather than as one that does not apply.
@@ -97,11 +104,12 @@ fn inputs(ui: &mut egui::Ui, state: &mut SurplusState, working: &mut WorkingDir)
 
     widgets::note(
         ui,
-        "A billing period runs from the 24th to the 23rd, so it usually spans two monthly session \
-         reports. One report covering the whole period is enough on its own: leave the second slot \
-         empty, or press Clear to empty it. A second report is refused when the first already \
-         covers the dates it holds, since it would only bring the same sessions in twice. \
-         Either order will do — the names say what each holds.",
+        "The bill says which billing period this is, and every session report is taken against it: \
+         one that does not reach into the period is refused where it is chosen. A period runs from \
+         the 24th to the 23rd and usually spans two monthly reports, so the second slot opens when \
+         the first leaves part of the period uncovered, and stays shut when one report covers the \
+         whole of it. Choosing a different bill empties the second slot, and the first as well \
+         unless the report in it reaches into the new period.",
     );
 }
 

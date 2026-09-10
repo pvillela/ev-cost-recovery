@@ -5,10 +5,15 @@
 
 use crate::{
     state::{SurplusState, WorkingDir},
+    theme::Bold as _,
     widgets,
 };
 use eframe::egui;
-use ev_cost_recovery::{api::pure::PricedInterval, time::zoned_span};
+use ev_cost_recovery::{
+    api::pure::PricedInterval,
+    session::{DEFINITIONS_POINTER, definitions},
+    time::zoned_span,
+};
 use std::fs;
 
 pub fn ui(ui: &mut egui::Ui, state: &mut SurplusState, working: &mut WorkingDir) {
@@ -39,18 +44,29 @@ pub fn ui(ui: &mut egui::Ui, state: &mut SurplusState, working: &mut WorkingDir)
     }
     ui.add_space(12.0);
 
+    // Bold, where the saved document has markdown's `**`: the marks are how plain text says bold,
+    // and on screen they would be two pairs of asterisks around a sentence.
+    ui.label(egui::RichText::new(DEFINITIONS_POINTER.trim_matches('*')).bold());
+    ui.add_space(6.0);
+
     // Plain text and open to begin with, which is how `widgets::section_ui` draws the other tabs'
-    // report sections. These three are the same thing — a report broken into collapsible parts —
-    // so they are drawn the same way. Colouring them and opening only the first made one report
-    // look like a different kind of screen from the rest.
+    // report sections. These are the same thing — a report broken into collapsible parts — so they
+    // are drawn the same way. Colouring them and opening only the first made one report look like
+    // a different kind of screen from the rest.
     for (i, priced) in intervals.iter().enumerate() {
         egui::CollapsingHeader::new(heading_for(priced))
             .id_salt(i)
             .default_open(true)
             .show(ui, |ui| {
-                widgets::monospace_block(ui, priced.estimates.to_markdown().trim_end());
+                widgets::monospace_block(ui, priced.to_markdown().trim_end());
             });
     }
+    egui::CollapsingHeader::new("Definitions and Conventions")
+        .id_salt(intervals.len())
+        .default_open(true)
+        .show(ui, |ui| {
+            widgets::monospace_block(ui, definitions().trim_end());
+        });
 }
 
 /// One interval's heading: the bill line's unit, then when the interval was, in local time.
@@ -70,18 +86,21 @@ fn heading_for(priced: &PricedInterval) -> String {
     )
 }
 
-/// The three reports as one document, for saving and copying.
+/// The three reports as one document, for saving and copying: the pointer to the definitions, the
+/// three reports, and the definitions themselves.
 ///
-/// Each is rendered by the same `to_markdown` the command line prints, with a line above it saying
-/// which of the three it is. That line is the only thing added.
+/// Each report carries its own title naming the peak it is for, so nothing is added between them.
+/// Two blank lines apart, as the top-level sections of the other tabs' reports are.
 fn document(intervals: &[PricedInterval; 3]) -> String {
-    let mut out = String::new();
-    for priced in intervals {
-        out.push_str(&format!("Interval priced for {}\n\n", priced.unit));
-        out.push_str(&priced.estimates.to_markdown());
-        out.push('\n');
-    }
-    out
+    let reports: Vec<String> = intervals
+        .iter()
+        .map(|priced| priced.to_markdown().trim_end().to_owned())
+        .collect();
+    format!(
+        "{DEFINITIONS_POINTER}\n\n{}\n\n{}",
+        reports.join("\n\n\n"),
+        definitions()
+    )
 }
 
 /// The Copy and Save row. `error` is where a failed save is left, for the caller to draw.

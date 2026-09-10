@@ -1357,7 +1357,7 @@ mod test {
         assert!(s.contains("the four amounts above add exactly"), "{s}");
         // Once for each of the three parts printed beneath, and not for the summary.
         assert_eq!(
-            s.matches("figures are rounded for display").count(),
+            s.matches("values are rounded for display").count(),
             3,
             "{s}"
         );
@@ -1533,6 +1533,7 @@ mod test {
         )
         .expect("the fixture bill closes a billing period and has all three maxima")
         .to_string();
-        assert!(!s.contains("EV Peak Power Contribution"), "{s}");
+        // "EV Peak " opens every interval report's title, whichever peak it is for.
+        assert!(!s.contains("EV Peak "), "{s}");
     }
 }

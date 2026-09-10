@@ -327,11 +327,13 @@ could drift. If you find yourself formatting a figure anywhere else — in a bin
 test helper — that is the thing to reconsider.
 
 `ev_cost_recovery`'s Peak power detail tab is the case that looks like an exception and is not. It
-shows three reports the surplus's own report does not, but each is
-`IntervalEstimates::to_markdown`, and the only text the tab adds is a line naming which of the three
-it is. It renders `DeliveryCost::priced_intervals` — the estimates the delivery cost was actually
-priced on — rather than recomputing them, so a figure in the tab and the charge it produced cannot
-disagree. Anything that made the tab compute would break both properties at once.
+shows three reports the surplus's own report does not, but each is `PricedInterval::to_markdown`,
+and what the tab adds around them — `session::DEFINITIONS_POINTER` above, `session::definitions()`
+below — is library text too. It renders `DeliveryCost::priced_intervals` — the estimates the
+delivery cost was actually priced on — rather than recomputing them, so a figure in the tab and the
+charge it produced cannot disagree. The figure each report marks `*` is the one its charge was
+computed from, read through the same `PricedInterval::priced` field. Anything that made the tab
+compute would break both properties at once.
 
 ---
 

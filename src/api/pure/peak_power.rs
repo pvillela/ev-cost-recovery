@@ -26,7 +26,7 @@ use crate::{
         NotABillingPeriodEnding, ZeroDenominator, billing_period_dates, billing_period_span,
     },
     markdown::{Left, Right, amounts, field, h1, h2, rounding_note, table, wrap},
-    session::{EstimateSet, IntervalEstimates, SessionNotes, estimates_from_sessions},
+    session::{Estimate, IntervalEstimates, SessionNotes, estimates_from_sessions},
     time::Interval,
 };
 use jiff::civil::Date;
@@ -75,6 +75,23 @@ pub struct PricedInterval {
 
     /// The EV estimate over the interval the building's maximum in that unit fell in.
     pub estimates: IntervalEstimates,
+
+    /// Which of the four estimates the line is charged on: the energy-based one, in the unit the
+    /// line is levied in. The charge reads it through [`Self::priced_figure`] and the report marks
+    /// it, off this one field.
+    pub priced: Estimate,
+}
+
+impl PricedInterval {
+    /// The EV demand the line is charged on.
+    pub fn priced_figure(&self) -> f64 {
+        self.estimates.figure(self.priced)
+    }
+
+    /// This interval's report, titled for its basis and with the figure it was charged on marked.
+    pub fn to_markdown(&self) -> String {
+        self.estimates.to_markdown(self.unit, self.priced)
+    }
 }
 
 /// Breakdown of delivery cost attributable to EV sessions in a billing period.
@@ -112,7 +129,7 @@ pub struct DeliveryCost {
     ///
     /// Not rendered by [`fmt::Display`]. This report is a page of money and each of these renders as
     /// a page of sessions; a caller wanting them renders each through
-    /// [`IntervalEstimates::to_markdown`](crate::session::IntervalEstimates::to_markdown).
+    /// [`PricedInterval::to_markdown`].
     pub priced_intervals: [PricedInterval; 3],
 
     /// Days in billing period, as the bill counts them.
@@ -409,24 +426,33 @@ pub fn peak_power_cost(
     billing_period_dates(billing_period_ending)?;
     check_period_covered(billing_period_ending, &gb_period_values)?;
 
-    let priced_interval = |peak, unit| {
+    let priced_interval = |peak, unit, priced| {
         let ioi = peak_interval(peak, unit, billing_period_ending)?;
         Ok::<_, PeakPowerError>(PricedInterval {
             unit,
             estimates: estimates_from_sessions(ioi, sessions.sources.clone(), sessions),
+            priced,
         })
     };
 
     // Each maximum is taken over the interval its own bill line is charged on. Reading all three off
     // one interval would price two of the lines against an interval they were never charged for.
     // Taken before the maxima are read off, since those move `gb_period_values` field by field.
+    //
+    // Every line is priced on the energy-based estimate. The count-based pair reads connected
+    // vehicles against a nominal rating, which is a reference for the energy figure rather than a
+    // measure of what was drawn.
     let meter = gb_period_values.notes();
-    let kva_ioi = priced_interval(gb_period_values.max_kva, "kVA")?;
-    let kw_ioi = priced_interval(gb_period_values.max_kw, "kW")?;
-    let kw_nop_ioi = priced_interval(gb_period_values.max_kw_nop, "kW 7-7")?;
-    let demand_kva = energy_based(&kva_ioi.estimates, |e| e.energy_based_kva);
-    let demand_kw = energy_based(&kw_ioi.estimates, |e| e.energy_based_kw);
-    let peak_7_7_kw = energy_based(&kw_nop_ioi.estimates, |e| e.energy_based_kw);
+    let kva_ioi = priced_interval(gb_period_values.max_kva, "kVA", Estimate::EnergyBasedKva)?;
+    let kw_ioi = priced_interval(gb_period_values.max_kw, "kW", Estimate::EnergyBasedKw)?;
+    let kw_nop_ioi = priced_interval(
+        gb_period_values.max_kw_nop,
+        "kW 7-7",
+        Estimate::EnergyBasedKw,
+    )?;
+    let demand_kva = kva_ioi.priced_figure();
+    let demand_kw = kw_ioi.priced_figure();
+    let peak_7_7_kw = kw_nop_ioi.priced_figure();
 
     // Before the three move into the result: a struct literal evaluates its fields in source order,
     // so leaving this call among them would borrow what `priced_intervals` has already taken.
@@ -627,27 +653,21 @@ impl fmt::Display for DeliveryCost {
             f,
             "{}\n",
             wrap(
-                "Each EV demand is the \"Energy-based\" figure for the 15-minute segment that \
-                 charge was priced on -- the energy-based estimate in every case, never the \
-                 count-based one. Each is the energy the chargers put into that segment over the \
-                 segment's length. The figures, and the interval each was drawn from, are in the \
-                 peak power detail report for that charge.",
+                "\"Basis\" names the demand each charge is priced on: kVA, kW and kW 7-7. The Peak \
+                 power detail tab holds a section under each of those three names, stating the \
+                 interval the demand was read from, the 15-minute segment inside it where the \
+                 chargers drew most, and the sessions running at the time.",
                 "",
             )
         )?;
-        writeln!(f, "{}", self.notes.to_markdown())?;
+        // The line after the notes separates them from the meter's; with no notes -- inside a
+        // surplus, which hoists them -- it would only widen the gap before the next report.
+        let notes = self.notes.to_markdown();
+        if !notes.is_empty() {
+            writeln!(f, "{notes}")?;
+        }
         write!(f, "{}", self.meter.to_markdown())
     }
-}
-
-/// One figure off the segment that maximises an interval's energy-based estimate.
-///
-/// Both units are read off the one segment [`IntervalEstimates`] already chose, which is the
-/// selector's reason for existing: the choice is made on energy-based kW, and the load model is
-/// monotone in it — a segment drawing more real power draws more apparent power — so the segment
-/// maximising kVA is the same one. Re-choosing per unit could only introduce a disagreement.
-fn energy_based(estimates: &IntervalEstimates, which: impl Fn(&EstimateSet) -> f64) -> f64 {
-    which(&estimates.energy_based_seg_estimate.1)
 }
 
 /// Whether the meter figures cover the whole of the billing period.
@@ -715,7 +735,7 @@ mod test {
             period_values_with_nop, ts, two_report_sessions, two_reports,
         },
         hydro_bill::{BILL_END_DAY, BillingPeriod},
-        session::{AnomalyKind, IntervalEstimates, RSession, test_support::session},
+        session::{AnomalyKind, EstimateSet, IntervalEstimates, RSession, test_support::session},
     };
     use jiff::civil::date;
     use std::{path::PathBuf, rc::Rc};
@@ -1070,10 +1090,10 @@ mod test {
         let text = cost.to_string();
         assert!(text.starts_with("EV Delivery Cost\n"), "{text}");
         assert!(
-            text.contains("Period       2026-05-24 - 2026-06-23  (31 days)"),
+            text.contains("Period: 2026-05-24 - 2026-06-23  (31 days)"),
             "{text}"
         );
-        assert!(text.contains("Days adj.    31/30 = 1.0333"), "{text}");
+        assert!(text.contains("Days adj.: 31/30 = 1.0333"), "{text}");
         // Rates are labelled as Toronto Hydro's, not left as a bare "rate" that could be read as
         // what the EV owners are charged.
         assert!(text.contains("TH blended rate"), "{text}");
@@ -1271,11 +1291,8 @@ mod test {
     #[test]
     fn the_delivery_report_says_nothing_about_the_intervals_it_kept() {
         let report = cost().to_string();
-        for heading in [
-            "EV Peak Power Contribution",
-            "Sessions by segment",
-            "Segments",
-        ] {
+        // "EV Peak " opens every interval report's title, whichever peak it is for.
+        for heading in ["EV Peak ", "Sessions by segment", "Segments"] {
             assert!(
                 !report.contains(heading),
                 "the delivery report has grown a {heading} section:\n{report}"

@@ -1,7 +1,10 @@
 //! Peak power estimates for one billing period, from a Green Button export and the Evolute session
 //! reports covering the period's two ends.
 
-use ev_cost_recovery::api::{PowerEstimates, peak_power};
+use ev_cost_recovery::{
+    api::{PowerEstimates, peak_power},
+    session::{DEFINITIONS_POINTER, Estimate, definitions},
+};
 use jiff::civil::Date;
 use std::{env, error::Error, path::Path, process::ExitCode};
 
@@ -75,14 +78,23 @@ fn run(ending: &str, gb_xml: &Path, session_csvs: &[&Path]) -> Result<(), Box<dy
     meter.write_log()?;
 
     // Each report carries its own heading, so the label above it says only which of the two it is.
+    println!("{DEFINITIONS_POINTER}\n");
     println!("Billing period ending {billing_period_ending} -- interval maximizing kW\n");
-    print!("{kw_estimates}");
+    print!(
+        "{}",
+        kw_estimates.to_markdown("kW", Estimate::EnergyBasedKw)
+    );
     println!("\nBilling period ending {billing_period_ending} -- interval maximizing kVA\n");
-    print!("{kva_estimates}");
+    print!(
+        "{}",
+        kva_estimates.to_markdown("kVA", Estimate::EnergyBasedKva)
+    );
 
     // The two reports above are each about one interval; what the sessions and the meter export as
-    // a whole needed a judgement call about is stated once, after both.
+    // a whole needed a judgement call about is stated once, after both. The definitions close the
+    // output, which is where the line at the top says they are.
     println!("\n{}", notes.to_markdown());
-    print!("{}", meter.to_markdown());
+    println!("{}", meter.to_markdown());
+    print!("{}", definitions());
     Ok(())
 }
