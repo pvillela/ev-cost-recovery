@@ -196,8 +196,9 @@ the *building* peaked, from the meter. The segment is the 15 minutes inside it w
 peaked, from the sessions — `19:00` for the kVA section, `14:45` for `kW 7-7`. The demand charge is
 billed on the segment.
 
-The *Segments* table under each set of estimates has a column per derivation, `Count-based (EVs)`
-and `Energy-based (kW)`; *Definitions and Conventions* says how each is worked out. For `kW 7-7`
+The *Segments* table under each set of estimates gives each segment's `Session count` and
+`Session kW`, the two figures the *Estimates* table's `All-in power` is worked out from;
+*Definitions and Conventions* says how. For `kW 7-7`
 the first three segments are empty and the whole figure comes from `14:45`, which is the clearest
 of the three for seeing what a segment contributes.
 

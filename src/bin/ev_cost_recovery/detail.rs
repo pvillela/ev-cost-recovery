@@ -126,6 +126,6 @@ fn export_row(
                 *error = Some(format!("{}: {e}", path.display()));
             }
         }
-        widgets::note(ui, "All three intervals, as one document.");
+        widgets::note(ui, "This entire report.");
     });
 }

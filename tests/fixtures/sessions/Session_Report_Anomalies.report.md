@@ -8,12 +8,12 @@ Interval: 2026-06-15 17:00 - 18:00 EDT  (1 hour)
 Estimates
 ---------
 
-| Estimate     | Unit |    Value | Segment |
-|:-------------|:-----|---------:|:--------|
-| Energy-based | kW   | * 19.080 | 17:15   |
-| Energy-based | kVA  |   19.560 | 17:15   |
-| Count-based  | kW   |   17.841 | 17:15   |
-| Count-based  | kVA  |   18.309 | 17:15   |
+| Estimate     | Unit | All-in power | Segment |
+|:-------------|:-----|-------------:|:--------|
+| Energy-based | kW   |     * 19.080 | 17:15   |
+| Energy-based | kVA  |       19.560 | 17:15   |
+| Count-based  | kW   |       17.841 | 17:15   |
+| Count-based  | kVA  |       18.309 | 17:15   |
 
 "*" - Portion of building's peak kW attributed to EV charging.
 
@@ -25,12 +25,12 @@ under Excluded sessions.
 Segments
 --------
 
-| Segment | Count-based (EVs) | Energy-based (kW) |
-|:--------|------------------:|------------------:|
-| 17:00   |             0.333 |             2.000 |
-| 17:15   |             2.667 |            18.800 |
-| 17:30   |             1.000 |             6.000 |
-| 17:45   |             0.000 |             0.000 |
+| Segment | Session count | Session kW |
+|:--------|--------------:|-----------:|
+| 17:00   |         0.333 |      2.000 |
+| 17:15   |         2.667 |     18.800 |
+| 17:30   |         1.000 |      6.000 |
+| 17:45   |         0.000 |      0.000 |
 
 
 Sessions by segment

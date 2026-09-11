@@ -220,9 +220,6 @@ fn export_row(
                 }
             }
         }
-        widgets::note(
-            ui,
-            "The full report, exactly as the command line prints it.",
-        );
+        widgets::note(ui, "The whole report, including the summary above.");
     });
 }

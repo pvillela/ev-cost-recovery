@@ -282,7 +282,7 @@ fn file_name(session: &Session) -> String {
     )
 }
 
-const ESTIMATE_HEADERS: [&str; 4] = ["Estimate", "Unit", "Value", "Segment"];
+const ESTIMATE_HEADERS: [&str; 4] = ["Estimate", "Unit", "All-in power", "Segment"];
 const ESTIMATE_ALIGN: [Align; 4] = [Left, Left, Right, Left];
 
 impl IntervalEstimates {
@@ -420,13 +420,11 @@ impl IntervalEstimates {
                 ]
             })
             .collect();
-        // The two columns are named for the two derivations in Estimates above, because that is
-        // what they are: each derivation is a function of the column of the same name, and calling
-        // them "Count" and "kW" here made the same pair of quantities look like a different pair.
-        // The unit is in the header all the same: without it a reader has two columns of bare
-        // numbers, one of vehicles and one of kilowatts, that look like the same kind of quantity.
+        // Named for what the sessions did in the segment, as distinct from the Estimates table's
+        // "All-in power", which is what the model makes of these two once the transformer's own
+        // load is added. `definitions` says how each is worked out.
         out.push(table(
-            &["Segment", "Count-based (EVs)", "Energy-based (kW)"],
+            &["Segment", "Session count", "Session kW"],
             &rows,
             &[Left, Right, Right],
         ));
@@ -606,34 +604,82 @@ pub const DEFINITIONS_POINTER: &str =
 ///
 /// One section for the whole document, because every interval report in it uses the same terms.
 pub fn definitions() -> String {
-    let paragraphs = [
-        "\"Interval\" is a metering interval during which a particular power metric peaks. An \
-         interval is half-open, i.e., it runs from its start time up to but not including its end \
-         time.",
-        "\"Segment\" designates the 15-minute segment where a particular value peaks. Segments are \
-         half-open: each runs from its own start up to but not including the next one's, so no \
-         instant falls in two of them and they tile the interval exactly.",
-        "A peak value is always a 15-minute average, whatever the length of the interval, because \
-         that is the basis the demand charge is billed on. Metering data for a one-hour interval \
-         reports the highest of its four segments, not an average over the whole hour.",
-        "\"Energy-based\" is derived from the sessions' own consumption. It is the average power \
-         over a segment: each session's reported energy is spread evenly over its own connection \
-         span, the part of it falling in the segment is taken, and the sum is divided by the \
-         segment's length.",
-        "\"Count-based\" is a reference value based on the number of active sessions and the \
-         nominal per-EV power rating of the infrastructure. It is how much of a segment was \
-         occupied - each session contributes the fraction of the segment that it covers, so one \
-         session connected throughout adds 1 and one connected for half of it adds 0.5, which \
-         makes the session count fractional.",
-        "The peak \"Energy-based\" and \"Count-based\" segments may differ.",
-        "Times are local, on the zone the interval names. During DST, that is an hour later than \
-         the session report states the same instants, which are on standard time all year. Each \
-         15-minute segment is named by the minute it starts on.",
+    let paragraph = |text: &str| wrap(text, "");
+    // A list's items sit on consecutive lines, each wrapped under its own dash.
+    let list = |items: &[&str]| {
+        items
+            .iter()
+            .map(|item| wrap(&format!("- {item}"), "  "))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let blocks = [
+        paragraph(
+            "\"Interval\" is a metering interval during which a particular power metric peaks. An \
+             interval is half-open, i.e., it runs from its start time up to but not including its \
+             end time.",
+        ),
+        paragraph(
+            "\"Segment\" designates the 15-minute segment where a particular value peaks. \
+             Segments are half-open: each runs from its own start up to but not including the \
+             next one's, so no instant falls in two of them and they tile the interval exactly.",
+        ),
+        paragraph(
+            "A peak value is always a 15-minute average, whatever the length of the interval, \
+             because that is the basis the demand charge is billed on. Metering data for a \
+             one-hour interval reports the highest of its four segments, not an average over the \
+             whole hour.",
+        ),
+        paragraph(
+            "\"Session count\" is the number of active sessions during the segment. It is how much \
+             of a segment was occupied - each session contributes the fraction of the segment \
+             that it covers, so one session connected throughout adds 1 and one connected for \
+             half of it adds 0.5, which makes the session count fractional.",
+        ),
+        paragraph(
+            "\"Session kW\" is the average power over a segment: each session's reported energy is \
+             spread evenly over its own connection span, the part of it falling in the segment is \
+             taken, and the sum is divided by the segment's duration in hours (i.e., 0.25).",
+        ),
+        // One block, the list directly under the sentence that introduces it: every definition here
+        // is one block, and this one is the sentence and its list together.
+        format!(
+            "{}\n{}",
+            paragraph(
+                "The \"All-in power\" values are calculated using the built-in electrotechnical \
+                 model, as follows:",
+            ),
+            list(&[
+                "Energy-based kW and kVA -- The model takes the \"Session kW\" value and computes \
+                 the resulting \"all-in\" kW and kVA values, which include the load from the \
+                 transformer.",
+                // The derate is the model's own, so the definition follows it if it is changed.
+                &format!(
+                    "Count-based kW and kVA -- A charger's nominal current is the breaker's \
+                     amperage rating derated to {:.0}% for continuous duty; multiplied by the standard \
+                     voltage, that gives the nominal kVA of one charger, and multiplied by the \
+                     typical power factor for a charger, its nominal kW. The model scales these \
+                     by the \"Session count\" and adds in the load from the transformer, as for \
+                     the energy-based values.",
+                    CONTINUOUS_DUTY_DERATE * PERCENT
+                ),
+            ]),
+        ),
+        paragraph(
+            "Cost estimates are always derived from \"Energy-based\" values. \"Count-based\" values \
+             are shown for comparison purposes only. Also, the peak \"Energy-based\" and \
+             \"Count-based\" segments may differ.",
+        ),
+        paragraph(
+            "Times are local, on the zone the interval names. During DST, that is an hour later \
+             than the session report states the same instants, which are on standard time all \
+             year. Each 15-minute segment is named by the minute it starts on.",
+        ),
     ];
     let mut out = vec![h1("Definitions and Conventions")];
-    for p in paragraphs {
+    for block in blocks {
         out.push(String::new());
-        out.push(wrap(p, ""));
+        out.push(block);
     }
     let mut s = out.join("\n");
     s.push('\n');
