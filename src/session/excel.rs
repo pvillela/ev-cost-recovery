@@ -474,6 +474,8 @@ fn set_widths(sheet: &mut Worksheet) {
 mod test {
     use super::*;
     use crate::session::test_support::{timing_anomalies, timing_anomalies_in_cell};
+    use crate::golden;
+    use std::fmt::Write as _;
     use std::{env, fs, process};
 
     /// A scratch directory of its own per test, since these run in parallel within one process.
@@ -482,6 +484,135 @@ mod test {
         fs::create_dir_all(&dir).unwrap();
         dir
     }
+
+    /// The workbook's golden, for the reason the reports have one: a wrong figure in a column is
+    /// invisible to a test that asserts a header order and a couple of cells, and the writer is the
+    /// one output nothing else reads back.
+    ///
+    /// Two fixtures, chosen for what they contain. `Session_Report_Diagram` is the seven-session
+    /// tiling fixture — every geometry, no anomalies. `Session_Report_Anomalies` has rows flagged
+    /// and rows excluded, so the `anomalies` column and the two duration columns are populated.
+    #[test]
+    fn the_written_workbook_matches_its_golden() {
+        for stem in ["Session_Report_Diagram", "Session_Report_Anomalies"] {
+            let dir = temp_dir(stem);
+            let input = dir.join(format!("{stem}.csv"));
+            fs::copy(golden::fixture(&format!("sessions/{stem}.csv")), &input).unwrap();
+
+            let report = session_csv_to_xlsx(&input)
+                .unwrap_or_else(|e| panic!("{stem} converts: {e}"));
+            golden::check(
+                &format!("sessions/{stem}.workbook.txt"),
+                &dump_workbook(&report.output_path),
+            );
+        }
+    }
+
+    /// The sheet cell by cell, then what a user reads around the cells.
+    ///
+    /// Value or formula, number format and alignment per cell; name, column widths and row heights
+    /// per sheet; and every comment, because a workbook's comments are text a reader takes as
+    /// advice about the data and no other test looks at them.
+    fn dump_workbook(path: &Path) -> String {
+        let book = umya_spreadsheet::reader::xlsx::read(path).expect("the workbook reads back");
+        let sheet = book.sheet(0).expect("one sheet");
+        let mut out = String::new();
+        // The writer's own helper: the sheet's column letters are what its layout code computes.
+        let col = |i: u32| column_letters(i as usize);
+
+        writeln!(out, "sheet name: {}", sheet.name()).unwrap();
+        writeln!(
+            out,
+            "default row height: {}",
+            sheet.sheet_format_properties().default_row_height()
+        )
+        .unwrap();
+
+        let widths: Vec<String> = (1..=sheet.highest_column())
+            .map(|i| {
+                let width = sheet
+                    .column_dimension(&col(i))
+                    .map(|c| format!("{:.2}", c.width()))
+                    .unwrap_or_else(|| "-".to_owned());
+                format!("{}:{width}", col(i))
+            })
+            .collect();
+        writeln!(out, "column widths: {}", widths.join(" ")).unwrap();
+
+        let heights: Vec<String> = (1..=sheet.highest_row())
+            .filter_map(|row| {
+                sheet
+                    .row_dimension(row)
+                    .filter(|d| d.height() > 0.0)
+                    .map(|d| format!("{row}:{:.2}", d.height()))
+            })
+            .collect();
+        writeln!(
+            out,
+            "explicit row heights: {}",
+            if heights.is_empty() {
+                "none".to_owned()
+            } else {
+                heights.join(" ")
+            }
+        )
+        .unwrap();
+
+        writeln!(out, "data rows: {}", sheet.highest_row().saturating_sub(1)).unwrap();
+        for row in 1..=sheet.highest_row() {
+            for i in 1..=sheet.highest_column() {
+                let Some(cell) = sheet.cell((i, row)) else {
+                    continue;
+                };
+                // A formula cell carries no cached value until a spreadsheet recalculates it, so
+                // the formula itself is what this records — and the formulas are the writer's own
+                // arithmetic (the span and the average power), worth pinning for that reason.
+                let formula = cell.formula();
+                let value = match formula.is_empty() {
+                    true => cell.value().to_string(),
+                    false => format!("={formula}"),
+                };
+                let style = cell.style();
+                let format = style
+                    .number_format()
+                    .map(|f| f.format_code())
+                    .unwrap_or_default();
+                let align = style
+                    .alignment()
+                    .map(|a| format!("{:?}", a.horizontal()))
+                    .unwrap_or_else(|| "-".to_owned());
+                if value.is_empty() && format.is_empty() {
+                    continue;
+                }
+                writeln!(out, "{}{row}  {value}  [{format}] {align}", col(i)).unwrap();
+            }
+        }
+
+        let mut comments: Vec<String> = sheet
+            .comments()
+            .iter()
+            .map(|comment| {
+                let text = comment
+                    .text()
+                    .text()
+                    .map(|t| t.value().replace('\n', " "))
+                    .unwrap_or_default();
+                format!(
+                    "{}{} by {}: {text}",
+                    col(comment.coordinate().col_num()),
+                    comment.coordinate().row_num(),
+                    comment.author()
+                )
+            })
+            .collect();
+        comments.sort();
+        out.push_str("\n== comments ==\n");
+        for comment in comments {
+            writeln!(out, "{comment}").unwrap();
+        }
+        out
+    }
+
 
     #[test]
     fn sheet_name_strips_the_report_prefix() {

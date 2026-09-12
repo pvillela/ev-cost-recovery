@@ -691,4 +691,149 @@ mod test {
         );
         assert!(error.source().is_some());
     }
+
+    /// One line of a bill as [`read_pages`] hands it over: fragments left to right on one baseline.
+    ///
+    /// The charges parser reads only what sits left of the column the actual charges are in, so
+    /// these are laid out well inside it.
+    fn line(y: f64, fragments: &[&str]) -> Line {
+        Line {
+            y,
+            fragments: fragments
+                .iter()
+                .enumerate()
+                .map(|(i, text)| Fragment {
+                    x: 10.0 + i as f64 * 20.0,
+                    y,
+                    text: (*text).to_owned(),
+                })
+                .collect(),
+        }
+    }
+
+    /// The two rows every `Charges::read` needs: where the charges open, and what they total.
+    fn charge_lines(middle: Vec<Line>) -> Vec<Line> {
+        let mut lines = vec![line(0.0, &["Your Electricity Charges"])];
+        lines.extend(middle);
+        lines.push(line(100.0, &["Your Total Electricity Charges", "1,000.00"]));
+        lines
+    }
+
+    /// Four charges print their name and their figure on separate lines, the figure beside the rate
+    /// it was worked out from. The name alone records what the next rate line adds to, and two of
+    /// them in a row must not be confused for each other.
+    #[test]
+    fn a_rate_line_is_added_to_the_charge_named_above_it() {
+        let charges = Charges::read(&charge_lines(vec![
+            line(10.0, &["Transmission Connection Charge"]),
+            line(20.0, &["140.640 kW at $3.1008 per kW per 30 Days", "435.69"]),
+            line(30.0, &["Standard Supply Service Administrative Charge"]),
+            line(40.0, &["at $0.25 per 30 Days", "0.25"]),
+        ]))
+        .expect("the charges read");
+
+        assert_eq!(charges.transmission_connection, 435.69);
+        assert_eq!(charges.supply_admin, 0.25);
+        // Neither landed on the other, which is the failure the deferral exists to prevent.
+        assert_eq!(charges.transmission_network, 0.0);
+        assert_eq!(charges.wholesale_market, 0.0);
+    }
+
+    /// A rate line with nothing above it names no charge, so there is nowhere to put the figure.
+    /// A layout failure rather than a crash, and the message says which line.
+    #[test]
+    fn a_rate_line_with_no_charge_above_it_is_a_layout_failure() {
+        let Err(problem) = Charges::read(&charge_lines(vec![line(
+            10.0,
+            &["at $0.25 per 30 Days", "0.25"],
+        )])) else {
+            panic!("a rate line with nothing above it should be refused");
+        };
+        let message = problem.at(Path::new("bill.pdf")).to_string();
+        assert!(
+            message.contains("rate line with no charge above it"),
+            "{message}"
+        );
+    }
+
+    /// The season word decides the band, and a second line for one band adds to the first: a period
+    /// straddling a rate change carries every line twice, at the old rate and the new.
+    #[test]
+    fn time_of_use_lines_sum_by_the_band_their_season_names() {
+        let charges = Charges::read(&charge_lines(vec![
+            line(
+                10.0,
+                &["13,240.523 kWh On-peak @ $0.158 / kWh", "2,092.00"],
+            ),
+            line(20.0, &["1,000.000 kWh On-peak @ $0.170 / kWh", "170.00"]),
+            line(30.0, &["500.000 kWh Off-peak @ $0.070 / kWh", "35.00"]),
+        ]))
+        .expect("the charges read");
+
+        assert_eq!(charges.on_peak_kwh, 14_240.523);
+        assert_eq!(charges.on_peak_cost, 2_262.0);
+        assert_eq!(charges.off_peak_kwh, 500.0);
+        assert_eq!(charges.off_peak_cost, 35.0);
+        assert_eq!(charges.mid_peak_kwh, 0.0);
+    }
+
+    /// A charge the parser does not know is refused rather than left out of the total, and a line
+    /// with no figure on it is decoration rather than an unknown charge.
+    #[test]
+    fn a_charge_line_the_parser_does_not_know_is_refused() {
+        let Err(problem) = Charges::read(&charge_lines(vec![line(
+            10.0,
+            &["Rate Rider for Deferral", "$12.34"],
+        )])) else {
+            panic!("an unrecognised charge should be refused");
+        };
+        assert!(
+            matches!(problem, Problem::UnknownCharge(ref line) if line == "Rate Rider for Deferral $12.34"),
+            "{problem:?}"
+        );
+
+        Charges::read(&charge_lines(vec![line(10.0, &["Delivery"])])).expect("a section heading");
+    }
+
+    /// The usage table's two rows, seven columns each, read by position — so this is where a column
+    /// swap has to be visible. Every one of the seven demand figures is a plausible number.
+    #[test]
+    fn the_usage_rows_are_read_by_position() {
+        let usage = Usage::read(&[
+            line(
+                0.0,
+                &[
+                    "Meter Number",
+                    "JUN 23 2025 TO JUL 23 2025",
+                    "31",
+                    "40004253",
+                    "47619.048",
+                    "1.05",
+                    "50000.0",
+                ],
+            ),
+            line(1.0, &["Peak kW", "Adj. Peak kW"]),
+            line(
+                2.0,
+                &["90.0", "93.0", "120.0", "150.0", "1.0", "124.0", "155.0"],
+            ),
+        ])
+        .expect("the usage table reads");
+
+        assert_eq!(
+            (usage.reading_period_from, usage.reading_period_to),
+            (civil_date(2025, 6, 23), civil_date(2025, 7, 23))
+        );
+        assert_eq!(usage.number_of_days, 31);
+        assert_eq!(usage.kwh_used, 47_619.048);
+        assert_eq!(usage.loss_factor_adjustment, 1.05);
+        assert_eq!(usage.adjusted_kwh_used, 50_000.0);
+        assert_eq!(usage.peak_7_7_kw, 90.0);
+        assert_eq!(usage.adj_peak_7_7_kw, 93.0);
+        assert_eq!(usage.demand_kw, 120.0);
+        assert_eq!(usage.demand_kva, 150.0);
+        assert_eq!(usage.metering_adj, 1.0);
+        assert_eq!(usage.adj_kw, 124.0);
+        assert_eq!(usage.adj_kva, 155.0);
+    }
 }

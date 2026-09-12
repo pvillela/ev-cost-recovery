@@ -1,0 +1,217 @@
+sheet name: Anomalies
+default row height: 13.5
+column widths: A:10.00 B:18.00 C:15.00 D:22.00 E:12.00 F:26.00 G:14.00 H:15.00 I:19.00 J:10.00 K:24.00 L:24.00 M:13.00 N:13.00 O:13.00 P:16.00 Q:12.00 R:11.00 S:14.00 T:15.00 U:14.00 V:24.00 W:24.00 X:13.00 Y:10.00 Z:40.00
+explicit row heights: none
+data rows: 8
+A1  UR_ID  [General] -
+B1  Location_Address  [General] -
+C1  Location_City  [General] -
+D1  Location_Postal_Code  [General] -
+E1  Station_ID  [General] -
+F1  Station_Network_Provider  [General] -
+G1  Station_Make  [General] -
+H1  Station_Model  [General] -
+I1  Charge_Session_ID  [General] -
+J1  User_ID  [General] -
+K1  Conn_DateTime_Start  [General] -
+L1  Conn_DateTime_End  [General] -
+M1  Conn_Duration  [General] -
+N1  Charge_Duration  [General] -
+O1  Active_Charge_Time  [General] -
+P1  Charging_Level  [General] -
+Q1  Energy_Use  [General] -
+R1  Total_Fee  [General] -
+S1  Vehicle_Make  [General] -
+T1  Vehicle_Model  [General] -
+U1  Vehicle_Year  [General] -
+V1  conn_start_utc  [General] -
+W1  conn_end_utc  [General] -
+X1  conn_span  [General] -
+Y1  avg_kw  [General] -
+Z1  anomalies  [General] -
+A2  CKT-7  [] -
+C2  Toronto  [] -
+E2  Station-1  [] -
+F2  Evolute Inc.  [] -
+G2  FLO  [] -
+H2  G5  [] -
+I2  N1  [] -
+K2  46188.67361111111  [yyyy-mm-dd hh:mm:ss ddd] Left
+L2  46188.694444444445  [yyyy-mm-dd hh:mm:ss ddd] Left
+M2  0.020833333333333332  [[h]:mm:ss] Center
+N2  0.020833333333333332  [[h]:mm:ss] Center
+O2  0.020833333333333332  [[h]:mm:ss] Center
+P2  Level 2  [] -
+Q2  3  [0.000] -
+R2  0  [0.00] -
+S2  VinFast  [] -
+T2  Vf8  [] -
+U2  2024  [] -
+V2  46188.881944444445  [yyyy-mm-dd hh:mm:ss ddd] Left
+W2  46188.90277777778  [yyyy-mm-dd hh:mm:ss ddd] Left
+X2  =W2-V2  [[h]:mm:ss] Center
+Y2  =Q2/(O2*24)  [0.000] -
+A3  CKT-7  [] -
+C3  Toronto  [] -
+E3  Station-2  [] -
+F3  Evolute Inc.  [] -
+G3  FLO  [] -
+H3  G5  [] -
+I3  N2  [] -
+K3  46188.677083333336  [yyyy-mm-dd hh:mm:ss ddd] Left
+L3  46188.69097222222  [yyyy-mm-dd hh:mm:ss ddd] Left
+M3  0.013888888888888888  [[h]:mm:ss] Center
+N3  0.013888888888888888  [[h]:mm:ss] Center
+O3  0.013888888888888888  [[h]:mm:ss] Center
+P3  Level 2  [] -
+Q3  2  [0.000] -
+R3  0  [0.00] -
+S3  VinFast  [] -
+T3  Vf8  [] -
+U3  2024  [] -
+V3  46188.885416666664  [yyyy-mm-dd hh:mm:ss ddd] Left
+W3  46188.899305555555  [yyyy-mm-dd hh:mm:ss ddd] Left
+X3  =W3-V3  [[h]:mm:ss] Center
+Y3  =Q3/(O3*24)  [0.000] -
+A4  CKT-7  [] -
+C4  Toronto  [] -
+E4  Station-3  [] -
+F4  Evolute Inc.  [] -
+G4  FLO  [] -
+H4  G5  [] -
+I4  BAD  [] -
+K4  46188.67013888889  [yyyy-mm-dd hh:mm:ss ddd] Left
+L4  46188.6875  [yyyy-mm-dd hh:mm:ss ddd] Left
+M4  0.08333333333333333  [[h]:mm:ss] Center
+N4  0.08333333333333333  [[h]:mm:ss] Center
+O4  0.017361111111111112  [[h]:mm:ss] Center
+P4  Level 2  [] -
+Q4  2.5  [0.000] -
+R4  0  [0.00] -
+S4  VinFast  [] -
+T4  Vf8  [] -
+U4  2024  [] -
+V4  46188.87847222222  [yyyy-mm-dd hh:mm:ss ddd] Left
+W4  46188.895833333336  [yyyy-mm-dd hh:mm:ss ddd] Left
+X4  =W4-V4  [[h]:mm:ss] Center
+Y4  =Q4/(O4*24)  [0.000] -
+Z4  InconsistentDuration  [] -
+A5  CKT-7  [] -
+C5  Toronto  [] -
+E5  Station-4  [] -
+F5  Evolute Inc.  [] -
+G5  FLO  [] -
+H5  G5  [] -
+I5  MARGIN  [] -
+K5  46188.65972222222  [yyyy-mm-dd hh:mm:ss ddd] Left
+L5  46188.666666666664  [yyyy-mm-dd hh:mm:ss ddd] Left
+M5  0.006944444444444444  [[h]:mm:ss] Center
+N5  0.006944444444444444  [[h]:mm:ss] Center
+O5  0.006944444444444444  [[h]:mm:ss] Center
+P5  Level 2  [] -
+Q5  1  [0.000] -
+R5  0  [0.00] -
+S5  VinFast  [] -
+T5  Vf8  [] -
+U5  2024  [] -
+V5  46188.868055555555  [yyyy-mm-dd hh:mm:ss ddd] Left
+W5  46188.875  [yyyy-mm-dd hh:mm:ss ddd] Left
+X5  =W5-V5  [[h]:mm:ss] Center
+Y5  =Q5/(O5*24)  [0.000] -
+A6  CKT-7  [] -
+C6  Toronto  [] -
+E6  Station-5  [] -
+F6  Evolute Inc.  [] -
+G6  FLO  [] -
+H6  G5  [] -
+I6  SPIKE  [] -
+K6  46188.68194444444  [yyyy-mm-dd hh:mm:ss ddd] Left
+L6  46188.68194444444  [yyyy-mm-dd hh:mm:ss ddd] Left
+M6  0  [[h]:mm:ss] Center
+N6  0  [[h]:mm:ss] Center
+O6  0  [[h]:mm:ss] Center
+P6  Level 2  [] -
+Q6  0.5  [0.000] -
+R6  0  [0.00] -
+S6  VinFast  [] -
+T6  Vf8  [] -
+U6  2024  [] -
+V6  46188.89027777778  [yyyy-mm-dd hh:mm:ss ddd] Left
+W6  46188.89027777778  [yyyy-mm-dd hh:mm:ss ddd] Left
+X6  =W6-V6  [[h]:mm:ss] Center
+Y6  =Q6/(O6*24)  [0.000] -
+Z6  ZeroActiveChargeTime  [] -
+A7  CKT-7  [] -
+C7  Toronto  [] -
+E7  Station-6  [] -
+F7  Evolute Inc.  [] -
+G7  FLO  [] -
+H7  G5  [] -
+I7  FARSPIKE  [] -
+K7  46189.375  [yyyy-mm-dd hh:mm:ss ddd] Left
+L7  46189.381944444445  [yyyy-mm-dd hh:mm:ss ddd] Left
+M7  0.006944444444444444  [[h]:mm:ss] Center
+N7  0.006944444444444444  [[h]:mm:ss] Center
+O7  0  [[h]:mm:ss] Center
+P7  Level 2  [] -
+Q7  0.5  [0.000] -
+R7  0  [0.00] -
+S7  VinFast  [] -
+T7  Vf8  [] -
+U7  2024  [] -
+V7  46189.583333333336  [yyyy-mm-dd hh:mm:ss ddd] Left
+W7  46189.59027777778  [yyyy-mm-dd hh:mm:ss ddd] Left
+X7  =W7-V7  [[h]:mm:ss] Center
+Y7  =Q7/(O7*24)  [0.000] -
+Z7  ZeroActiveChargeTime  [] -
+A8  CKT-7  [] -
+C8  Toronto  [] -
+E8  Station-7  [] -
+F8  Evolute Inc.  [] -
+G8  FLO  [] -
+H8  G5  [] -
+I8  REVERSED  [] -
+K8  46188.6875  [yyyy-mm-dd hh:mm:ss ddd] Left
+L8  46188.680555555555  [yyyy-mm-dd hh:mm:ss ddd] Left
+M8  0.006944444444444444  [[h]:mm:ss] Center
+N8  0.006944444444444444  [[h]:mm:ss] Center
+O8  0.006944444444444444  [[h]:mm:ss] Center
+P8  Level 2  [] -
+Q8  1  [0.000] -
+R8  0  [0.00] -
+S8  VinFast  [] -
+T8  Vf8  [] -
+U8  2024  [] -
+V8  46188.895833333336  [yyyy-mm-dd hh:mm:ss ddd] Left
+W8  46188.88888888889  [yyyy-mm-dd hh:mm:ss ddd] Left
+X8  =W8-V8  [[h]:mm:ss] Center
+Y8  =Q8/(O8*24)  [0.000] -
+Z8  InconsistentDuration  [] -
+A9  CKT-7  [] -
+C9  Toronto  [] -
+E9  Station-8  [] -
+F9  Evolute Inc.  [] -
+G9  FLO  [] -
+H9  G5  [] -
+I9  EXCESS  [] -
+K9  46188.680555555555  [yyyy-mm-dd hh:mm:ss ddd] Left
+L9  46188.6875  [yyyy-mm-dd hh:mm:ss ddd] Left
+M9  0.006944444444444444  [[h]:mm:ss] Center
+N9  0.006944444444444444  [[h]:mm:ss] Center
+O9  0.006944444444444444  [[h]:mm:ss] Center
+P9  Level 2  [] -
+Q9  1.2  [0.000] -
+R9  0  [0.00] -
+S9  VinFast  [] -
+T9  Vf8  [] -
+U9  2024  [] -
+V9  46188.88888888889  [yyyy-mm-dd hh:mm:ss ddd] Left
+W9  46188.895833333336  [yyyy-mm-dd hh:mm:ss ddd] Left
+X9  =W9-V9  [[h]:mm:ss] Center
+Y9  =Q9/(O9*24)  [0.000] -
+Z9  ExcessiveAvgKw  [] -
+
+== comments ==
+X1 by session_csv_to_xlsx: conn_end_utc - conn_start_utc: the span every estimate places this session on. Computed from the UTC columns so that no time zone enters the arithmetic. It is the reported start to the reported end, taken as written -- Evolute states both to the second. The sheet used to carry a padded pair of columns beside these, because the times were stated only to the minute and the true start and end were known only to fall somewhere inside the minute named.
+Y1 by session_csv_to_xlsx: Energy_Use / Active_Charge_Time, in kW. Active_Charge_Time is an Excel duration, i.e. a fraction of a day, hence the *24 to convert it to hours. A zero Active_Charge_Time yields #DIV/0!, which is the honest answer: there is no average power to state. Such a row beside a non-zero Energy_Use is almost certainly a reporting fault -- the session report's three duration fields track the same thing to within about a second -- and is worth looking at individually.
+Z1 by session_csv_to_xlsx: Comma-separated list of anomalies found for this row, named after the AnomalyKind variants. Empty means the row needed no judgement call. This cell is a record, not an input: nothing reads the sheet back, and the estimates come from the session report itself -- so editing a cell here changes the sheet and nothing else.  InconsistentDuration is the token that removes a row from every estimate when it is found on reading, which is why it is worth knowing that a converted row carries it.

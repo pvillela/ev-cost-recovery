@@ -96,3 +96,48 @@ pub fn parse_rates(spec: &str) -> Result<CostRecoveryRates, String> {
         off_peak: rate(off_peak, "off-peak")?,
     })
 }
+
+// cargo test --lib -- api::test
+#[cfg(test)]
+mod test {
+    use super::*;
+    use jiff::civil::date;
+
+    /// The form both cost-recovery tools document, read once here rather than agreeing by
+    /// inspection in two binaries.
+    #[test]
+    fn a_schedule_reads_as_the_tools_write_it() {
+        let parsed = parse_rates("2026-05-01:0.1100,0.0900,0.0700").expect("a schedule");
+        assert_eq!(parsed.effective_date, date(2026, 5, 1));
+        assert_eq!(
+            (
+                parsed.on_peak,
+                parsed.mid_peak,
+                parsed.off_peak
+            ),
+            (0.11, 0.09, 0.07)
+        );
+
+        // Zero is a rate. A schedule pricing one band at nothing is odd but not malformed.
+        let free = parse_rates("2026-06-01:0,0,0").expect("a schedule");
+        assert_eq!((free.on_peak, free.mid_peak, free.off_peak), (0.0, 0.0, 0.0));
+    }
+
+    /// Every way the argument can be wrong says which part was wrong, because a command line has
+    /// nowhere else to explain itself.
+    #[test]
+    fn a_schedule_that_will_not_read_names_the_part_that_failed() {
+        for (spec, expected) in [
+            ("bad", "as a rate schedule"),
+            ("2026-05-01:0.11,0.09", "is not three rates"),
+            ("2026-05-01:0.11,0.09,0.07,0.05", "is not three rates"),
+            ("May 1 2026:0.11,0.09,0.07", "as an effective date"),
+            ("2026-05-01:nan,0.09,0.07", "not a finite number"),
+            ("2026-05-01:0.11,inf,0.07", "not a finite number"),
+            ("2026-05-01:0.11,0.09,-0.07", "cannot be negative"),
+        ] {
+            let err = parse_rates(spec).expect_err(spec);
+            assert!(err.contains(expected), "{spec}: {err}");
+        }
+    }
+}

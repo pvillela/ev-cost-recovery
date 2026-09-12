@@ -827,4 +827,16 @@ mod test {
             ]
         );
     }
+
+    /// The section that explains the model is pinned, like the reports around it.
+    ///
+    /// It is prose a user reads to understand a figure, and it is the one rendering with no
+    /// fixture of its own: `peak_power_cli` prints it under every report and the app's Peak power
+    /// detail tab renders and saves it, so a change to it is user-visible text. A golden rather
+    /// than assertions about substrings, for the reason [`crate::golden`] gives — what matters
+    /// here is the wording and the wrapping, and only a diff shows either.
+    #[test]
+    fn the_definitions_section_matches_its_golden() {
+        crate::golden::check("sessions/definitions.txt", &definitions());
+    }
 }
