@@ -125,7 +125,7 @@ When an input file is ingested by the software, any problems are reported on-scr
 
 Some problems are temporary, e.g., due to an oversight by the user. Such cases may just merit an on-screen message.
 
-Serious errors block the performance of the desired function. Less severe anomalies do not block function execution, but must still be reported on-screen and logged for the user's awareness. Some of those anomalies change the figures a function produces -- by leaving a session out of them, for instance -- while others do not impact the calculations. Certain anomalies are additionally included in the functional reports (as opposed to error reports) produced by the software functions.
+Serious errors block the performance of the desired function. Less severe anomalies do not block function execution, but must still be reported on-screen and logged for the user's awareness. Some of those anomalies change the figures a function produces -- by leaving a session out of them, for instance -- while others do not impact the calculations. Certain anomalies are additionally included in the functional reports produced by the software functions.
 
 Every message the app can show or log is described in [docs/ERRORS.md](docs/ERRORS.md), grouped by what happened to your work, with what each one means and what to do about it.
 
@@ -157,7 +157,6 @@ Much, but not all, of this documentation pertains to software structure or elect
 - [docs/app-cheat-sheet.md](docs/app-cheat-sheet.md) -- Steps for trying the app against data files in `data/` directory (not available in the repo): which to pick, what to expect, and the errors worth provoking.
 - [docs/ERRORS.md](docs/ERRORS.md) -- Every error and anomaly the app reports on-screen or logs: what each message means, and what to do about it.
 - [docs/maintenance-manual.md](docs/maintenance-manual.md) -- What to check before changing a constant, how to regenerate the golden files, the invariants nothing enforces.
-- [docs/Questions_for_Evolute.md](docs/Questions_for_Evolute.md) -- Questions to ask Evolute;  answers may result in software changes.
 - [docs/site-specific-constants.md](docs/site-specific-constants.md) -- Constants specific to this site at the present time. Other sites using this repo's code will likely need to change some of them.
 - [docs/session/Rough_kW_kVA_Table.xlsx](docs/session/Rough_kW_kVA_Table.xlsx) -- Spreadsheet comparing rough kW and kVA estimates per charger with the values resulting from the electrotechnical site model (see also [docs/session/site-model-marcus.md](docs/session/site-model-marcus.md)).
 - [docs/session/README.md](docs/session/README.md) -- The estimation logic and the generated workbook layout.
@@ -175,9 +174,9 @@ Much, but not all, of this documentation pertains to software structure or elect
 
 ## Appendix
 
-### Architectural goals
+### Software architecture direction
 
-The software architecture was designed with these goals:
+The software was designed with these architectural goals:
 
 - Easy-to-use -- Simple user interface, as self-explanatory as possible.
 - Multi-target -- Able to run on Windows, Linux, and Mac. Written in Rust, a multi-target language.
@@ -239,7 +238,7 @@ The software is structured as top-level library modules, each of which may have 
 | `log`            | Common functionality to produce read logs.                   |
 | `markdown`       | Common functionality to produce markdown reports.            |
 
-### Building and the command line
+### Building the GUI app and command line tools
 
 ```sh
 cargo build --release      # the desktop app, ev_cost_recovery -- and nothing else
