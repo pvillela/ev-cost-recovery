@@ -16,14 +16,14 @@
 //! only thing that states it — see [`report_coverage`].
 
 use crate::{
-    markdown::{Left, Right, amounts, field, h1, h2, rounding_note, table, wrap},
+    markdown::{amounts, field, h1, h2, rounding_note, table, wrap},
     session::{AnomalyKind, SessionNotes, TouKwh, tou_kwh},
     time::{Interval, local_midnight},
 };
 use jiff::civil::Date;
 use std::{error::Error, fmt};
 
-use super::to_the_cent;
+use super::{BAND_ALIGNMENT, BAND_HEADERS, band_row, to_the_cent};
 
 // Re-exported for the same reason `recovery` re-exports what it takes: a caller should not have to
 // know which module a type comes from in order to spell the call.
@@ -363,28 +363,20 @@ impl fmt::Display for ReimbursementReconciliation {
         writeln!(f, "{}\n", h2("Cost recovery earned, by time of use"))?;
         let [on_peak, mid_peak, off_peak] =
             recovery_by_band(&self.tou_kwh, &self.cost_recovery_rates);
-        let band = |name: &str, kwh: f64, rate: f64, recovery: f64| {
-            vec![
-                name.to_owned(),
-                format!("{kwh:.3}"),
-                format!("{rate:.5}"),
-                format!("{recovery:.2}"),
-            ]
-        };
         let rows = vec![
-            band(
+            band_row(
                 "On-peak",
                 self.tou_kwh.on_peak,
                 self.cost_recovery_rates.on_peak,
                 on_peak,
             ),
-            band(
+            band_row(
                 "Mid-peak",
                 self.tou_kwh.mid_peak,
                 self.cost_recovery_rates.mid_peak,
                 mid_peak,
             ),
-            band(
+            band_row(
                 "Off-peak",
                 self.tou_kwh.off_peak,
                 self.cost_recovery_rates.off_peak,
@@ -399,15 +391,7 @@ impl fmt::Display for ReimbursementReconciliation {
                 format!("{:.2}", self.cost_recovery_amount),
             ],
         ];
-        writeln!(
-            f,
-            "{}\n",
-            table(
-                &["TOU", "kWh", "EV rate", "Recovery"],
-                &rows,
-                &[Left, Right, Right, Right],
-            )
-        )?;
+        writeln!(f, "{}\n", table(&BAND_HEADERS, &rows, &BAND_ALIGNMENT))?;
 
         // After the table it draws on. The kilowatt-hours priced above are one side of this
         // subtraction, so a reader meets them before being asked to check them against Evolute's.

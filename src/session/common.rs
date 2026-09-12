@@ -165,14 +165,12 @@ pub struct Session {
     /// Exclusive: `[conn_start, conn_end)` is the span every estimate places the session on, so a
     /// session starting at this instant abuts this one rather than overlapping it.
     pub conn_end: Timestamp,
-    /// `Conn_Duration` from `session report`: the physical elapsed time of the connection, which
-    /// is what `duration_is_consistent` checks the reported start and end against.
-    pub conn_duration: Duration,
     /// Active charge time from `session report`.
     ///
     /// Differs from the reported span — [`Self::conn_end`] less [`Self::conn_start`], which
-    /// `Session::interval` places the session on — and from `conn_duration` by about a second. It
-    /// does **not** measure charging as distinct from connection. Evolute, 22 Jul 2026:
+    /// `Session::interval` places the session on — and from the report's own `Conn_Duration` by
+    /// about a second. It does **not** measure charging as distinct from connection. Evolute,
+    /// 22 Jul 2026:
     ///
     /// > All 3 will show as almost the same, with Active charging being off by maybe 1 second due
     /// > to rounding as it is on a slightly different timer. These fields are here for grant
@@ -1063,7 +1061,6 @@ mod test {
             id: id.to_owned(),
             conn_start,
             conn_end: conn_start + conn_duration,
-            conn_duration,
             charge_time: conn_duration,
             energy_use,
             anomalies: Vec::new(),

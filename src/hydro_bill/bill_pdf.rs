@@ -21,6 +21,7 @@ use super::{
     HydroBill,
     pdf_text::{Fragment, Line, PdfTextError, read_pages},
 };
+use crate::csv::commas_group_thousands;
 use jiff::civil::Date;
 use std::{
     error::Error,
@@ -546,30 +547,6 @@ fn money(text: &str) -> Result<f64, Problem> {
         .replace(',', "")
         .parse()
         .map_err(|_| malformed("a number", text))
-}
-
-/// Whether every comma in `text` separates a group of three digits.
-///
-/// `1,234.5` and `12,345,678` pass; `1,2`, `,123` and `1,2345` do not, and neither does a comma
-/// after the decimal point. A number with no comma in it passes untouched.
-///
-/// The same rule is written out in `charges_report::commas_group_thousands`, over the same
-/// question about a different document. Change one and change the other.
-fn commas_group_thousands(text: &str) -> bool {
-    if !text.contains(',') {
-        return true;
-    }
-    let (integer, fraction) = text.split_once('.').unwrap_or((text, ""));
-    if fraction.contains(',') {
-        return false;
-    }
-    let digits = integer
-        .strip_prefix('-')
-        .or_else(|| integer.strip_prefix('+'))
-        .unwrap_or(integer);
-    let mut groups = digits.split(',');
-    let leading = groups.next().unwrap_or("");
-    (1..=3).contains(&leading.len()) && groups.all(|g| g.len() == 3)
 }
 
 /// `Jan 28 2026`, or `JUN 23 2025` as the usage table writes it.

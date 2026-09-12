@@ -47,6 +47,33 @@ pub use reimbursement::{
     reconcile_evolute_reimbursement, /* CostRecoveryRates, Sessions */
 };
 
+/// One time-of-use band's row in a cost-recovery table: name, kilowatt-hours, rate, recovery.
+///
+/// Shared by the two reports that print one — `recovery`'s table per stretch of rates, and
+/// `reimbursement`'s single table for the month — along with the header and alignment beside it.
+/// The two differ in how many tables they print, not in what a band's row holds, and a change to a
+/// cell's precision that landed in one and missed the other would be a difference a reader has no
+/// way to explain.
+pub(super) const BAND_HEADERS: [&str; 4] = ["TOU", "kWh", "EV rate", "Recovery"];
+
+/// See [`BAND_HEADERS`]: right against the name, so the three figures line up under each other.
+pub(super) const BAND_ALIGNMENT: [crate::markdown::Align; 4] = [
+    crate::markdown::Left,
+    crate::markdown::Right,
+    crate::markdown::Right,
+    crate::markdown::Right,
+];
+
+/// See [`BAND_HEADERS`].
+pub(super) fn band_row(name: &str, kwh: f64, rate: f64, recovery: f64) -> Vec<String> {
+    vec![
+        name.to_owned(),
+        format!("{kwh:.3}"),
+        format!("{rate:.5}"),
+        format!("{recovery:.2}"),
+    ]
+}
+
 /// An amount rounded to the cent, as the reports state it.
 ///
 /// Shared by the two money reports, each of which prints a column that has to add down to a figure

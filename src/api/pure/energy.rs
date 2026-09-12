@@ -504,19 +504,14 @@ fn band_name(tou: Tou) -> &'static str {
 mod test {
     use super::*;
     use crate::{
-        api::pure::test_support::as_report,
+        api::pure::test_support::{as_report, close, period_ending_date},
         session::{
             RSession,
             test_support::{inverted_session, session, spike_session},
         },
     };
-    use jiff::civil::{Date, date};
+    use jiff::civil::date;
     use std::slice;
-
-    /// The period every fixture here belongs to: 24 May to 23 June 2026.
-    fn period_ending_date() -> Date {
-        date(2026, 6, 23)
-    }
 
     fn kwh(sessions: &[RSession]) -> f64 {
         energy(period_ending_date(), &as_report(sessions.to_vec()))
@@ -595,7 +590,7 @@ mod test {
     /// own proportions. Zero is refused rather than divided by.
     #[test]
     fn a_bill_stating_no_total_charges_is_refused() {
-        let mut b = bill();
+        let mut b = round_bill();
         b.total_electricity_charges = 0.0;
         let err = energy_cost(&b, &sessions()).expect_err("a zero divisor");
         let EnergyError::ZeroDenominator(z) = &err else {
@@ -605,22 +600,24 @@ mod test {
 
         // A band stating no consumption keeps its own kind, which carries the band rather than the
         // bill figure. The two are the same arithmetic read two ways and stay apart.
-        let mut b = bill();
+        let mut b = round_bill();
         b.on_peak_kwh = 0.0;
         let err = energy_cost(&b, &sessions()).expect_err("no on-peak rate");
         assert!(matches!(err, EnergyError::NoRate { .. }), "{err}");
     }
 
-    /// A bill for the fixture period, with figures chosen so that every rate the cost derives comes
-    /// out whole and can be checked by eye.
+    /// The bill these cost tests are built on: figures chosen so that every rate the cost derives
+    /// comes out whole and can be checked by eye.
     ///
-    /// The three time-of-use consumption lines sum to `adjusted_kwh_used` and not to `kwh_used`,
-    /// which is how a real bill states them, so a rate derived from them is per adjusted kWh. They
-    /// divide into rates of 0.20, 0.15 and 0.10, and HST and the rebate into 13% and 10% of the
-    /// total charges.
+    /// Not `test_support::bill`, and not expected to agree with it. That one is the crate's single
+    /// bill fixture for figures two operations have to compare; this one exists so the arithmetic
+    /// below can be followed on paper. The three time-of-use consumption lines sum to
+    /// `adjusted_kwh_used` and not to `kwh_used`, which is how a real bill states them, so a rate
+    /// derived from them is per adjusted kWh. They divide into rates of 0.20, 0.15 and 0.10, and HST
+    /// and the rebate into 13% and 10% of the total charges.
     ///
     /// The loss factor is 1.05 rather than 1, so a figure priced without it is a different number.
-    fn bill() -> HydroBill {
+    fn round_bill() -> HydroBill {
         HydroBill {
             statement_date: date(2026, 6, 28),
             on_peak_kwh: 10000.0,
@@ -666,12 +663,7 @@ mod test {
     }
 
     fn cost() -> EnergyCost {
-        energy_cost(&bill(), &sessions()).expect("the bill closes a billing period")
-    }
-
-    /// Money, to the cent.
-    fn close(actual: f64, expected: f64) -> bool {
-        (actual - expected).abs() < 0.005
+        energy_cost(&round_bill(), &sessions()).expect("the bill closes a billing period")
     }
 
     /// The kilowatt-hours priced are the ones [`fn@energy`] reports for the same period, so a cost
@@ -709,21 +701,21 @@ mod test {
     /// factor were left out, or applied twice.
     #[test]
     fn each_band_is_priced_on_the_loss_adjusted_energy() {
-        let (cost, bill) = (cost(), bill());
+        let (cost, the_bill) = (cost(), round_bill());
         assert_eq!(cost.loss_factor_adjustment, 1.05);
         assert!(close(cost.adjusted_kwh.on_peak, 5.0 * 1.05));
 
         assert!(close(
             cost.on_peak_cost,
-            bill.on_peak_cost * cost.adjusted_kwh.on_peak / bill.on_peak_kwh
+            the_bill.on_peak_cost * cost.adjusted_kwh.on_peak / the_bill.on_peak_kwh
         ));
         assert!(close(
             cost.mid_peak_cost,
-            bill.mid_peak_cost * cost.adjusted_kwh.mid_peak / bill.mid_peak_kwh
+            the_bill.mid_peak_cost * cost.adjusted_kwh.mid_peak / the_bill.mid_peak_kwh
         ));
         assert!(close(
             cost.off_peak_cost,
-            bill.off_peak_cost * cost.adjusted_kwh.off_peak / bill.off_peak_kwh
+            the_bill.off_peak_cost * cost.adjusted_kwh.off_peak / the_bill.off_peak_kwh
         ));
 
         // 5 * 1.05 * 0.20, 3 * 1.05 * 0.15 and 7 * 1.05 * 0.10.
@@ -767,13 +759,13 @@ mod test {
     /// publishes.
     #[test]
     fn the_wholesale_market_service_charge_is_priced_on_adjusted_energy() {
-        let (cost, bill) = (cost(), bill());
+        let (cost, the_bill) = (cost(), round_bill());
 
         // 420 / 50000. Not 420 / 47619.048, which would be 0.00882.
         assert!(close(cost.th_wholesale_mkt_svc_rate, 0.0084));
         assert!(close(
             cost.th_wholesale_mkt_svc_rate,
-            bill.wholesale_market_svc_charge / bill.adjusted_kwh_used
+            the_bill.wholesale_market_svc_charge / the_bill.adjusted_kwh_used
         ));
 
         // 15 kWh across the three bands, raised by the 1.05 loss factor.
@@ -796,7 +788,7 @@ mod test {
     /// quotient would be infinite or NaN. Refused, naming the figure, exactly as a zero total is.
     #[test]
     fn a_bill_stating_no_adjusted_consumption_is_refused() {
-        let mut b = bill();
+        let mut b = round_bill();
         b.adjusted_kwh_used = 0.0;
         let err = energy_cost(&b, &sessions()).expect_err("a zero divisor");
         let EnergyError::ZeroDenominator(z) = &err else {
@@ -809,7 +801,7 @@ mod test {
     /// or NaN. Refused, naming the band, rather than carried into a dollar figure.
     #[test]
     fn a_band_the_bill_reports_no_consumption_in_has_no_rate() {
-        let (mut on, mut mid, mut off) = (bill(), bill(), bill());
+        let (mut on, mut mid, mut off) = (round_bill(), round_bill(), round_bill());
         on.on_peak_kwh = 0.0;
         mid.mid_peak_kwh = 0.0;
         off.off_peak_kwh = 0.0;
@@ -865,7 +857,7 @@ mod test {
     /// period does not close a billing period -- is refused rather than priced.
     #[test]
     fn an_off_cycle_bill_is_refused() {
-        let mut off_cycle = bill();
+        let mut off_cycle = round_bill();
         off_cycle.meter_reading_period_to = date(2026, 6, 30);
 
         let err = energy_cost(&off_cycle, &sessions())

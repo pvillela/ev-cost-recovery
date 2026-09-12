@@ -42,3 +42,57 @@ mod io;
 pub use io::*;
 
 pub mod pure;
+
+/// One rate schedule as the cost-recovery tools take it:
+/// `EFFECTIVE_DATE:ON_PEAK,MID_PEAK,OFF_PEAK`, as in `2026-05-01:0.1100,0.0900,0.0700`.
+///
+/// One argument rather than four, so that the effective date cannot drift away from the rates it
+/// belongs to when a second schedule is added to a command line.
+///
+/// Here rather than in either binary because both take the same argument and have to read it the
+/// same way; compiled into two binaries, it would be two definitions that happen to agree today.
+/// A schedule a front-end holds as text is what this module is for.
+///
+/// # Errors
+///
+/// A message naming the part that would not read, and the form expected. Rates are checked here
+/// rather than deeper in, where the band can be named: `"nan"`, `"inf"` and `"-inf"` all parse as
+/// `f64` and a negative parses as itself, and a rate that is not a finite, non-negative number
+/// prices a band's energy at nothing or less while still producing a report.
+pub fn parse_rates(spec: &str) -> Result<CostRecoveryRates, String> {
+    const SHAPE: &str = "expected EFFECTIVE_DATE:ON_PEAK,MID_PEAK,OFF_PEAK, \
+                         as in 2026-05-01:0.1100,0.0900,0.0700";
+
+    let (date, rates) = spec
+        .split_once(':')
+        .ok_or_else(|| format!("cannot read \"{spec}\" as a rate schedule: {SHAPE}"))?;
+
+    let effective_date: jiff::civil::Date = date
+        .parse()
+        .map_err(|e| format!("cannot read \"{date}\" as an effective date, YYYY-MM-DD: {e}"))?;
+
+    let [on_peak, mid_peak, off_peak] = rates.split(',').collect::<Vec<_>>()[..] else {
+        return Err(format!("\"{rates}\" is not three rates: {SHAPE}"));
+    };
+    let rate = |s: &str, band: &str| -> Result<f64, String> {
+        let value: f64 = s
+            .parse()
+            .map_err(|e| format!("cannot read \"{s}\" as the {band} rate: {e}"))?;
+        if !value.is_finite() {
+            return Err(format!(
+                "cannot read \"{s}\" as the {band} rate: it is not a finite number"
+            ));
+        }
+        if value < 0.0 {
+            return Err(format!("the {band} rate cannot be negative: \"{s}\""));
+        }
+        Ok(value)
+    };
+
+    Ok(CostRecoveryRates {
+        effective_date,
+        on_peak: rate(on_peak, "on-peak")?,
+        mid_peak: rate(mid_peak, "mid-peak")?,
+        off_peak: rate(off_peak, "off-peak")?,
+    })
+}

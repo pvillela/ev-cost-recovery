@@ -22,7 +22,7 @@
 //! In production these files sit in the same folder as the session reports.
 
 use crate::{
-    csv::{CsvReadError, Document, Table},
+    csv::{CsvReadError, Document, Table, commas_group_thousands},
     log::{RunLog, SourceLog},
     markdown::{h2, wrap},
 };
@@ -171,23 +171,13 @@ fn month_start(s: &str) -> Option<Date> {
     Date::new(year.trim().parse().ok()?, month, 1).ok()
 }
 
-/// The first day of the calendar month a Charges Report covers.
-///
-/// [`parse_charges_report_name`] applied to a path's stem, keeping only the opening month. `None`
-/// for a name that will not read, since a caller reaching for the month is asking whether this file
-/// can take part at all.
-pub fn charges_month(path: &Path) -> Option<Date> {
-    let stem = path.file_stem()?.to_str()?;
-    parse_charges_report_name(stem).ok().map(|(from, _)| from)
-}
-
 /// One month's Charges Report, summed.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ChargesReport {
     /// The file this was read from.
     pub path: PathBuf,
-    /// The first day of the calendar month this report covers, read from [`Self::path`] by
-    /// [`charges_month`].
+    /// The first day of the calendar month this report covers, read from [`Self::path`]'s file name
+    /// by `parse_charges_report_name`.
     ///
     /// The month comes from the *name*, never from the rows. The rows are then checked against it,
     /// and a file holding a row outside it is refused whole — see
@@ -469,9 +459,10 @@ impl Error for ChargesReportError {
 
 /// Reads a Charges Report and totals it.
 ///
-/// The month comes from the file name, by [`charges_month`], and every row is checked against it.
-/// A row reaching outside that month refuses the whole file. So a `ChargesReport` handed back is
-/// one whose contents agree with its own name, and no caller has to establish that again.
+/// The month comes from the file name, by [`parse_charges_report_name`], and every row is checked
+/// against it. A row reaching outside that month refuses the whole file. So a `ChargesReport`
+/// handed back is one whose contents agree with its own name, and no caller has to establish that
+/// again.
 ///
 /// What this does **not** check is whether that month is the one anybody wanted. Comparing it to
 /// the session report's month needs both documents, and is done where both are in hand — see
@@ -643,30 +634,6 @@ fn parse_number(
         return Err(bad_value(cell, path, row, column, "expected a finite number"));
     }
     Ok(value)
-}
-
-/// Whether every comma in `text` separates a group of three digits.
-///
-/// `1,234.5` and `12,345,678` pass; `1,2`, `,123` and `1,2345` do not, and neither does a comma
-/// after the decimal point. A number with no comma in it passes untouched.
-///
-/// The same rule is written out in `hydro_bill::bill_pdf::commas_group_thousands`, over the same
-/// question about a different document. Change one and change the other.
-fn commas_group_thousands(text: &str) -> bool {
-    if !text.contains(',') {
-        return true;
-    }
-    let (integer, fraction) = text.split_once('.').unwrap_or((text, ""));
-    if fraction.contains(',') {
-        return false;
-    }
-    let digits = integer
-        .strip_prefix('-')
-        .or_else(|| integer.strip_prefix('+'))
-        .unwrap_or(integer);
-    let mut groups = digits.split(',');
-    let leading = groups.next().unwrap_or("");
-    (1..=3).contains(&leading.len()) && groups.all(|g| g.len() == 3)
 }
 
 /// A dollar amount as the report writes it: `$70.62`, or `-$1.00` for a credit.

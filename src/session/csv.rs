@@ -450,7 +450,6 @@ impl CsvSession {
                 id: self.id.clone(),
                 conn_start,
                 conn_end,
-                conn_duration: self.conn_duration,
                 charge_time: self.active_charge_time,
                 energy_use: self.energy_use,
                 anomalies,
