@@ -1151,9 +1151,14 @@ pub fn report_sections(text: &str) -> Vec<Section> {
     let lines: Vec<&str> = text.lines().collect();
 
     // The depth of the title starting at `i`, or `None` where no title starts there.
+    //
+    // Measured in characters, which is what `markdown::h1` and `h2` repeat the rule to. In bytes, a
+    // title carrying any character outside ASCII — an em dash, an accented letter — would never
+    // match its own underline, and the section would be swallowed into the one before it with
+    // nothing said about it.
     let level = |i: usize| -> Option<u8> {
         let (title, rule) = (lines.get(i)?, lines.get(i + 1)?);
-        if title.trim().is_empty() || rule.len() != title.len() {
+        if title.trim().is_empty() || rule.chars().count() != title.chars().count() {
             return None;
         }
         // The first character is taken before `all` is asked, which every character of an empty
@@ -1421,6 +1426,34 @@ mod test {
             state.can_run(),
             "May and June cover the period between them"
         );
+    }
+
+    /// A heading is recognised whatever its characters are.
+    ///
+    /// The rule is a repeat of the title, so the two are compared as characters. Compared as bytes,
+    /// a title carrying one character outside ASCII never matched its own underline, and the
+    /// section was swallowed into the one above it — silently, since a report is read as text
+    /// either way.
+    #[test]
+    fn a_heading_containing_a_non_ascii_character_opens_a_section() {
+        // Built rather than typed, so the underline is exactly the title's character count, as
+        // `markdown::h2` writes it.
+        let title = "Période — notes";
+        let report = format!(
+            "First\n=====\n\none\n\n{title}\n{}\n\ntwo\n",
+            "-".repeat(title.chars().count())
+        );
+
+        let sections = report_sections(&report);
+        assert_eq!(sections.len(), 1);
+        assert_eq!(sections[0].title, "First");
+        let nested: Vec<&str> = sections[0]
+            .subsections
+            .iter()
+            .map(|s| s.title.as_str())
+            .collect();
+        assert_eq!(nested, [title]);
+        assert_eq!(sections[0].subsections[0].body, "two");
     }
 
     fn sample_name(which: Input) -> &'static str {

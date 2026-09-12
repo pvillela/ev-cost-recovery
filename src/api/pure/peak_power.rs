@@ -149,7 +149,12 @@ pub struct DeliveryCost {
     /// Ontario Electricity Rebate attributable to EV sessions.
     pub ontario_electricity_rebate: f64,
 
-    /// Total delivery cost attributable to EV sessions, net of HST and OER.
+    /// Total delivery cost attributable to EV sessions, including HST and net of the Ontario
+    /// Electricity Rebate: `charges + hst - ontario_electricity_rebate`.
+    ///
+    /// Spelled out because the two flanking fields pull in opposite directions, and "net of HST"
+    /// alone reads as though both were subtracted. The two are proportions of the bill's own
+    /// charges: HST is added to them, the rebate taken off.
     pub delivery_cost: f64,
 
     /// What the figures were drawn from, and what was odd about it. Every kind, as
@@ -437,7 +442,6 @@ pub fn peak_power_cost(
 
     // Each maximum is taken over the interval its own bill line is charged on. Reading all three off
     // one interval would price two of the lines against an interval they were never charged for.
-    // Taken before the maxima are read off, since those move `gb_period_values` field by field.
     //
     // Every line is priced on the energy-based estimate. The count-based pair reads connected
     // vehicles against a nominal rating, which is a reference for the energy figure rather than a
