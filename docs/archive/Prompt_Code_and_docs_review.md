@@ -1,0 +1,1 @@
+Review the project's code and non-archived documents. Identify areas for improvement, focusing on code correctness, testing gaps, modularity, consistency, and adherence to Rust idiomatic practices; documentation clarity and consistency; comment correctness, clarity, and consistency. Save a report in the docs folder documenting your findings.
