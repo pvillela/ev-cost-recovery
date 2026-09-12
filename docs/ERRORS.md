@@ -510,14 +510,20 @@ says so.
 ### `InconsistentDuration`
 
 > reported start, end and duration contradict each other by more than a second, which is the
-> rounding the source does; the session is excluded from every estimate
+> rounding the source does, or report an end before the start; the session is excluded from every
+> estimate
 
-The record's own three fields do not agree. `Conn_DateTime_Start + Conn_Duration` should equal
-`Conn_DateTime_End`, and one second of slack is allowed for the rounding the source does; this is
-further out than that. Neither the duration nor the span the session would be placed on can be
-relied on, so it is left out of every figure.
+The record's own three fields do not agree, or its end precedes its start.
+`Conn_DateTime_Start + Conn_Duration` should equal `Conn_DateTime_End`, and one second of slack is
+allowed for the rounding the source does; further out than that, or inverted at all, and neither the
+duration nor the span the session would be placed on can be relied on — so it is left out of every
+figure.
 
-`src/session/common.rs:987-990`
+An inversion is refused however small it is, tolerance or no tolerance: the estimating logic panics
+on an inverted span rather than answering for one, so a one-second inversion is not a record to read
+the arithmetic on.
+
+`src/session/common.rs:686-690`
 
 ### `ZeroActiveChargeTime`
 

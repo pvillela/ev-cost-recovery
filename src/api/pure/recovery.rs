@@ -29,6 +29,7 @@ use std::{error::Error, fmt, mem};
 use super::{
     energy::{EnergyCost, EnergyError, energy_cost},
     peak_power::{DeliveryCost, PeakPowerError, peak_power_cost},
+    to_the_cent,
 };
 
 // Re-exported because the functions here take these and return those, and a caller should not have
@@ -512,20 +513,6 @@ pub fn cost_recovery_surplus(
         delivery,
         energy,
     })
-}
-
-/// An amount rounded to the cent, as the reports state it.
-///
-/// Through the formatter rather than by arithmetic on the value. `(x * 100.0).round() / 100.0`
-/// rounds a half away from zero while `{:.2}` rounds it to even, so the two disagree on an amount
-/// landing exactly on half a cent -- and a surplus that disagreed with its own column in that case
-/// would be the one defect this rounding exists to prevent. The round trip through a string is what
-/// makes the result the printed figure by construction rather than by an argument that the two
-/// rules coincide.
-fn to_the_cent(amount: f64) -> f64 {
-    format!("{amount:.2}")
-        .parse()
-        .expect("a decimal written by this formatter parses back")
 }
 
 /// One stretch of the period priced at one schedule of rates.

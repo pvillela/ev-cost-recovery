@@ -46,3 +46,20 @@ pub use reimbursement::{
     ChargesReport, ReimbursementError, ReimbursementReconciliation,
     reconcile_evolute_reimbursement, /* CostRecoveryRates, Sessions */
 };
+
+/// An amount rounded to the cent, as the reports state it.
+///
+/// Shared by the two money reports, each of which prints a column that has to add down to a figure
+/// stated below it: `recovery`'s surplus and `reimbursement`'s two variances. A stored figure that
+/// disagreed with the printed column it summarizes reads as an arithmetic error in a report whose
+/// subject is arithmetic.
+///
+/// Through the formatter rather than by arithmetic on the value. `(x * 100.0).round() / 100.0`
+/// rounds a half away from zero while `{:.2}` rounds it to even, so the two disagree on an amount
+/// landing exactly on half a cent. The round trip through a string is what makes the result the
+/// printed figure by construction rather than by an argument that the two rules coincide.
+fn to_the_cent(amount: f64) -> f64 {
+    format!("{amount:.2}")
+        .parse()
+        .expect("a decimal written by this formatter parses back")
+}

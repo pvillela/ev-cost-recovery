@@ -289,12 +289,15 @@ only surviving grid is `green_button::METER_INTERVAL`.
 `Session::intersects` has a **precondition**: `conn_end` must not precede `conn_start`. It panics
 otherwise, and that is deliberate.
 
-Nothing legitimate violates it. `conn_duration` is unsigned, so `conn_start + conn_duration` is
-never before `conn_start`; an inverted span therefore misses `conn_end` by more than
-`DURATION_TOLERANCE` and the record is flagged `InconsistentDuration` and sorted into
-`Sessions::excluded`, and `estimates_from_sessions` never puts an excluded session in front of the
-estimating logic. Reaching the panic means one got somewhere it should not have, which is worth a
-crash rather than a plausible-looking answer.
+Nothing legitimate violates it, and `duration_is_consistent` enforces it with two checks rather than
+one. The first is the inversion itself, tested before the tolerance is consulted: a one-second
+inversion with a zero `Conn_Duration` misses `conn_end` by exactly `DURATION_TOLERANCE`, so the
+subtraction alone calls such a record sound — and it would then reach the estimating logic, which is
+where this panic is. The second is that subtraction, and it is what covers the reporting rounding on
+the records that are not inverted. Either failure flags the record `InconsistentDuration` and sorts
+it into `Sessions::excluded`, and `estimates_from_sessions` never puts an excluded session in front
+of the estimating logic. Reaching the panic means one got somewhere it should not have, which is
+worth a crash rather than a plausible-looking answer.
 
 `Session::adj_duration` and `SessionOverlap::duration` panic on the same inversion, and for the
 same reason.

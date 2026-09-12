@@ -120,8 +120,9 @@ impl Error for SessionCsvError {
 /// # Errors
 ///
 /// Returns `Err` only for conditions that invalidate the whole file: it cannot be read, a required
-/// header from the private `REQUIRED_HEADERS` is missing, or a timestamp or duration does not
-/// parse. Per-row judgement calls do not abort the read; they are carried on each
+/// header from the private `REQUIRED_HEADERS` is missing, or a timestamp, duration or energy figure
+/// does not parse — including an energy figure that is negative or not finite, which no row of a
+/// session report means. Per-row judgement calls do not abort the read; they are carried on each
 /// [`Session::anomalies`] and summarised in the log.
 pub(crate) fn csv_sessions(path: &Path) -> Result<Sessions, SessionCsvError> {
     read_sessions(path)
@@ -295,6 +296,30 @@ fn parse_duration(
     Ok(Duration::from_secs(h * 3600 + m * 60 + sec))
 }
 
+/// `Energy_Use` as a figure the estimating logic can use.
+///
+/// Zero is allowed: a session that drew nothing is a real record, and a zero beside a non-zero
+/// `Active_Charge_Time` is the spike case. A negative or non-finite value is not. Energy is what a
+/// session contributed, and the load model scales a segment by it, so a negative one floors a panel
+/// count below zero — subtracting a full panel's load and adding a standing block for it — and a
+/// `NaN` spreads through every figure built on the segment without ever tripping the average-power
+/// check, which compares and so cannot see a `NaN` at all.
+fn parse_energy(s: &str, path: &Path, row: usize) -> Result<f64, CsvReadError> {
+    let value: f64 = s
+        .parse()
+        .map_err(|e: std::num::ParseFloatError| bad_value(s, path, row, "Energy_Use", e))?;
+    if !value.is_finite() || value < 0.0 {
+        return Err(bad_value(
+            s,
+            path,
+            row,
+            "Energy_Use",
+            "expected a kilowatt-hour figure that is finite and not negative",
+        ));
+    }
+    Ok(value)
+}
+
 /// The parsed fields of one CSV record that participate in the time calculations. Named apart
 /// from [`Session`], which is the finished, UTC-resolved article this module hands to the peak
 /// power contribution logic.
@@ -330,6 +355,17 @@ pub(super) struct Row {
 impl CsvSession {
     fn parse(table: &Table, index: usize, row: usize) -> Result<Self, CsvReadError> {
         let path = table.path();
+        // Read here rather than left to the writer, which parses this column on demand. The
+        // workbook writes `Charge_Duration` back, so a malformed cell would surface from the
+        // writing half — an error carrying the workbook path wrapped around a cause that already
+        // names the CSV, reporting a read failure as a write one, and only on the conversion path
+        // (`csv_sessions` never asks for this column and would accept the file). A column the
+        // writer echoes is a column the reader validates. Blank stays allowed, as it is elsewhere.
+        let charge_duration = table.cell(index, "Charge_Duration");
+        if !charge_duration.is_empty() {
+            parse_duration(charge_duration, path, row, "Charge_Duration")?;
+        }
+
         let energy_raw = table.cell(index, "Energy_Use");
         Ok(Self {
             id: table.cell(index, "Charge_Session_ID").to_owned(),
@@ -357,9 +393,7 @@ impl CsvSession {
                 row,
                 "Active_Charge_Time",
             )?,
-            energy_use: energy_raw.parse().map_err(|e: std::num::ParseFloatError| {
-                bad_value(energy_raw, path, row, "Energy_Use", e)
-            })?,
+            energy_use: parse_energy(energy_raw, path, row)?,
         })
     }
 
@@ -672,7 +706,7 @@ mod test {
         }
     }
 
-    /// The three checks of [`duration_is_consistent`], each pinned at the boundary it draws.
+    /// The two checks of [`duration_is_consistent`], each pinned at the boundary it draws.
     ///
     /// Both bounds are exclusive and both are pinned to the second, because getting either off by
     /// one silently reclassifies real records — the sample data reaches to within 3 seconds of the
@@ -698,10 +732,9 @@ mod test {
             bad
         );
 
-        // An inversion, which the tolerance catches without a check of its own: the implied end
-        // is a minute past the reported one. It matters most of the cases here, because letting
-        // the row through panics `Session::intersects` downstream. The zero duration an inversion
-        // of this shape forces brings `ZeroActiveChargeTime` with it.
+        // An inversion is refused in its own right. Letting such a row through panics
+        // `Session::intersects` downstream, and the zero duration this shape forces brings
+        // `ZeroActiveChargeTime` with it.
         assert_eq!(
             kinds("2026-06-01 10:01:00", "2026-06-01 10:00:00", "0:00:00"),
             vec![
@@ -713,6 +746,16 @@ mod test {
         assert_eq!(
             kinds("2026-06-01 10:00:00", "2026-06-01 09:00:00", "0:10:00"),
             bad
+        );
+        // One second the wrong way with a zero duration. The miss is exactly the tolerance, so the
+        // arithmetic on its own calls this sound — which is why the inversion is checked before it
+        // is consulted. This is the case that reached the estimating logic and panicked it.
+        assert_eq!(
+            kinds("2026-06-01 10:00:00", "2026-06-01 09:59:59", "0:00:00"),
+            vec![
+                AnomalyKind::ZeroActiveChargeTime,
+                AnomalyKind::InconsistentDuration
+            ]
         );
 
         // One second outside the tolerance, each way.
@@ -815,6 +858,94 @@ S1,2026-06-01 16:22,2026-06-01 21:29,5:07:53,5:07:52
 
         let err = csv_sessions(&csv_path).unwrap_err().to_string();
         assert!(err.contains("Energy_Use"), "{err}");
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    /// An energy figure that parses but cannot be a quantity of energy fails the read.
+    ///
+    /// Zero is a real record and is accepted. A negative figure is not: the load model scales a
+    /// segment by the energy its sessions drew, so a negative one floors a panel count below zero
+    /// and subtracts a panel's load from the site. A `NaN` is worse — it spreads through every
+    /// figure without ever tripping the average-power check, which compares and so cannot see it.
+    #[test]
+    fn energy_that_is_negative_or_not_finite_is_refused() {
+        const HEADER: &str = "Charge_Session_ID,Conn_DateTime_Start,Conn_DateTime_End,\
+                              Conn_Duration,Active_Charge_Time,Energy_Use";
+
+        for value in ["-5", "nan", "inf", "-inf"] {
+            let dir = temp_dir("bad_energy");
+            let csv_path = dir.join("Session_Report_Test.csv");
+            fs::write(
+                &csv_path,
+                format!(
+                    "{HEADER}\nS1,2026-06-01 16:22:00,2026-06-01 21:29:53,5:07:53,5:07:52,{value}\n"
+                ),
+            )
+            .unwrap();
+
+            let err = csv_sessions(&csv_path).unwrap_err().to_string();
+            assert!(err.contains("Energy_Use"), "{value}: {err}");
+            assert!(err.contains(value), "{value}: {err}");
+            fs::remove_dir_all(&dir).ok();
+        }
+
+        // Zero and an ordinary figure still read.
+        for value in ["0", "30.6"] {
+            let dir = temp_dir("good_energy");
+            let csv_path = dir.join("Session_Report_Test.csv");
+            fs::write(
+                &csv_path,
+                format!(
+                    "{HEADER}\nS1,2026-06-01 16:22:00,2026-06-01 21:29:53,5:07:53,5:07:52,{value}\n"
+                ),
+            )
+            .unwrap();
+
+            assert_eq!(csv_sessions(&csv_path).unwrap().sessions.len(), 1, "{value}");
+            fs::remove_dir_all(&dir).ok();
+        }
+    }
+
+    /// A malformed `Charge_Duration` fails the read rather than the write.
+    ///
+    /// The workbook echoes this column and parses it on demand. Left to that, the error surfaced
+    /// from the writing half: it named the workbook path as well as the CSV, reported a read
+    /// failure as a failure to write, and left the two readers disagreeing — `csv_sessions` never
+    /// asks for the column and accepted a report the conversion refused.
+    #[test]
+    fn a_malformed_charge_duration_fails_the_read() {
+        const CSV: &str = "\
+Charge_Session_ID,Conn_DateTime_Start,Conn_DateTime_End,Conn_Duration,Charge_Duration,Active_Charge_Time,Energy_Use
+S1,2026-06-01 16:22:00,2026-06-01 21:29:53,5:07:53,not-a-duration,5:07:52,30.6
+";
+        let dir = temp_dir("bad_charge_duration");
+        let csv_path = dir.join("Session_Report_Test.csv");
+        fs::write(&csv_path, CSV).unwrap();
+
+        let err = csv_sessions(&csv_path).unwrap_err().to_string();
+        for expected in ["Session Report", "Charge_Duration", "row 2", "not-a-duration"] {
+            assert!(err.contains(expected), "{expected:?} missing from {err:?}");
+        }
+        // Nothing was being written, so no workbook is named.
+        assert!(!err.contains(".xlsx"), "{err}");
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    /// The column is optional, and a blank cell in it stays allowed: the writer leaves the cell
+    /// empty rather than refusing the row, so the reader must not be stricter than the writer.
+    #[test]
+    fn a_blank_charge_duration_is_left_alone() {
+        const CSV: &str = "\
+Charge_Session_ID,Conn_DateTime_Start,Conn_DateTime_End,Conn_Duration,Charge_Duration,Active_Charge_Time,Energy_Use
+S1,2026-06-01 16:22:00,2026-06-01 21:29:53,5:07:53,,5:07:52,30.6
+";
+        let dir = temp_dir("blank_charge_duration");
+        let csv_path = dir.join("Session_Report_Test.csv");
+        fs::write(&csv_path, CSV).unwrap();
+
+        assert_eq!(csv_sessions(&csv_path).unwrap().sessions.len(), 1);
 
         fs::remove_dir_all(&dir).ok();
     }

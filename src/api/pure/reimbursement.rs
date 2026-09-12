@@ -23,6 +23,8 @@ use crate::{
 use jiff::civil::Date;
 use std::{error::Error, fmt};
 
+use super::to_the_cent;
+
 // Re-exported for the same reason `recovery` re-exports what it takes: a caller should not have to
 // know which module a type comes from in order to spell the call.
 pub use crate::{
@@ -104,19 +106,25 @@ pub struct ReimbursementReconciliation {
     pub cost_recovery_rates: CostRecoveryRates,
     /// Calculated total cost recovery amount for the calendar month.
     pub cost_recovery_amount: f64,
-    /// `reimbursed - cost_recovery_amount`.
+    /// `reimbursed - cost_recovery_amount`, each to the cent.
     ///
     /// The question the tab exists to answer: did the money that arrived match what our own rates
     /// say the month's charging earned. Positive when Evolute sent more than the rates come to,
     /// negative when it sent less.
+    ///
+    /// Rounded because the report prints it under the two amounts it is the difference of, each of
+    /// which is formatted to the cent on its own. An unrounded subtraction would show a column that
+    /// does not add down, by a cent, on the amounts that land on a half. See `to_the_cent`.
     pub dollar_variance: f64,
-    /// `reimbursed - charges_report_amount`.
+    /// `reimbursed - charges_report_amount`, each to the cent.
     ///
     /// A narrower question than [`Self::dollar_variance`], and one Evolute alone can answer: did
     /// Evolute send what its own Charges Report says it billed. Our rates do not enter into it.
     /// The two variances fail differently -- this one says the remittance does not match the
     /// document, the other says the document does not match our rates -- and a month can be wrong
     /// in either way without being wrong in the other.
+    ///
+    /// Rounded for the reason [`Self::dollar_variance`] gives.
     pub remittance_variance: f64,
     /// What these figures were drawn from, and what needed a judgement call along the way.
     pub notes: SessionNotes,
@@ -231,8 +239,14 @@ pub fn reconcile_evolute_reimbursement(
         tou_kwh: tou,
         cost_recovery_rates,
         cost_recovery_amount,
-        dollar_variance: reimbursed - cost_recovery_amount,
-        remittance_variance: reimbursed - charges_report_amount,
+        // Each operand is quantized to the cent first, then the difference, then that. The two
+        // amounts are printed as cells of their own, so this is what makes the column add down to
+        // the variance below it rather than to a cent either side of it. `recovery` rounds its
+        // surplus the same way, for the same reason.
+        dollar_variance: to_the_cent(to_the_cent(reimbursed) - to_the_cent(cost_recovery_amount)),
+        remittance_variance: to_the_cent(
+            to_the_cent(reimbursed) - to_the_cent(charges_report_amount),
+        ),
         notes: sessions.notes(AnomalyKind::bears_on_energy),
         // `None`: this function is handed two figures and never sees the report they came from.
         // Whoever opened the file fills this in, the way `Readings::with_source` is filled in.
@@ -245,6 +259,13 @@ pub fn reconcile_evolute_reimbursement(
 /// A narrower claim than [`verdict`]'s, and worth keeping apart from it: this one says only
 /// whether Evolute sent what its own Charges Report came to. Our rates are not in it.
 fn remittance_verdict(variance: f64) -> &'static str {
+    // Three outcomes rather than two, for the reason [`verdict`] gives: every comparison against a
+    // variance that is not a number is false, so choosing on the tests below alone would print an
+    // underpayment for a figure that says nothing at all.
+    if !variance.is_finite() {
+        return "The remittance variance could not be worked out from the figures above. Do not \
+                read it as either more or less than the Charges Report comes to.";
+    }
     // Half a cent, where the printed figure stops.
     if variance.abs() < 0.005 {
         "Evolute sent exactly what its own Charges Report comes to for this month."
@@ -258,7 +279,15 @@ fn remittance_verdict(variance: f64) -> &'static str {
 }
 
 /// What the variance means, in a sentence, so the sign does not have to be read off a number.
+///
+/// Three outcomes rather than two. A variance that is not a number has no direction to read --
+/// every comparison against `NaN` is false, the two below included -- so choosing on them alone
+/// would narrate such a figure as an underpayment while the column above it prints `NaN`.
 fn verdict(variance: f64) -> &'static str {
+    if !variance.is_finite() {
+        return "The variance could not be worked out from the figures above. Do not read it as \
+                either an overpayment or a shortfall.";
+    }
     // Half a cent, which is where the printed figure stops. A variance smaller than that shows as
     // 0.00, and calling that an overpayment or a shortfall contradicts the column above it.
     if variance.abs() < 0.005 {
@@ -306,7 +335,9 @@ impl fmt::Display for ReimbursementReconciliation {
             amounts(&[
                 ("Reimbursement received", self.reimbursed),
                 // Negative so the column adds down to the variance, which is a subtraction and
-                // cannot be checked against two positive numbers.
+                // cannot be checked against two positive numbers. The variance is rounded to the
+                // cent from these same two amounts, so the column does add down rather than to a
+                // cent either side of it.
                 ("Charges Report total", -self.charges_report_amount),
                 ("Remittance variance", self.remittance_variance),
             ])
@@ -597,12 +628,78 @@ mod test {
     }
 
     /// A variance too small to print is neither an overpayment nor a shortfall, whatever its sign.
+    ///
+    /// Neither is a variance that is not a number. Every comparison against `NaN` is false,
+    /// including the two the sentence is chosen on, so without the guard such a figure was
+    /// narrated as a shortfall beside a column that printed `NaN`.
     #[test]
     fn a_variance_below_a_printed_cent_is_called_neither_way() {
         assert!(verdict(0.0).contains("reimbursed what"));
         assert!(verdict(-0.001).contains("reimbursed what"));
         assert!(verdict(0.01).contains("more than"));
         assert!(verdict(-0.01).contains("less than"));
+
+        for variance in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert!(
+                verdict(variance).contains("could not be worked out"),
+                "verdict({variance})"
+            );
+            assert!(
+                remittance_verdict(variance).contains("could not be worked out"),
+                "remittance_verdict({variance})"
+            );
+        }
+    }
+
+    /// The money columns add down to the variances printed under them.
+    ///
+    /// The sweep is over amounts landing on a half cent, which is where a subtraction and a column
+    /// of independently rounded cells disagree by a cent. Read off the rendered report and compared
+    /// as printed, since that is the comparison a reader makes.
+    #[test]
+    fn the_money_columns_add_down_to_their_variances() {
+        let amount = |report: &str, label: &str| -> f64 {
+            let row = report
+                .lines()
+                .find(|l| l.starts_with(&format!("| {label}")))
+                .unwrap_or_else(|| panic!("no {label} row in\n{report}"));
+            row.rsplit('|')
+                .nth(1)
+                .expect("an amount cell")
+                .trim()
+                .parse()
+                .expect("an amount")
+        };
+
+        for step in 0..40 {
+            let reimbursed = 10.0 + f64::from(step) * 0.001;
+            let report = reconcile_evolute_reimbursement(
+                &june_report(),
+                date(2026, 6, 1),
+                10.0,
+                10.0,
+                reimbursed,
+                rates(date(2026, 6, 1), 0.11, 0.09, 0.07),
+            )
+            .expect("a June report and rates effective on the 1st")
+            .to_string();
+
+            // Both columns lead with the same received figure and print what they subtract as a
+            // negative, so the column is added rather than subtracted.
+            let received = amount(&report, "Reimbursement received");
+            for (label, variance) in [
+                ("Charges Report total", "Remittance variance"),
+                ("Cost recovery earned", "Dollar variance"),
+            ] {
+                let subtracted = amount(&report, label);
+                let printed = amount(&report, variance);
+                assert_eq!(
+                    format!("{:.2}", received + subtracted),
+                    format!("{printed:.2}"),
+                    "at {reimbursed:.3} received:\n{report}"
+                );
+            }
+        }
     }
 
     /// A June session report, which is what fixes the month every check below runs against.

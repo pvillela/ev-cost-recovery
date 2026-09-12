@@ -631,9 +631,18 @@ fn parse_number(
         ));
     }
     let cleaned: String = text.chars().filter(|c| *c != ',').collect();
-    cleaned
+    let value: f64 = cleaned
         .parse()
-        .map_err(|e: std::num::ParseFloatError| bad_value(cell, path, row, column, e))
+        .map_err(|e: std::num::ParseFloatError| bad_value(cell, path, row, column, e))?;
+    // `f64::from_str` accepts `NaN`, `inf` and `-inf`, and returns an infinity for a literal that
+    // overflows. None of those is a figure either report totals -- a subscription is billed in
+    // dollars and energy in kilowatt-hours -- and carried through, one of them poisons the month's
+    // sum and prints as an amount no document stated. Same posture as the comma check above: an
+    // error rather than a partial sum.
+    if !value.is_finite() {
+        return Err(bad_value(cell, path, row, column, "expected a finite number"));
+    }
+    Ok(value)
 }
 
 /// Whether every comma in `text` separates a group of three digits.
@@ -857,6 +866,23 @@ Start_Date,End_Date,Bill_Status,kWh,Cost
                 "{text}"
             );
         }
+    }
+
+    /// A cell that parses but is no figure at all is refused.
+    ///
+    /// `f64::from_str` accepts `NaN` and `inf`, and turns an overflowing literal into an infinity.
+    /// Carried through, one of them poisons the month's total and prints as an amount no document
+    /// stated — the same reason the comma check above refuses rather than reads on.
+    #[test]
+    fn a_cell_that_is_not_finite_is_refused() {
+        for text in ["NaN", "inf", "-inf", "1e999"] {
+            let err = number(text, &fake_path(), 2, "kWh").unwrap_err();
+            let message = err.to_string();
+            assert!(message.contains("finite"), "{text}: {message}");
+            assert!(message.contains(text), "{text}: {message}");
+        }
+        // An ordinary figure still reads, an exponent included.
+        assert_eq!(number("1e3", &fake_path(), 2, "kWh").unwrap(), 1000.0);
     }
 
     /// The message quotes the cell as the report wrote it, `$` and all. `money` parses a copy with
