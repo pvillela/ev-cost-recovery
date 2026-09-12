@@ -1,20 +1,33 @@
 # Segment tiling, worked through
 
 How charging sessions land on the 15-minute segments that an interval of interest is divided
-into, walked through on the seven-session example in `tests/fixtures/Session_Report_Diagram.csv`.
+into, walked through on the seven-session example in `tests/fixtures/sessions/Session_Report_Diagram.csv`.
 
-The same example is asserted, session by session, in `tests/session/segment_tiling.rs`, and rendered in
-full in `tests/fixtures/sessions/Session_Report_Diagram.report.md`. This document is the prose; those two
+The same example is asserted, session by session, in `src/session/segment_tiling_tests.rs`, and rendered
+in full in `tests/fixtures/sessions/Session_Report_Diagram.report.md`. This document is the prose; those two
 are the machine-checked versions of the same claims.
 
-There is no diagram beyond the sketch below, and deliberately so. A uniform 15-minute partition is
-simple enough to read as a table — what needed a drawing was the old variable-length grouping,
-where the group boundaries were themselves derived from the data.
+There is no diagram beyond the sketch below, and deliberately so: a uniform 15-minute partition is
+simple enough to read as a table.
+
+## Which clock the times are on
+
+Two clocks appear in this document, and confusing them is the one way to misread it.
+
+A session report states its times on the portal's fixed standard-time offset, all year. That is the
+clock used throughout the tables and the sketch below, and it is the clock the fixture CSV is
+written in.
+
+A rendered report shows the same instants in **prevailing local time**, which through the summer is
+an hour later. The interval this document calls 16:00–17:00 is therefore named 17:00–18:00 in
+`Session_Report_Diagram.report.md`, and the segment this document calls `16:15` is named `17:15`
+there. The geometry is identical — every instant and every session moves by the same hour — so the
+two names are the same segment, and nothing below depends on which is used.
 
 ## The interval and its segments
 
-The interval of interest is 16:00–17:00 local on 2026-06-15, a date with no DST transition. It is
-one hour, so it divides into four segments:
+The interval of interest is 16:00–17:00 as the session report states it, on 2026-06-15, a date with
+no DST transition. It is one hour, so it divides into four segments:
 
 | Segment | From  | To    |
 |---------|-------|-------|
@@ -34,52 +47,47 @@ membership section keys its lists on it.
 ## The seven sessions
 
 Every session occupies the half-open span `[Conn_DateTime_Start, Conn_DateTime_End)`, exactly as
-the report states them. The portal states both to the second, so there is nothing to adjust.
-
-The clock times throughout this document are the ones the *report* states, which are on standard
-time all year. A rendered report shows the same instants in prevailing local time, so its segments
-are named an hour later — the segment called 16:15 here is `17:15` in the tables below.
+the session report states them. The portal states both to the second, so there is nothing to adjust:
+the span a segment test is run against is the reported pair itself.
 
 ```text
            16:00      16:15      16:30      16:45      17:00
              |          |          |          |          |
-  A   15:54 =|==========|==========|==========|==========|===== 17:04
-  B     15:59|=====|16:16                                        overruns the left edge
-  C          |  16:08 =====|16:43                                nested, spans two segments
-  E          |         16:20 ==|16:35                            staggered start with D
-  D          |          16:24 =|16:35                            ends the same minute as E
-  F          |            16:34 =====|16:43                      starts the minute D and E end
-  G          |                       16:48 ==|16:56              alone in the last segment
+  A   15:54 =|==========|==========|==========|==========|===== 17:03
+  B     15:59|=====|16:15                                        overruns the left edge
+  C          |  16:08 =====|16:42                                nested, spans two segments
+  E          |         16:20 ==|16:34                            staggered start with D
+  D          |          16:24 =|16:34                            ends the same minute as E
+  F          |            16:34 =====|16:42                      starts the minute D and E end
+  G          |                       16:48 ==|16:55              alone in the last segment
 ```
 
-| Session | Reported start | Reported end | Span used            | Notes                          |
-|---------|----------------|--------------|----------------------|--------------------------------|
-| `A`     | 15:54          | 17:03        | 15:54 – 17:04        | Outruns the interval both ends |
-| `B`     | 15:59          | 16:15        | 15:59 – 16:16        | Starts before the interval     |
-| `C`     | 16:08          | 16:42        | 16:08 – 16:43        | Wholly inside                  |
-| `E`     | 16:20          | 16:34        | 16:20 – 16:35        | Staggered against `D`          |
-| `D`     | 16:24          | 16:34        | 16:24 – 16:35        | Ends the same minute as `E`    |
-| `F`     | 16:34          | 16:42        | 16:34 – 16:43        | Starts the minute `D`/`E` end  |
-| `G`     | 16:48          | 16:55        | 16:48 – 16:56        | Alone but for `A`              |
+| Session | Reported start | Reported end | Notes                          |
+|---------|----------------|--------------|--------------------------------|
+| `A`     | 15:54          | 17:03        | Outruns the interval both ends |
+| `B`     | 15:59          | 16:15        | Starts before the interval     |
+| `C`     | 16:08          | 16:42        | Wholly inside                  |
+| `E`     | 16:20          | 16:34        | Staggered against `D`          |
+| `D`     | 16:24          | 16:34        | Ends the same minute as `E`    |
+| `F`     | 16:34          | 16:42        | Starts the minute `D`/`E` end  |
+| `G`     | 16:48          | 16:55        | Alone but for `A`              |
 
 ## Which sessions each segment holds
 
 A session belongs to a segment when the two **overlap** — share at least one instant. Abutting is
 not overlapping, and the half-open convention is what keeps the two distinguishable.
 
-| Segment | Sessions              | Why                                                        |
-|---------|-----------------------|------------------------------------------------------------|
-| `16:00` | `A`, `B`, `C`         | `D`, `E`, `F`, `G` all begin after 16:15                    |
-| `16:15` | `A`, `B`, `C`, `D`, `E` | `B` reaches in by one minute; `D` and `E` start inside    |
-| `16:30` | `A`, `C`, `D`, `E`, `F` | `B` has ended; `F` starts inside                          |
-| `16:45` | `A`, `G`              | `C`, `D`, `E`, `F` have all ended by 16:43                  |
+| Segment | Sessions                | Why                                                       |
+|---------|-------------------------|-----------------------------------------------------------|
+| `16:00` | `A`, `B`, `C`           | `D`, `E`, `F`, `G` all begin after 16:15                   |
+| `16:15` | `A`, `C`, `D`, `E`      | `B` abuts it at 16:15; `D` and `E` start inside            |
+| `16:30` | `A`, `C`, `D`, `E`, `F` | `B` has ended; `F` starts inside                           |
+| `16:45` | `A`, `G`                | `C`, `D`, `E`, `F` have all ended by 16:42                 |
 
 Two entries are worth dwelling on.
 
 **`B` is not in the 16:15 segment.** `B` ends at 16:15, exactly where the segment starts. Spans are
 half-open, so that instant belongs to the segment and not to `B`: the two abut and do not overlap.
-`B` used to be counted here, because its reported end was padded a minute forward on the reasoning
-that a time stated to the minute could mean anywhere inside it.
 
 **`D`, `E` and `F` in the 16:30 segment.** `D` and `E` end at 16:34 and `F` starts at 16:34, so `F`
 abuts them rather than overlapping them — the shared instant is `F`'s. All three still meet the
@@ -100,9 +108,7 @@ The two divide the same overlap by different things — the segment's own length
 session's for the energy — so a short heavy session and a long light one can rank differently in
 them. `Active_Charge_Time` takes no part in either.
 
-Both are single numbers. Reported times are exact, so an overlap has one width. They were a pair of
-bounds while those times were stated only to the minute and a session's edge could lie anywhere
-inside the minute it named.
+Both are single numbers, because the reported times are exact and so an overlap has one width.
 
 | Segment | `agg_count` | `agg_kw` |
 |---------|------------:|---------:|
@@ -111,14 +117,17 @@ inside the minute it named.
 | `16:30` |       2.867 |   16.165 |
 | `16:45` |       1.467 |    8.440 |
 
+These are the numbers the rendered report prints as `Session count` and `Session kW`, against the
+segments named `17:00` through `17:45`.
+
 ## Which segment is reported
 
 The estimates are reported for the **maximal** segment: the one where the derivation peaks. The
 two derivations are ranked separately and need not agree, so each names its own segment.
 
 Here they do agree, and narrowly. 16:15 leads 16:30 by 0.200 on `agg_count` (3.067 against 2.867)
-and by 1.317 kW on `agg_kw` (17.482 against 16.165). Both maxima are 16:15, and that is the segment
-the report names.
+and by 1.317 kW on `agg_kw` (17.482 against 16.165). Both maxima are 16:15 — `17:15` in the rendered
+report — and that is the segment the report names.
 
 The narrowness is the point rather than an accident of the fixture. Two segments this close mean
 that a small change in the fixture — one session a minute longer — would move the winner, so a

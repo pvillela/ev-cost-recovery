@@ -132,7 +132,7 @@ copper loss and reactance are square-law in its own loading.
 
 ##### Where the model is written down
 
-The above-mentioned [electrotechnical document](site-model-marcus.md) derives every constant and every formula, and tabulates the result for each vehicle count from 0 to 10; `cargo run --example site_load_report` prints that same table from the code, and `tests/fixtures/sessions/site_load.report.txt` pins it. `docs/Evolute-Simultaneous_Charging.pdf` is Evolute's own description of how the installation behaves when several vehicles charge at once.
+The above-mentioned [electrotechnical document](site-model-marcus.md) derives every constant and every formula, and tabulates the result for each vehicle count from 0 to 10; `cargo run --example site_load_report` prints that same table from the code, and `tests/fixtures/sessions/site_load.report.txt` pins it. `docs/session/Evolute-Simultaneous_Charging.pdf` is Evolute's own description of how the installation behaves when several vehicles charge at once.
 
 #### Assumptions
 

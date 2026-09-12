@@ -13,19 +13,18 @@
 //! ```text
 //!            16:00      16:15      16:30      16:45      17:00
 //!              |          |          |          |          |
-//!   A   15:54 =|==========|==========|==========|==========|===== 17:04
-//!   B     15:59|=====|16:16                                        overruns the left edge
-//!   C          |  16:08 =====|16:43                                nested, spans two segments
-//!   E          |         16:20 ==|16:35                            staggered start with D
-//!   D          |          16:24 =|16:35                            ends the same minute as E
-//!   F          |            16:34 =====|16:43                      starts the minute D and E end
-//!   G          |                       16:48 ==|16:56              alone in the last segment
+//!   A   15:54 =|==========|==========|==========|==========|===== 17:03
+//!   B     15:59|=====|16:15                                        overruns the left edge
+//!   C          |  16:08 =====|16:42                                nested, spans two segments
+//!   E          |         16:20 ==|16:34                            staggered start with D
+//!   D          |          16:24 =|16:34                            ends the same minute as E
+//!   F          |            16:34 =====|16:42                      starts the minute D and E end
+//!   G          |                       16:48 ==|16:55              alone in the last segment
 //! ```
 //!
 //! Spans are `[conn_start, conn_end)` — the reported times, taken at face value. `D` and `E` end
 //! at 16:34 and `F` starts at 16:34, so `F` abuts them rather than overlapping them; all three
-//! still meet the 16:30 quarter, but the instant they share belongs to `F` alone. The right edge
-//! used to be padded a minute past the reported end, and that padding is what made them overlap.
+//! still meet the 16:30 quarter, but the instant they share belongs to `F` alone.
 //!
 //! The times above are the ones the *report states*, on the fixed standard-time offset Evolute
 //! uses. June is daylight saving locally, so the same instants display an hour later: the quarter

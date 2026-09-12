@@ -101,7 +101,7 @@ The file was read and does not carry a column the reconciliation needs. Usually 
 Charges Report at all — a session report picked at the Charges Report slot fails exactly this way.
 Check you picked the right file; if you did, Evolute's report format has changed.
 
-`src/csv.rs:139`
+`src/csv.rs`: `CsvReadError::Display`
 
 ### Charges Report — row … cannot read
 
@@ -116,7 +116,7 @@ One cell does not hold the kind of value its column is supposed to. The row numb
 row, so it is the number the spreadsheet shows. The reason at the end is the number or date reader's
 own wording.
 
-`src/csv.rs:140-149`
+`src/csv.rs`: `CsvReadError::Display`
 
 ### Charges Report — the file holds no rows
 
@@ -130,7 +130,7 @@ own wording.
 An empty report is not the same as a month with nothing in it — Evolute writes a row per breaker
 either way. So this says the file is truncated or is not a Charges Report.
 
-`src/charges_report.rs:305-311`
+`src/charges_report.rs`: `ChargesReportError::Display`
 
 ### Charges Report — the file could not be read
 
@@ -144,7 +144,7 @@ Everything after the file name is the CSV library's own wording, not this softwa
 instance, `CSV error: record 4 (line: 5, byte: 210): found record with 9 fields, but the previous
 record has 11 fields`. The file is damaged or is not a CSV.
 
-`src/csv.rs:138`
+`src/csv.rs`: `CsvReadError::Display`
 
 ### Charges Report — rows billed for dates outside the month
 
@@ -162,7 +162,7 @@ One indented line per span of dates found outside the month, with the rows carry
 The report's file name names a month, and rows inside it are billed for dates in another. The month
 in the name is what the reconciliation prices against, so the file is refused rather than half used.
 
-`src/charges_report.rs:319-336`
+`src/charges_report.rs`: `row_list`
 
 ### cost-recovery rates take effect after the period starts
 
@@ -180,7 +180,7 @@ The Evolute reimbursement tab has its own version of this, worded for a calendar
 > the rates take effect on `<date>`, after the month begins on `<date>`, so they do not price the
 > whole of it
 
-`src/api/pure/recovery.rs:282-286`, `src/api/pure/reimbursement.rs:126-130`
+`src/api/pure/recovery.rs`: `CostRecoveryError::Display`, `src/api/pure/reimbursement.rs`: `ReimbursementError::Display`
 
 ### does not name a billing period
 
@@ -194,7 +194,7 @@ A billing period is named by the day it closes, which for this building is the 2
 from the bill, so a bill closing on another day — a different rate plan, or another utility's bill —
 produces this.
 
-`src/hydro_bill/billing_period.rs:181-185`
+`src/hydro_bill/billing_period.rs`: `NotABillingPeriodEnding::Display`
 
 ### Green Button Export — no readings in the billing period
 
@@ -215,7 +215,7 @@ to argue a bill from.
 Download an export from Toronto Hydro that spans the billing period, and check the dates in the
 second sentence against the bill before running again.
 
-`src/green_button/read_xml.rs:82-92`
+`src/green_button/read_xml.rs`: `GbReadError::Display`
 
 ### Green Button Export — the file could not be read
 
@@ -232,7 +232,7 @@ Two different failures share this shape, and everything after the file name come
 - The file is not an ESPI feed this can parse — the XML reader's wording. The file is damaged, or is
   not a Green Button export.
 
-`src/green_button/read_xml.rs:77-78`
+`src/green_button/read_xml.rs`: `GbReadError::Display`
 
 ### Hydro Bill — the bill has no such figure
 
@@ -245,7 +245,7 @@ Two different failures share this shape, and everything after the file name come
 The PDF was read and a figure the calculation needs is not on it. The bill is for a different rate
 plan, or Toronto Hydro has changed its layout.
 
-`src/hydro_bill/bill_pdf.rs:195-197`
+`src/hydro_bill/bill_pdf.rs`: `BillError::Display`
 
 ### Hydro Bill — a value could not be read as expected
 
@@ -258,7 +258,7 @@ plan, or Toronto Hydro has changed its layout.
 A value was where it should be and is not the kind of value expected — a date that is not a date, a
 figure that is not a number. The text found is quoted so it can be compared against the bill.
 
-`src/hydro_bill/bill_pdf.rs:201-203`
+`src/hydro_bill/bill_pdf.rs`: `BillError::Display`
 
 ### Hydro Bill — the page could not be read
 
@@ -284,7 +284,7 @@ Five reasons appear at the end, and the first two are the PDF library's own word
 
 None of these is something to change in the file. Pass the bill and the message on.
 
-`src/hydro_bill/pdf_text.rs:147-172`
+`src/hydro_bill/pdf_text.rs`: `PdfTextCause::Display`
 
 ### Hydro Bill — unrecognised charge line
 
@@ -298,7 +298,7 @@ A line in the bill's charges is one this software has no rule for. It is refused
 because a charge silently skipped is money missing from a figure that still looks complete. A new
 charge on the bill needs a decision about whether EV charging bears any of it.
 
-`src/hydro_bill/bill_pdf.rs:198-200`
+`src/hydro_bill/bill_pdf.rs`: `BillError::Display`
 
 ### Hydro Bill — the layout is not what was expected
 
@@ -311,7 +311,7 @@ charge on the bill needs a decision about whether EV charging bears any of it.
 The bill's text was read and is not arranged the way this software expects. The wording after the
 file name describes the mismatch.
 
-`src/hydro_bill/bill_pdf.rs:200`
+`src/hydro_bill/bill_pdf.rs`: `BillError::Display`
 
 ### no consumption in a band, so no rate
 
@@ -326,7 +326,7 @@ The EV share of energy is priced at the bill's own rate for each time-of-use ban
 a band's rate only where it reports consumption in it. A period with none in a band leaves nothing to
 price against.
 
-`src/api/pure/energy.rs:138-145`
+`src/api/pure/energy.rs`: `EnergyError::Display`
 
 ### saving a report or a workbook failed
 
@@ -339,8 +339,8 @@ Everything after the file name is the operating system's wording, such as `Permi
 error 13)`. The report is still on screen and can be saved again somewhere else; nothing has been
 lost. Choose a folder you can write to, or free some space.
 
-`src/bin/ev_cost_recovery/surplus.rs:199`, `detail.rs:107`, `reimbursement.rs:272`,
-`src/error.rs:80`
+`src/bin/ev_cost_recovery/surplus.rs`: `export_row`, `detail.rs:107`, `reimbursement.rs:272`,
+`src/error.rs`: `ConversionError::Display`
 
 ### Session Report — missing required column
 
@@ -354,7 +354,7 @@ The file was read and does not carry a column the session reader needs. Usually 
 session report — a Charges Report picked at a session-report slot fails exactly this way. Check the
 file; if it is the right one, Evolute's report format has changed.
 
-`src/csv.rs:139`
+`src/csv.rs`: `CsvReadError::Display`
 
 ### Session Report — row … cannot read
 
@@ -368,7 +368,7 @@ file; if it is the right one, Evolute's report format has changed.
 One cell does not hold the kind of value its column is supposed to. The row number counts the header
 row, so it is the number the spreadsheet shows.
 
-`src/csv.rs:140-149`
+`src/csv.rs`: `CsvReadError::Display`
 
 ### Session Report — the file could not be read
 
@@ -380,7 +380,7 @@ row, so it is the number the spreadsheet shows.
 
 Everything after the file name is the CSV library's own wording. The file is damaged or is not a CSV.
 
-`src/csv.rs:138`
+`src/csv.rs`: `CsvReadError::Display`
 
 ### the closing date and the calendar disagree
 
@@ -395,7 +395,7 @@ The date taken from the bill is not the day of the month this building's bills c
 [does not name a billing period](#does-not-name-a-billing-period), a bill on another plan or from
 another utility produces it.
 
-`src/green_button/read_xml.rs:93-101`
+`src/green_button/read_xml.rs`: `GbReadError::Display`
 
 ### the meter data covers only part of the period
 
@@ -413,7 +413,7 @@ Download an export from Toronto Hydro that covers the whole period. If the hours
 Toronto Hydro's own data, the peak cannot be established from it at all, and that is worth passing
 on.
 
-`src/api/pure/peak_power.rs:226-230`
+`src/api/pure/peak_power.rs`: `PeakPowerError::Display`
 
 ### the second set of rates falls outside the period
 
@@ -426,7 +426,7 @@ on.
 billing period. Either the date is wrong, or the period was priced at one schedule throughout and
 the tick should come off.
 
-`src/api/pure/recovery.rs:291-295`
+`src/api/pure/recovery.rs`: `CostRecoveryError::Display`
 
 ### the session reports do not cover the billing period
 
@@ -447,7 +447,7 @@ always the wrong months.
 The figures are refused rather than worked out from part of the period: a partial answer reads as a
 small EV contribution rather than as a missing file.
 
-`src/api/pure/coverage.rs:72-80`
+`src/api/pure/coverage.rs`: `CoverageError::Display`
 
 ### there is no maximum to estimate against
 
@@ -461,7 +461,7 @@ small EV contribution rather than as a missing file.
 Delivery charges are worked out against the period's peak demand, and the export carries no reading
 of that kind in the period. A fuller export from Toronto Hydro is what settles it.
 
-`src/api/pure/peak_power.rs:209-212`
+`src/api/pure/peak_power.rs`: `PeakPowerError::Display`
 
 ### a figure the bill states as zero
 
@@ -475,7 +475,7 @@ of that kind in the period. A fuller export from Toronto Hydro is what settles i
 The EV share of a charge is its share of the figure the charge was levied on. A bill stating that
 figure as zero leaves no share to take.
 
-`src/hydro_bill/bill.rs:138-142`
+`src/hydro_bill/bill.rs`: `ZeroDenominator::Display`
 
 ---
 
@@ -505,7 +505,7 @@ count its energy twice.
 Where two records share an id *and* every compared field, one copy is dropped instead and the run log
 says so.
 
-`src/session/common.rs:1006-1009`
+`src/session/common.rs`: `Sessions::note_collapsed`
 
 ### `InconsistentDuration`
 
@@ -523,7 +523,7 @@ An inversion is refused however small it is, tolerance or no tolerance: the esti
 on an inverted span rather than answering for one, so a one-second inversion is not a record to read
 the arithmetic on.
 
-`src/session/common.rs:686-690`
+`src/session/common.rs`: `AnomalyKind::Display`
 
 ### `ZeroActiveChargeTime`
 
@@ -535,7 +535,7 @@ The record reports energy delivered over no time. Average power cannot be worked
 the estimate uses a substituted figure — which is why the session is worth looking at rather than
 taken on trust.
 
-`src/session/common.rs:982-986`
+`src/session/common.rs`: `AnomalyKind::Display`
 
 ## Green Button export anomalies
 
@@ -551,7 +551,7 @@ generated workbook they are highlighted against the readings they concern.
 
 The export gives two readings for one hour in one series.
 
-`src/green_button/common.rs:113-115`
+`src/green_button/common.rs`: `Anomaly::description`
 
 ### `ImplausibleGap`
 
@@ -562,38 +562,38 @@ A gap in the readings is normally made visible by writing one empty row per miss
 corrupt timestamp can put a reading thousands of years out, and filling to it would mean millions of
 rows. Past a plausible size the gap is recorded instead of filled.
 
-`src/green_button/common.rs:120-123`
+`src/green_button/common.rs`: `Anomaly::description`
 
 ### `MisalignedInterval`
 
 > the interval does not start on a whole hour, so it was left out of peak selection and can never be
 > a reported maximum
 
-`src/green_button/common.rs:116-119`
+`src/green_button/common.rs`: `Anomaly::description`
 
 ### `MissingInterval`
 
 > no series carried this hour, though the hours around it imply it should exist
 
-`src/green_button/common.rs:110-112`
+`src/green_button/common.rs`: `Anomaly::description`
 
 ### `MissingKva`
 
 > the hour carried a kWh or kW reading but no kVA
 
-`src/green_button/common.rs:109`
+`src/green_button/common.rs`: `Anomaly::description`
 
 ### `MissingKw`
 
 > the hour carried a kWh or kVA reading but no kW
 
-`src/green_button/common.rs:108`
+`src/green_button/common.rs`: `Anomaly::description`
 
 ### `MissingKwh`
 
 > the hour carried a kW or kVA reading but no kWh
 
-`src/green_button/common.rs:107`
+`src/green_button/common.rs`: `Anomaly::description`
 
 ---
 
@@ -616,12 +616,12 @@ Report's run log.
 A breaker billed for part of the month rather than all of it. Under one reading of Evolute's two
 date columns this is an ordinary mid-month join or leave; under another it should not happen. It is
 reported because the two readings have not been told apart — see
-[docs/Questions_for_Evolute.md](Questions_for_Evolute.md).
+[docs/Questions_for_Evolute.md](archive/Questions_for_Evolute.md).
 
 Rows billed for dates *outside* the month are a different matter and refuse the file; see
 [Charges Report — rows billed for dates outside the month](#charges-report--rows-billed-for-dates-outside-the-month).
 
-`src/charges_report.rs:152-168`
+`src/charges_report.rs`: `ChargesReport::findings`
 
 ### periods that do not hold a full billing period's intervals
 
@@ -641,7 +641,7 @@ last billing periods it touches are normally cut short. The workbook marks them 
 The case that would matter to a figure is caught separately and stops the run; see
 [the meter data covers only part of the period](#the-meter-data-covers-only-part-of-the-period).
 
-`src/bin/ev_cost_recovery/convert.rs:236-247`, `src/green_button/excel.rs:305`
+`src/bin/ev_cost_recovery/convert.rs`: `gb_outcome`, `src/bin/ev_cost_recovery/convert.rs`: `gb_outcome`
 
 ### the run's log was not written
 
@@ -658,7 +658,7 @@ writes anything, so there is nothing else to check.
 Shown in red because it is easy to walk away from a report believing a log was kept. Fix the folder
 and run again if you want the log.
 
-`src/bin/ev_cost_recovery/state.rs:418-423`
+`src/bin/ev_cost_recovery/state.rs`: `SurplusState::report_note`
 
 ### the workbook was written, but its run log was not
 
@@ -671,7 +671,8 @@ and run again if you want the log.
 The `.xlsx` is complete. Only its log is missing. Whatever the conversion found is still listed on
 screen beneath this message; it just has no copy on disk.
 
-`src/bin/ev_cost_recovery/state.rs:671-676, 713-718`
+`src/bin/ev_cost_recovery/state.rs`: `Conversion::run`, in both the `SessionConversion` and
+`GbConversion` implementations
 
 ## Session report anomalies that leave the figures standing
 
@@ -687,7 +688,7 @@ draw within the normal voltage band is the installation working as it should. Ab
 the reported energy or the reported charge time is wrong — and nothing in the record says which, so
 the session is counted as it stands.
 
-`src/session/common.rs:1002-1005`
+`src/session/common.rs`: `AnomalyKind::Display`
 
 
 ---

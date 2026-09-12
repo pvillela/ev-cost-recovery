@@ -748,17 +748,19 @@ pub struct Sessions {
     /// legitimately zero, and it still occupies a breaker.
     pub sessions: Vec<RSession>,
     /// Sessions with zero `Active_Charge_Time`, so [`Session::charge_time`] is zero and energy
-    /// over charge time is infinite or `NaN`. Kept out of `session` because those values would
-    /// swamp or poison any segment they entered.
+    /// over charge time is infinite or `NaN`.
+    ///
+    /// Kept apart from [`Self::sessions`] because the two differ in what a reader has to do about
+    /// them, not because the value is unusable. What a session contributes to an estimate is its
+    /// energy prorated over its connection span, and a spike has both, so these take part in every
+    /// estimate on the same footing as any other session. [`Session::avg_kw`] keeps the infinity or
+    /// `NaN` rather than substituting a figure, and the estimate never asks it.
     ///
     /// Surfaced rather than dropped because such a row is almost certainly a **reporting fault**
-    /// and someone should see it. That is a correction: the reason given here used to be that
-    /// energy delivered in no time at all is what a demand charge bills on, which read the field
-    /// as a real measurement of charging. Evolute has since stated that the three duration fields
-    /// track the same thing to within about a second and are not measured separately, so a zero
-    /// beside a non-zero `Energy_Use` is a contradiction in the report rather than an event. See
-    /// `Questions_for_Evolute.md`, "Answers received". [`Session::avg_kw`] substitutes a finite
-    /// figure so the row can still be listed. See docs/session/README.md, "Anomalies".
+    /// and someone should see it: Evolute states that the three duration fields track the same
+    /// thing to within about a second and are not measured separately, so a zero beside a non-zero
+    /// `Energy_Use` is a contradiction in the report rather than an event. See
+    /// `Questions_for_Evolute.md`, "Answers received". See docs/session/README.md, "Anomalies".
     pub spikes: Vec<RSession>,
     /// Sessions that cannot be placed on a timeline — every kind [`AnomalyKind::excludes_session`]
     /// names. Either the reported start, end and duration contradict each other, or a reported wall

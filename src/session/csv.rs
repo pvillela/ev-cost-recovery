@@ -112,10 +112,10 @@ impl Error for SessionCsvError {
 /// `Sessions::from_session_lists`, which carries the rules. Every session in the file reaches one
 /// of them; none is dropped.
 ///
-/// The anomalies found, and the off-grid warning if it applies, are returned on
-/// [`Sessions::logs`] as a `session.csv.read` log — the same content [`super::excel::session_csv_to_xlsx`]
-/// puts in its `session.convert` log, because the two run the same parse. Nothing is written here.
-/// [`Sessions::write_logs`] is what puts it beside the input, and only a binary calls it.
+/// The anomalies found are returned on [`Sessions::logs`] as a `session.csv.read` log — the same
+/// content [`super::excel::session_csv_to_xlsx`] puts in its `session.convert` log, because the two
+/// run the same parse. Nothing is written here. [`Sessions::write_logs`] is what puts it beside the
+/// input, and only a binary calls it.
 ///
 /// # Errors
 ///

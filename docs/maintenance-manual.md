@@ -68,7 +68,7 @@ module path.
 ### From the sessions module
 
 
-Three files are pinned byte for byte, all under `tests/fixtures/`:
+Three files are pinned byte for byte, all under `tests/fixtures/sessions/`:
 
 - `Session_Report_Diagram.report.md`
 - `Session_Report_Anomalies.report.md`
@@ -562,8 +562,8 @@ and the answer is recorded here rather than kept as a test.
 |---|---|
 | Date | 2026-08-09 |
 | Code | commit `c9a8c46` |
-| Input | `data/TH_Electric_Usage_23-11-2024_to_24-06-2026.XML` (18,018,534 bytes) |
-| Reference | `docs/green_button/reference/Green_Button_Peak_Values-python-2026-07-16.xlsx`, sha256 `6ea76c29efbcf4a613a659abf72efb35b6eb97c8fdb0e20a07cdd29ad1b2a5f0` |
+| Input | `data/green_button/TH_Electric_Usage_23-11-2024_to_24-06-2026.XML` (18,018,534 bytes) |
+| Reference | `data/reference/green_button/Green_Button_Peak_Values-python-2026-07-16.xlsx`, sha256 `6ea76c29efbcf4a613a659abf72efb35b6eb97c8fdb0e20a07cdd29ad1b2a5f0` |
 | Method | `Peak_values` compared by **column name** over the shared subset, floats to 5e-7 |
 | Scope | 21 billing periods × 19 shared columns = **399 cells** |
 | Result | **0 mismatches** |
@@ -603,7 +603,7 @@ them. That is a stronger statement than baseline parity, which only says this wo
 this says the numbers agree with an implementation outside the crate, whose own figures were
 reconciled against real invoices.
 
-The `docs/green_button/reference/` workbook stays as provenance: it is the artefact whose figures
+The `data/reference/green_button/` workbook stays as provenance: it is the artefact whose figures
 were reconciled against real invoices, and whose June 2026 period ties out to one to the milli-kWh.
 Nothing in the test suite reads it, and its **formatting is not the current standard** — see
 "Row heights: three, and only three".
@@ -612,7 +612,7 @@ Three workbooks, three jobs, no overlap:
 
 | Path | What | Committed | Read by code |
 |---|---|---|---|
-| `docs/green_button/reference/Green_Button_Peak_Values-python-2026-07-16.xlsx` | the Python-era output | yes | never |
+| `data/reference/green_button/Green_Button_Peak_Values-python-2026-07-16.xlsx` | the Python-era output | yes | never |
 | `tests/fixtures/green_button/billed_period.xlsx` | the current formatting standard | yes | regenerated with the goldens |
 | `data/*.xlsx` | whatever you last generated | no, ignored | no |
 

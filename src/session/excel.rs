@@ -430,10 +430,11 @@ fn add_comments(sheet: &mut Worksheet) {
         (
             Source::Anomalies,
             "Comma-separated list of anomalies found for this row, named after the AnomalyKind \
-             variants. Empty means the row needed no judgement call. This cell IS read back, and \
-             InconsistentDuration is what removes a session from every estimate -- so editing it \
-             changes the figures. The adjusted columns are not read back: they are recomputed, and \
-             a disagreement is written to the .session.xlsx.read.log rather than obeyed.",
+             variants. Empty means the row needed no judgement call. This cell is a record, not an \
+             input: nothing reads the sheet back, and the estimates come from the session report \
+             itself -- so editing a cell here changes the sheet and nothing else. \n\
+             InconsistentDuration is the token that removes a row from every estimate when it is \
+             found on reading, which is why it is worth knowing that a converted row carries it.",
         ),
     ];
     for (source, text) in notes {

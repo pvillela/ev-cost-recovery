@@ -241,8 +241,8 @@ The software is structured as top-level library modules, each of which may have 
 ### Building the GUI app and command line tools
 
 ```sh
-cargo build --release      # the desktop app, ev_cost_recovery -- and nothing else
-cargo test                 # everything
+cargo build --release          # every binary: the desktop app and the command-line tools below
+cargo test --all-targets       # every test, examples included
 ```
 
 The command-line tools are listed below. Each prints its usage when run with no arguments.
