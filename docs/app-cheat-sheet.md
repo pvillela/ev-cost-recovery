@@ -1,6 +1,6 @@
 # App cheat sheet: kicking the tires on `ev_cost_recovery`
 
-Every figure and message below was produced by running the files in the `data/` folder. That folder is not in the repository, so its contents need to be provided separately.
+Every figure and message below was produced by running the app with the files in the `data/` folder. That folder is not in the repository, so its contents need to be provided separately.
 
 ## Launching it
 
