@@ -65,18 +65,6 @@ pub struct EstimateSet {
     pub count_based_kva: f64,
 }
 
-impl EstimateSet {
-    /// The four figures, in the order the report tabulates them.
-    pub fn values(&self) -> [f64; 4] {
-        [
-            self.energy_based_kw,
-            self.energy_based_kva,
-            self.count_based_kw,
-            self.count_based_kva,
-        ]
-    }
-}
-
 /// One of the four estimates, named by its derivation and its unit.
 ///
 /// What a caller uses to say which estimate is EV charging's share of the peak an interval was
@@ -92,7 +80,8 @@ pub enum Estimate {
 }
 
 impl Estimate {
-    /// The four, in the order the report tabulates them — the order of [`EstimateSet::values`].
+    /// The four, in the order the report tabulates them, which is the order
+    /// [`EstimateSet`]'s fields are declared in.
     pub const ALL: [Self; 4] = [
         Self::EnergyBasedKw,
         Self::EnergyBasedKva,

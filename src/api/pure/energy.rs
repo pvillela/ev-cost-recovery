@@ -369,6 +369,10 @@ impl fmt::Display for Energy {
 
 impl fmt::Display for EnergyCost {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Five decimals on the rate, where the delivery table uses four. The two are different
+        // orders of magnitude -- dollars per kWh sit near 0.15, dollars per kW near 10 -- so the
+        // fifth digit is what keeps a per-kWh rate from rounding away, and buys nothing on a
+        // per-kW one. Deliberate, and not to be unified.
         let band = |name: &str, kwh: f64, adj: f64, rate: f64, cost: f64| {
             vec![
                 name.to_owned(),

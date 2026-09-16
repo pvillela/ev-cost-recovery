@@ -183,7 +183,13 @@ pub fn parse_espi_xml(xml: &str) -> Result<Feed, Box<dyn Error>> {
         };
         let meter_reading = related_hrefs(*entry)
             .find(|h| meter_readings.contains_key(h))
-            .ok_or("an IntervalBlock links to no MeterReading in this feed")?;
+            .ok_or_else(|| {
+                // Named, as the two joins either side of this one name theirs. The sample export
+                // holds 1,737 `IntervalBlock` entries, so "an IntervalBlock" leaves a reader with
+                // 1,737 candidates and nothing to narrow them by.
+                let which = link_href(*entry, "self").unwrap_or("with no rel=\"self\" link");
+                format!("IntervalBlock {which} links to no MeterReading in this feed")
+            })?;
         let reading_type = meter_readings[meter_reading];
         let (uom, power_of_ten) = reading_types[reading_type];
 

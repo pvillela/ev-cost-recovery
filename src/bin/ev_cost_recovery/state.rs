@@ -283,6 +283,14 @@ pub struct SurplusState {
     pub rates_at_end: RatesForm,
     pub outcome: Option<SurplusOutcome>,
     pub error: Option<String>,
+    /// Why a report could not be saved, if a save was tried and failed.
+    ///
+    /// Separate from [`Self::error`] for the same reason [`Self::log_failures`] is: by the time a
+    /// save is attempted the figures are worked out, and a failed save reported as the run's error
+    /// would say no result was produced when one was. It is also drawn on two tabs -- the Cost
+    /// recovery and Peak power detail tabs are two views of one state -- so a save that failed on
+    /// one would otherwise appear under the other's "Work out the surplus" button.
+    pub save_error: Option<String>,
     /// Why the run's logs could not be written, if they could not.
     ///
     /// Separate from [`Self::error`], and for the same reason [`SessionWorkbook::log_failure`] is
@@ -740,6 +748,7 @@ impl SurplusState {
     fn clear_results(&mut self) {
         self.outcome = None;
         self.error = None;
+        self.save_error = None;
         self.log_failures.clear();
     }
 }
@@ -801,6 +810,9 @@ pub struct ReimbursementState {
     pub rates: RatesForm,
     pub outcome: Option<ReimbursementOutcome>,
     pub error: Option<String>,
+    /// Why a report could not be saved, if a save was tried and failed. See
+    /// [`SurplusState::save_error`].
+    pub save_error: Option<String>,
     /// Why the run's logs could not be written, if they could not. See
     /// [`SurplusState::log_failures`].
     pub log_failures: Vec<String>,
@@ -932,6 +944,7 @@ impl ReimbursementState {
     fn clear_results(&mut self) {
         self.outcome = None;
         self.error = None;
+        self.save_error = None;
         self.log_failures.clear();
     }
 }

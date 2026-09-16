@@ -11,7 +11,6 @@ use crate::{
 };
 use eframe::egui;
 use ev_cost_recovery::api::ReimbursementReconciliation;
-use std::fs;
 
 pub fn ui(ui: &mut egui::Ui, state: &mut ReimbursementState, working: &mut WorkingDir) {
     widgets::heading(ui, "Evolute reimbursement reconciliation");
@@ -37,6 +36,14 @@ pub fn ui(ui: &mut egui::Ui, state: &mut ReimbursementState, working: &mut Worki
     }
 
     if let Some(message) = &state.error {
+        ui.add_space(8.0);
+        widgets::error_block(ui, message);
+    }
+
+    // Separately from the run's error, and drawn whether or not there was one: a save can fail
+    // after a run that succeeded, and saying so under the button that starts a run would report a
+    // result that exists as one that does not.
+    if let Some(message) = &state.save_error {
         ui.add_space(8.0);
         widgets::error_block(ui, message);
     }
@@ -189,7 +196,14 @@ fn results(ui: &mut egui::Ui, state: &mut ReimbursementState, working: &mut Work
     headline(ui, &outcome.reconciliation);
 
     ui.add_space(14.0);
-    export_row(ui, state, working, &text, &default_name);
+    widgets::export_row(
+        ui,
+        working,
+        &text,
+        &default_name,
+        "The full reconciliation, as one document.",
+        &mut state.save_error,
+    );
     ui.add_space(10.0);
 
     for section in widgets::sections_to_show(report_sections(&text)) {
@@ -246,32 +260,4 @@ fn headline(ui: &mut egui::Ui, r: &ReimbursementReconciliation) {
             ("Dollar variance", r.dollar_variance, true),
         ],
     );
-}
-
-fn export_row(
-    ui: &mut egui::Ui,
-    state: &mut ReimbursementState,
-    working: &mut WorkingDir,
-    text: &str,
-    default_name: &str,
-) {
-    ui.horizontal(|ui| {
-        if ui.button("Copy").clicked() {
-            ui.ctx().copy_text(text.to_owned());
-        }
-        if ui.button("Save…").clicked()
-            && let Some(path) = widgets::dialog(working)
-                .set_file_name(default_name)
-                .add_filter("Report", &["md"])
-                .save_file()
-        {
-            // Remembered whether or not the write succeeds: it is where the user just chose to be
-            // either way.
-            working.remember(&path);
-            if let Err(e) = fs::write(&path, text) {
-                state.error = Some(format!("{}: {e}", path.display()));
-            }
-        }
-        widgets::note(ui, "The full reconciliation, as one document.");
-    });
 }

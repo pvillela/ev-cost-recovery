@@ -52,13 +52,13 @@ pub fn serial_of_duration(d: Duration) -> f64 {
     d.as_secs() as f64 / SECS_PER_DAY
 }
 
-/// Reads a local wall time as though it were UTC, so that two of them can be subtracted to give the
-/// wall-clock distance between them.
+/// Reads a local wall time as though it were UTC.
 ///
-/// Not a time-zone conversion: the point is to compare wall times as written, without a DST offset
-/// moving either one. It lives here because it is also how every serial is computed — a serial is a
-/// wall-clock reading, whatever zone produced it.
-pub fn wall_clock_instant(dt: DateTime) -> Timestamp {
+/// Not a time-zone conversion: the point is to take a wall time as written, without a DST offset
+/// moving it. That is how every serial here is computed — a serial is a wall-clock reading,
+/// whatever zone produced it — and [`serial_of_civil`] is its only caller, which is why it is
+/// private to this module.
+fn wall_clock_instant(dt: DateTime) -> Timestamp {
     dt.to_zoned(TimeZone::UTC)
         .expect("UTC has no gaps or folds, so a civil date-time is never ambiguous in it")
         .timestamp()

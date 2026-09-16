@@ -47,6 +47,12 @@ fn main() -> ExitCode {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("error: {e}");
+            // The advice is printed beside the error rather than formatted into it, so that
+            // nothing between here and the reader has to carry a `String` where a typed error
+            // would do. This is the only place that knows the output is a terminal.
+            if let Some(advice) = layout_advice(e.as_ref()) {
+                eprintln!("{advice}");
+            }
             ExitCode::FAILURE
         }
     }
@@ -62,27 +68,27 @@ fn run(input: &Path, lines_only: bool) -> Result<(), Box<dyn Error>> {
             result => Ok(result?),
         };
     }
-    let bill = hydro_bill_from_pdf(input).map_err(with_advice)?;
+    let bill = hydro_bill_from_pdf(input)?;
     println!("{}", bill.print());
     Ok(())
 }
 
-/// A parse failure, with what to do about it where there is something to do.
+/// What to do about a parse failure, where there is something to do.
 ///
-/// [`BillError::is_layout`] is the one distinction that changes the advice. A layout failure means
-/// the PDF gave up its text and the text is not what this expects, so there is something to go and
-/// look at. Anything else means there is no text to look at, and pointing at `--lines` would only
-/// send the reader somewhere that fails the same way.
-fn with_advice(e: BillError) -> String {
-    if !e.is_layout() {
-        return e.to_string();
-    }
-    format!(
-        "{e}\n\
-         This is not a bill layout this recognises. To see what the layout actually is:\n\
-         \x20   hydro_bill_dump --lines {}",
-        e.path().display()
-    )
+/// [`BillError::is_layout`] is the one distinction that changes the advice, and it is the reason
+/// `BillError` is public at all. A layout failure means the PDF gave up its text and the text is
+/// not what this expects, so there is something to go and look at. Anything else means there is no
+/// text to look at, and pointing at `--lines` would only send the reader somewhere that fails the
+/// same way.
+fn layout_advice(e: &(dyn Error + 'static)) -> Option<String> {
+    let bill: &BillError = e.downcast_ref()?;
+    bill.is_layout().then(|| {
+        format!(
+            "This is not a bill layout this recognises. To see what the layout actually is:\n\
+             \x20   hydro_bill_dump --lines {}",
+            bill.path().display()
+        )
+    })
 }
 
 #[cfg(test)]
@@ -91,31 +97,39 @@ mod test {
     use ev_cost_recovery::hydro_bill::pdf_text::{PdfTextCause, PdfTextError};
     use std::path::PathBuf;
 
+    /// A layout failure is told where to look, and the advice is separate from the message.
     #[test]
     fn a_layout_failure_is_told_where_to_look() {
-        let advice = with_advice(BillError::Missing {
+        let err = BillError::Missing {
             path: PathBuf::from("data/hydro_bills/TH_2025_07_28.pdf"),
             what: "line labelled \"Your Electricity Charges\"".to_owned(),
-        });
-        assert!(advice.starts_with(
+        };
+        assert!(err.to_string().starts_with(
             "Hydro Bill data/hydro_bills/TH_2025_07_28.pdf: the bill has no line labelled "
         ));
-        assert!(advice.ends_with("hydro_bill_dump --lines data/hydro_bills/TH_2025_07_28.pdf"));
+
+        let advice = layout_advice(&err).expect("a layout failure has advice");
+        assert!(
+            advice.ends_with("hydro_bill_dump --lines data/hydro_bills/TH_2025_07_28.pdf"),
+            "{advice}"
+        );
     }
 
+    /// A file that never read gets none: `--lines` would fail the same way.
     #[test]
     fn a_file_that_never_read_is_not_sent_to_lines() {
-        let advice = with_advice(BillError::Unreadable {
+        let err = BillError::Unreadable {
             path: PathBuf::from("README.md"),
             source: PdfTextError {
                 path: PathBuf::from("README.md"),
                 page: None,
                 cause: PdfTextCause::Load("couldn't parse input: invalid file header".to_owned()),
             },
-        });
+        };
         assert_eq!(
-            advice,
+            err.to_string(),
             "Hydro Bill README.md: couldn't parse input: invalid file header"
         );
+        assert!(layout_advice(&err).is_none());
     }
 }

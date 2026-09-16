@@ -551,6 +551,8 @@ impl fmt::Display for DeliveryCost {
         // priced at, so that rate times adjusted demand comes to the charge on the same row. With
         // the raw demand alone a reader checking the arithmetic would be out by the day factor.
         let line = |name: &str, unit: &str, demand: f64, rate: f64, charge: f64| {
+            // Four decimals on the rate, where the energy tables use five. See the note there:
+            // these are dollars per kW and per kVA, near 10, so a fifth digit shows nothing.
             vec![
                 name.to_owned(),
                 unit.to_owned(),
@@ -657,10 +659,10 @@ impl fmt::Display for DeliveryCost {
             f,
             "{}\n",
             wrap(
-                "\"Basis\" names the demand each charge is priced on: kVA, kW and kW 7-7. The Peak \
-                 power detail tab holds a section under each of those three names, stating the \
-                 interval the demand was read from, the 15-minute segment inside it where the \
-                 chargers drew most, and the sessions running at the time.",
+                "\"Basis\" names the demand each charge is priced on: kVA, kW and kW 7-7. Each has \
+                 its own detail report, stating the interval the demand was read from, the \
+                 15-minute segment inside it where the chargers drew most, and the sessions \
+                 running at the time.",
                 "",
             )
         )?;

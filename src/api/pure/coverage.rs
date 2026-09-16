@@ -90,11 +90,12 @@ impl fmt::Display for CoverageError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::NotABillingPeriodEnding(e) => e.fmt(f),
-            // The cause states the form expected and which way this name failed, so repeating
-            // either here would print it twice.
-            Self::UndatedSessionReport { path, cause } => {
-                write!(f, "{}: {cause}", path.display())
-            }
+            // Deferred to entirely. Every `SessionReportNameError` opens with the name it is
+            // about, so a `{path}: ` prefix here printed it twice -- `data/June.csv: June is not a
+            // session report`. The rule in CLAUDE.md: a wrapper that adds the path must not wrap a
+            // cause that already carries one. `path` stays on the variant for a caller that wants
+            // to act on which file failed rather than print it.
+            Self::UndatedSessionReport { cause, .. } => cause.fmt(f),
             Self::PeriodNotCovered {
                 span,
                 period_start,

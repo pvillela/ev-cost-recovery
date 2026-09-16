@@ -116,10 +116,10 @@ Delivery charges by component
 | Transmission Network Charge    | kW 7-7 |     4.201 |       4.341 |          5.0000 |  21.70 |
 | Total                          |        |           |             |                 | 132.94 |
 
-"Basis" names the demand each charge is priced on: kVA, kW and kW 7-7. The
-Peak power detail tab holds a section under each of those three names,
-stating the interval the demand was read from, the 15-minute segment inside
-it where the chargers drew most, and the sessions running at the time.
+"Basis" names the demand each charge is priced on: kVA, kW and kW 7-7. Each
+has its own detail report, stating the interval the demand was read from,
+the 15-minute segment inside it where the chargers drew most, and the
+sessions running at the time.
 
 
 Source Data

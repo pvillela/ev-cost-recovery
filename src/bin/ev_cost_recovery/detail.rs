@@ -14,7 +14,6 @@ use ev_cost_recovery::{
     session::{DEFINITIONS_POINTER, definitions},
     time::zoned_span,
 };
-use std::fs;
 
 pub fn ui(ui: &mut egui::Ui, state: &mut SurplusState, working: &mut WorkingDir) {
     let Some(outcome) = &state.outcome else {
@@ -34,11 +33,19 @@ pub fn ui(ui: &mut egui::Ui, state: &mut SurplusState, working: &mut WorkingDir)
     let intervals = &outcome.surplus.delivery.priced_intervals;
     let text = document(intervals);
     let default_name = state.default_detail_save_name();
-    export_row(ui, working, &text, &default_name, &mut state.error);
-    // Held on the state and drawn every frame, as the other tabs draw theirs. Drawing it inside
-    // the `clicked()` branch instead showed a failed save for the click frame alone, which in
-    // immediate mode is no message at all.
-    if let Some(message) = &state.error {
+    widgets::export_row(
+        ui,
+        working,
+        &text,
+        &default_name,
+        "This entire report.",
+        &mut state.save_error,
+    );
+    // The save error, not the run's: this tab only renders what the Cost recovery tab computed, so
+    // a failure of the run belongs under that tab's button. Held on the state and drawn every
+    // frame -- drawing it inside the `clicked()` branch instead showed a failed save for the click
+    // frame alone, which in immediate mode is no message at all.
+    if let Some(message) = &state.save_error {
         ui.add_space(8.0);
         widgets::error_block(ui, message);
     }
@@ -101,31 +108,4 @@ fn document(intervals: &[PricedInterval; 3]) -> String {
         reports.join("\n\n\n"),
         definitions()
     )
-}
-
-/// The Copy and Save row. `error` is where a failed save is left, for the caller to draw.
-fn export_row(
-    ui: &mut egui::Ui,
-    working: &mut WorkingDir,
-    text: &str,
-    default_name: &str,
-    error: &mut Option<String>,
-) {
-    ui.horizontal(|ui| {
-        if ui.button("Copy").clicked() {
-            ui.ctx().copy_text(text.to_owned());
-        }
-        if ui.button("Save…").clicked()
-            && let Some(path) = widgets::dialog(working)
-                .set_file_name(default_name)
-                .add_filter("Report", &["md"])
-                .save_file()
-        {
-            working.remember(&path);
-            if let Err(e) = fs::write(&path, text) {
-                *error = Some(format!("{}: {e}", path.display()));
-            }
-        }
-        widgets::note(ui, "This entire report.");
-    });
 }

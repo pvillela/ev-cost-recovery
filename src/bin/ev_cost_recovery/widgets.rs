@@ -9,7 +9,7 @@ use crate::{
 };
 use eframe::egui;
 use egui_extras::DatePickerButton;
-use std::path::Path;
+use std::{fs, path::Path};
 
 /// A file dialog that opens where the user last was, rather than wherever the system would put it.
 pub fn dialog(working: &WorkingDir) -> rfd::FileDialog {
@@ -212,4 +212,45 @@ pub fn section_ui(ui: &mut egui::Ui, section: &Section) {
                 section_ui(ui, sub);
             }
         });
+}
+
+/// The Copy and Save… row every report sits under.
+///
+/// One definition rather than one per tab: three tabs offered the same two buttons, and the only
+/// thing that differed was the sentence beside them.
+///
+/// `save_error` is where a failed write is left, for the caller to draw *on the tab the save was
+/// made from*. It is not the run's error: by the time there is a report to save, the figures are
+/// worked out, and reporting a failed write as the run's failure says no result was produced when
+/// one was. The Cost recovery and Peak power detail tabs are two views of one state, so a shared
+/// slot would also put one tab's failed save under the other's button.
+pub fn export_row(
+    ui: &mut egui::Ui,
+    working: &mut WorkingDir,
+    text: &str,
+    default_name: &str,
+    note_text: &str,
+    save_error: &mut Option<String>,
+) {
+    ui.horizontal(|ui| {
+        if ui.button("Copy").clicked() {
+            ui.ctx().copy_text(text.to_owned());
+        }
+        if ui.button("Save…").clicked()
+            && let Some(path) = dialog(working)
+                .set_file_name(default_name)
+                .add_filter("Report", &["md"])
+                .save_file()
+        {
+            // Remembered whether or not the write succeeds: it is where the user just chose to be
+            // either way.
+            working.remember(&path);
+            // The saved file is byte-for-byte what the command line prints, so a report kept from
+            // the app and one piped from the terminal are the same document.
+            if let Err(e) = fs::write(&path, text) {
+                *save_error = Some(format!("{}: {e}", path.display()));
+            }
+        }
+        note(ui, note_text);
+    });
 }
