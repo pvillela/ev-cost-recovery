@@ -2,7 +2,7 @@
 //!
 //! One type, for now. The test for whether something belongs here is who *raises* it, not who
 //! renders it: [`ConversionError`] is returned by
-//! [`session::session_csv_to_xlsx`](crate::session::session_csv_to_xlsx) and
+//! the crate-private `session::session_csv_to_xlsx` and
 //! [`write_gb_workbook`](crate::green_button::write_gb_workbook), neither of which depends on the
 //! API, so it cannot live in `api::error` without pointing that arrow the wrong way.
 //!

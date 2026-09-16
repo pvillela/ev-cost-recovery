@@ -150,7 +150,17 @@ const COLUMNS: &[(&str, Source)] = &[
 /// header is missing, a timestamp or duration does not parse, or the workbook cannot be written.
 /// Per-row judgement calls do not abort the conversion; they are collected in
 /// [`SessionWriteReport::anomalies`].
-pub fn session_csv_to_xlsx(path: &Path) -> Result<SessionWriteReport, ConversionError> {
+///
+/// # Overwriting
+///
+/// The output is `path` with an `.xlsx` extension, written whether or not something is already
+/// there. That is why this is crate-private: the refusal `ConversionError::OutputExists` calls
+/// "the default rather than a courtesy" lives one level up, in
+/// [`api::session_csv_to_xlsx`](crate::api::session_csv_to_xlsx), which takes the policy as an
+/// argument. These workbooks get reconciled against real invoices by hand, and a silent overwrite
+/// is how that work is lost -- so the entry point that can overwrite without being asked is not
+/// one an outside caller can reach.
+pub(crate) fn session_csv_to_xlsx(path: &Path) -> Result<SessionWriteReport, ConversionError> {
     // The two halves are kept apart. Reading the CSV yields a `SessionCsvError`, which names the
     // file from its own `path` field, so it goes into `Input` -- a variant that adds nothing and
     // would otherwise print the path twice. Only the writing half goes into `Write`, which does

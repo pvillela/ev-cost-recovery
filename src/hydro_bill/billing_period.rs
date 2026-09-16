@@ -96,7 +96,13 @@ pub struct BillingPeriod {
 
 impl BillingPeriod {
     /// The period a given instant falls in, on a calendar closing on `bill_end_day` each month.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `bill_end_day` is outside `1..=`[`MAX_BILL_END_DAY`], which is a caller mixing up
+    /// two calendars rather than bad input.
     pub fn containing(at: Timestamp, bill_end_day: i8) -> Self {
+        check_bill_end_day(bill_end_day);
         Self::ending_on(period_ending(standard_date(at), bill_end_day), bill_end_day)
     }
 
@@ -112,10 +118,7 @@ impl BillingPeriod {
     /// The range is checked first. Without it a day of 28 to 31 reaches `date()` and panics inside
     /// jiff for the short months, with a message naming neither the rule nor the constant.
     pub fn ending_on(ending: Date, bill_end_day: i8) -> Self {
-        assert!(
-            (1..=MAX_BILL_END_DAY).contains(&bill_end_day),
-            "a billing period closes on day 1 to {MAX_BILL_END_DAY} of the month, not {bill_end_day}"
-        );
+        check_bill_end_day(bill_end_day);
         assert_eq!(
             ending.day(),
             bill_end_day,
@@ -136,6 +139,19 @@ impl BillingPeriod {
     pub fn contains(&self, at: Timestamp) -> bool {
         self.start <= at && at < self.end
     }
+}
+
+/// Refuses a `bill_end_day` no billing calendar can close on.
+///
+/// Both entry points call this, and neither can leave it to the other. `ending_on` is handed a
+/// closing date that already exists; `containing` builds one, and `date(y, m, 31)` panics inside
+/// jiff for a short month before any assertion here would run. The two would then refuse the same
+/// argument with different messages, one of them naming neither the rule nor the constant.
+fn check_bill_end_day(bill_end_day: i8) {
+    assert!(
+        (1..=MAX_BILL_END_DAY).contains(&bill_end_day),
+        "a billing period closes on day 1 to {MAX_BILL_END_DAY} of the month, not {bill_end_day}"
+    );
 }
 
 /// The closing date that labels the period a local date falls in. Past `bill_end_day`, the date
@@ -246,6 +262,39 @@ mod test {
     use super::*;
     use crate::time::local_hour;
     use std::time::Duration;
+
+    /// Both entry points refuse an out-of-range day with the message the rule is written in.
+    ///
+    /// `containing` is the one worth pinning: it builds the closing date before `ending_on` sees
+    /// it, so without its own check a day of 31 reaches jiff for a short month and panics with
+    /// `invalid date` -- a message naming neither the rule nor `MAX_BILL_END_DAY`.
+    #[test]
+    fn an_impossible_closing_day_is_refused_by_the_rule_that_forbids_it() {
+        let expected = "a billing period closes on day 1 to";
+
+        // April has 30 days, so `date(2026, 4, 31)` is what jiff would be asked to build.
+        let from_instant = std::panic::catch_unwind(|| {
+            BillingPeriod::containing(standard_midnight(date(2026, 4, 15)), 31)
+        })
+        .expect_err("day 31 is refused");
+        let message = panic_message(&from_instant);
+        assert!(message.contains(expected), "containing: {message}");
+
+        let from_date =
+            std::panic::catch_unwind(|| BillingPeriod::ending_on(date(2026, 4, 30), 31))
+                .expect_err("day 31 is refused");
+        let message = panic_message(&from_date);
+        assert!(message.contains(expected), "ending_on: {message}");
+    }
+
+    /// The text of a caught panic, whichever of the two payload types it carries.
+    fn panic_message(payload: &Box<dyn std::any::Any + Send>) -> String {
+        payload
+            .downcast_ref::<String>()
+            .cloned()
+            .or_else(|| payload.downcast_ref::<&str>().map(|s| (*s).to_owned()))
+            .unwrap_or_else(|| "a panic with no message".to_owned())
+    }
 
     /// The boundary is standard-time midnight between the 23rd and the 24th, so the last hour of
     /// the 23rd belongs to the period ending that day and the first hour of the 24th starts the

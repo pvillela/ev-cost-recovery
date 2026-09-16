@@ -15,7 +15,7 @@
 //!   the CSV. No workbook is involved, which is why it is the route the API takes.
 //! - `csv_session_rows` hands the rows over in report order, with the pass-through CSV fields
 //!   still reachable, which is what
-//!   [`session_csv_to_xlsx`](crate::session::session_csv_to_xlsx) needs to render them.
+//!   `super::excel::session_csv_to_xlsx` needs to render them.
 //!
 //! Bucketing is lossy — it sorts sessions into three vectors and drops report order, the link back
 //! to the CSV record, and the reported wall times — so the writer cannot be built on
@@ -194,7 +194,7 @@ impl SessionRows {
 
 /// Parses `path` and resolves every record, without writing anything.
 ///
-/// Shared by [`csv_sessions`] and [`session_csv_to_xlsx`](crate::session::session_csv_to_xlsx),
+/// Shared by [`csv_sessions`] and `super::excel::session_csv_to_xlsx`,
 /// which is what makes the two agree by construction rather than by inspection.
 pub(super) fn csv_session_rows(path: &Path) -> Result<SessionRows, SessionCsvError> {
     let table = Table::read(path, Document::SessionReport, REQUIRED_HEADERS)?;

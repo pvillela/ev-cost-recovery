@@ -457,7 +457,7 @@ pub enum OnExistingWorkbook {
 /// Converts an Evolute session report into a workbook beside it, and says what needed a judgement
 /// call on the way.
 ///
-/// Delegates to [`session::session_csv_to_xlsx`](crate::session::session_csv_to_xlsx), which
+/// Delegates to the crate-private `session::session_csv_to_xlsx`, which
 /// states what the workbook holds: the
 /// report's own columns in the order it states them, then the columns this software derives, with
 /// `conn_span` and `avg_kw` as live formulas and the anomalies of each row in the last

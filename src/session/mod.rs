@@ -31,7 +31,7 @@ mod site_model;
 // --- Named outside the crate -------------------------------------------------------------------
 
 pub use common::{Segment, Session, Sessions};
-pub use excel::{SessionWriteReport, session_csv_to_xlsx};
+pub use excel::SessionWriteReport;
 pub use file_name::{SessionReportNameError, parse_session_report_name, report_coverage};
 // `Estimate` is what a caller passes `IntervalEstimates::to_markdown` to say which figure to mark,
 // and the two document helpers are what a caller assembles several of those reports with.
@@ -59,7 +59,9 @@ pub use common::{BREAKER_MAX_NORMAL_KW, BREAKER_RATING_KW};
 
 pub(crate) use common::RSession;
 pub(crate) use csv::csv_sessions;
+// Overwrites without asking; the policy is `api::session_csv_to_xlsx`'s. See its doc comment.
 pub(crate) use energy::tou_kwh;
+pub(crate) use excel::session_csv_to_xlsx;
 pub(crate) use file_name::reports_cover;
 pub(crate) use peak::estimates_from_sessions;
 
