@@ -14,7 +14,7 @@
 //! `umya-spreadsheet` is used rather than `rust_xlsxwriter` because it stores row heights and
 //! column widths as `f64` written straight through, whereas `rust_xlsxwriter` models them as whole
 //! pixels — `(height * 4.0 / 3.0).round() as u32` — so the reference's 1.39-wide spacers are not
-//! representable there at all. It is also the crate `ev-peak-contrib` uses.
+//! representable there at all.
 //!
 //! Alignment follows the column: the template left-aligns everything in column A — title, header,
 //! machine name and data alike — and centres every other column. That is why [`Kind`] carries the

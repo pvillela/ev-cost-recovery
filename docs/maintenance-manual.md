@@ -20,12 +20,10 @@ Titles are stable; if one changes, the citation fails to find it and says so.
 - Golden files
 - Which constants are free, and which are derived
 - Messages the user sees
-- The consistency tolerance
-- A generated workbook is not byte-reproducible
 
 ### Sessions
 
-- Adding an `AnomalyKind`
+- The consistency tolerance
 - Strict and lenient overlap tests
 - Where the rendering lives
 
@@ -51,35 +49,33 @@ Titles are stable; if one changes, the citation fails to find it and says so.
 Both modules pin output against committed files that a person reads before accepting a change.
 Regenerating without reading the diff turns them into a rubber stamp.
 
+**One command per variable, and neither takes a filter.** Every golden a variable owns is
+regenerated together, because a filter that misses one leaves it stale with nothing to say so.
+
 | What | Regenerate with |
 |---|---|
-| Session reports and the site-load table | `UPDATE_REPORT_GOLDEN=1 cargo test -- session::` |
+| Every rendered report (below) | `UPDATE_REPORT_GOLDEN=1 cargo test` |
 | Green Button fixture dumps and the committed standard workbook | `UPDATE_GOLDEN=1 cargo test --test integration -- green_button::fixtures_golden` |
 
-The session goldens straddle two targets: the rendered reports are produced by a unit test in
-`src/session/report_rendering_tests.rs` (the renderer's input is crate-internal), while the
-site-load table is pinned from `tests/session/site_load_golden.rs`. The unfiltered `cargo test`
-above runs both.
+The report goldens straddle two targets, which is why the command is unfiltered: the rendered
+reports and the surplus report are produced by unit tests in `src/`, where the renderer's input is
+crate-internal, while the site-load table is pinned from `tests/session/site_load_golden.rs`.
 
-Test binaries were consolidated into `tests/integration.rs` when the two projects merged, so
-`--test <file>` no longer selects anything. The form above names the binary and then filters by
+`--test <file>` selects nothing: the test binaries were consolidated into `tests/integration.rs`
+when the two projects merged. The Green Button form above names that binary and then filters by
 module path.
 
-### From the sessions module
+### The rendered reports
 
+Four files are pinned byte for byte:
 
-Three files are pinned byte for byte, all under `tests/fixtures/sessions/`:
-
-- `Session_Report_Diagram.report.md`
-- `Session_Report_Anomalies.report.md`
-- `site_load.report.txt` — the site-load table; `.txt` because it is fixed-width plain text with no
-  markdown in it, and naming it otherwise would invite someone to render it
-
-Regenerate all of them with one command:
-
-```sh
-UPDATE_REPORT_GOLDEN=1 cargo test
-```
+- `tests/fixtures/sessions/Session_Report_Diagram.report.md`
+- `tests/fixtures/sessions/Session_Report_Anomalies.report.md`
+- `tests/fixtures/sessions/site_load.report.txt` — the site-load table; `.txt` because it is
+  fixed-width plain text with no markdown in it, and naming it otherwise would invite someone to
+  render it
+- `tests/fixtures/api/EV_Cost_Recovery_Surplus.report.md` — the whole surplus report, pinned from
+  `src/api/pure/recovery.rs`
 
 Then **read the diff before committing it**. That is the entire value of the mechanism: the files
 exist so that a change in wrapping, padding, column order or a figure shows up somewhere a human
@@ -96,24 +92,15 @@ What to check in the diff:
 - **Nothing that only a markdown renderer would show.** No four-space indents, no `#` headings, no
   backticks, no bold markers. The report has to read as plain text, and these files are what ships.
 
-These files are the **one deliberate exception** to the rule in §1. They pin *rendering* — column
+These files are the **one deliberate exception** to "The rule the tests are written to". They pin *rendering* — column
 widths, decimal places, wrapping — and no relational reformulation preserves any of that. Changing
 an electrical constant is therefore expected to fail exactly these and nothing else, which is what
-makes the check in §1 meaningful.
+makes that rule meaningful.
 
-### From the green_button module
+### The Green Button dumps
 
-
-Regenerate with:
-
-```
-UPDATE_GOLDEN=1 cargo test --test integration -- green_button::fixtures_golden
-```
-
-Then **read the diff before committing it**. That is the entire value of the mechanism. Regenerating
-without reading turns them into a rubber stamp, and every rule this project encodes — which hours
-are off-peak, which periods are complete — is the kind of thing that changes a number without
-changing anything you would notice.
+Read that diff too. Every rule this project encodes — which hours are off-peak, which periods are
+complete — is the kind of thing that changes a number without changing anything you would notice.
 
 `Peak_values` is dumped whole; `Interval_values` is dumped as an excerpt plus per-column totals. The
 totals are not decoration: they are what catches a change in the 780-odd rows the excerpt skips.
@@ -253,15 +240,22 @@ recorded here instead:
 - **Field validation** — a blank rate, `cannot read "x" as the off-peak rate`, not a finite number,
   cannot be negative, a blank amount. Six messages, in `src/bin/ev_cost_recovery/state.rs`.
 - **File-choice refusals that state their whole remedy in their own text** —
-  `ConversionError::OutputExists` and `OutputWouldBeInput`, the undated-session-report and
-  undated-Charges-Report refusals, `ReimbursementError::NotACalendarMonth` and
-  `ChargesReportIsForAnotherMonth`.
+  `ConversionError::OutputExists` and `OutputWouldBeInput`, and the undated-session-report and
+  undated-Charges-Report refusals.
 
 Also absent: the `widgets::note` text that describes a rule rather than a finding, the overwrite
 confirmation on the Convert tab, and variants no route through the GUI can reach —
-`GbReadError::BillEndDayOutOfRange`, `ReimbursementError::NotOneSessionReport`,
+`GbReadError::BillEndDayOutOfRange`, `GbReadError::NotABillingCalendar` and
 `PeakPowerError::ValuesAreForAnotherPeriod`. A change that makes one of those reachable from the app
 brings it into the document.
+
+> **Re-derive this list from the error enums rather than editing it in place.** It is the only
+> statement of which messages are deliberately missing from `docs/ERRORS.md`, so a variant that has
+> been renamed or removed leaves a reader looking for something that does not exist.
+> `ReimbursementError` has exactly one variant, `RatesNotYetInEffect`; the month check now goes
+> through `pure::check_reports_cover`, so a month that does not line up is a `CoverageError`.
+
+# Sessions
 
 ## The consistency tolerance
 
@@ -299,8 +293,10 @@ it into `Sessions::excluded`, and `estimates_from_sessions` never puts an exclud
 of the estimating logic. Reaching the panic means one got somewhere it should not have, which is
 worth a crash rather than a plausible-looking answer.
 
-`Session::adj_duration` and `SessionOverlap::duration` panic on the same inversion, and for the
-same reason.
+The panic itself is `time::base::duration`, reached through `Interval::from_start_end`: it takes
+`end.duration_since(start)` and refuses a negative span rather than returning one. Every route that
+places a session on an interval goes through it — `Session::interval` builds one from the reported
+endpoints, and `interval_kwh_allocation` prorates over it.
 
 `Session::lenient_intersects` reads the two endpoints in whichever order puts them the right way
 round, and answers instead of panicking.
@@ -325,8 +321,9 @@ table are rendered there, and `examples/site_load_report.rs` is one `print!` ove
 `site_load_report()`.
 
 This is not tidiness. A report saved from `ev_cost_recovery` is byte-for-byte what the command line
-prints, and README says so; that holds only because there is one rendering rather than two that
-could drift. If you find yourself formatting a figure anywhere else — in a binary, in an example, in a
+prints, and that holds only because there is one rendering rather than two that could drift. It is
+asserted, by `the_app_produces_the_same_report_as_the_command_line` in
+`src/bin/ev_cost_recovery/state.rs`. If you find yourself formatting a figure anywhere else — in a binary, in an example, in a
 test helper — that is the thing to reconsider.
 
 `ev_cost_recovery`'s Peak power detail tab is the case that looks like an exception and is not. It
@@ -347,7 +344,9 @@ compute would break both properties at once.
 
 `Anomaly` in `src/green_button/common.rs` classifies readings that need review. It is the meter-side
 counterpart of `AnomalyKind`, and the split between wire format and prose is the same — but the
-places to change are not, so the two sections do not share one procedure.
+places to change are not, which is why this procedure is written for `Anomaly` alone. There is no
+matching section for `AnomalyKind`; its variants and their prose are in `src/session/common.rs`,
+and `docs/ERRORS.md` carries one entry per kind.
 
 **The wire format.** `as_str` and `from_token`, spelled identically. The token is what marks the
 reading wherever it is carried out of the module — the `anomalies` column of a generated workbook,
@@ -375,8 +374,13 @@ that document says what the data has to be like for it to arise.
 **There is deliberately no DST kind, and a new one is not the place to add one.** The feed timestamps
 every reading as an absolute UTC instant on a fixed grid, so neither the spring-forward gap nor the
 fall-back fold can produce an ambiguous or missing record. DST is a rendering concern in the
-local-time column and nothing more. The three DST kinds on the session side exist because Evolute
-reports wall times.
+local-time column and nothing more.
+
+The session side has no DST kind either. `AnomalyKind` has four variants — `ZeroActiveChargeTime`,
+`InconsistentDuration`, `ExcessiveAvgKw`, `DuplicateId` — and none of them is about daylight saving.
+Evolute states its times on a clock that does not observe it (`README.md`, "Times"), so a reported
+wall time names exactly one instant all year: there is no repeated hour to choose between and no
+skipped hour to refuse.
 
 ## Invariants nothing enforces
 
@@ -454,7 +458,7 @@ window. It is not a calendar rule and cannot be computed; do not try.
 rendered every row at 0.53cm against the reference's 0.49.
 
 `umya-spreadsheet` stores both as `f64` written straight through. Every column width, including the
-1.39 spacers, reproduces exactly. It is also the crate `ev-peak-contrib` uses.
+1.39 spacers, reproduces exactly. It is the writer this crate uses throughout.
 
 The general lesson, if the writer is ever swapped again: a crate that models a dimension in pixels
 cannot reproduce a workbook authored in points, and the discrepancy will be small enough to look

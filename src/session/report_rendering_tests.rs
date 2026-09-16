@@ -27,7 +27,7 @@
 //! To regenerate after an intended change, having read the diff:
 //!
 //! ```sh
-//! UPDATE_REPORT_GOLDEN=1 cargo test --lib -- session::report_rendering_tests
+//! UPDATE_REPORT_GOLDEN=1 cargo test
 //! ```
 
 use super::{Estimate, csv::csv_sessions, estimates_from_sessions};

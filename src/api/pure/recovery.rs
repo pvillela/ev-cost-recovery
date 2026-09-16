@@ -1783,7 +1783,7 @@ mod test {
     /// To regenerate after an intended change, having read the diff:
     ///
     /// ```sh
-    /// UPDATE_REPORT_GOLDEN=1 cargo test --lib recovery
+    /// UPDATE_REPORT_GOLDEN=1 cargo test
     /// ```
     #[test]
     fn the_surplus_report_matches_its_golden_file() {
