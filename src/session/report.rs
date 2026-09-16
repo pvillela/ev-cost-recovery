@@ -37,7 +37,11 @@ use crate::{
     time::{Interval, time_zone, zoned_minute, zoned_span, zoned_span_end},
 };
 use jiff::{Timestamp, Zoned, civil::Date};
-use std::{cmp::Ordering, collections::BTreeMap, path::PathBuf};
+use std::{
+    cmp::Ordering,
+    collections::BTreeMap,
+    path::{Path, PathBuf},
+};
 
 fn local(ts: Timestamp) -> Zoned {
     Zoned::new(ts, time_zone())
@@ -271,6 +275,74 @@ fn by_source_table(rows: impl IntoIterator<Item = (RSession, Option<AnomalyKind>
     )
 }
 
+/// Renders one table per source file, each under the name of the file its `Row` column counts in.
+///
+/// A `Row` cell is a row of a source data file, and a billing period straddles two of Evolute's
+/// monthly reports by construction, so more than one source is the ordinary case. With two files
+/// listed at the head of the section, `| 3 | S123 | DuplicateId |` names nothing a reader can look
+/// up.
+///
+/// The file goes above the rows rather than into a column of its own. The rendered report is
+/// asserted at a fixed width, and the Excluded sessions table already reaches it, so a sixth column
+/// does not fit -- while a heading costs height and no width at all. It also leaves
+/// `anomaly_cell`'s figure where it is; the `File` column that [`by_source_table`] does carry
+/// renders the bare kind instead.
+///
+/// One source gets no heading: there is nothing to tell apart, and the `Source:` line above the
+/// section already names the file.
+///
+/// Groups run in [`chronological`] order, as [`by_source_table`]'s do, and rows keep report order
+/// within a group so a `Row` column reads downwards.
+fn push_tables_by_source(
+    grouped: Vec<(PathBuf, Vec<Vec<String>>)>,
+    headers: &[&str],
+    alignment: &[Align],
+    out: &mut Vec<String>,
+) {
+    let single = grouped.len() <= 1;
+    for (i, (path, rows)) in grouped.into_iter().enumerate() {
+        if !single {
+            if i > 0 {
+                out.push(String::new());
+            }
+            out.push(format!("{}:", file_name_of(&path)));
+            out.push(String::new());
+        }
+        out.push(table(headers, &rows, alignment));
+    }
+}
+
+/// Groups rows by the source file whose rows their `Row` cells count, in [`chronological`] order.
+fn group_by_source<T>(
+    items: &[T],
+    path_of: impl Fn(&T) -> PathBuf,
+    row_of: impl Fn(&T) -> Vec<String>,
+) -> Vec<(PathBuf, Vec<Vec<String>>)> {
+    // Keyed by the whole path rather than the file's name, for the reason `by_source_table` gives:
+    // two reports of the same name in different directories are two files.
+    let mut paths: Vec<PathBuf> = Vec::new();
+    let mut by_file: BTreeMap<PathBuf, Vec<Vec<String>>> = BTreeMap::new();
+    for item in items {
+        let path = path_of(item);
+        if !by_file.contains_key(&path) {
+            paths.push(path.clone());
+        }
+        by_file.entry(path).or_default().push(row_of(item));
+    }
+    chronological(&paths)
+        .into_iter()
+        .filter_map(|path| by_file.remove(path).map(|rows| (path.clone(), rows)))
+        .collect()
+}
+
+/// A path's file name alone, without its directory. See [`file_name`].
+fn file_name_of(path: &Path) -> String {
+    path.file_name().map_or_else(
+        || path.display().to_string(),
+        |n| n.to_string_lossy().into_owned(),
+    )
+}
+
 /// The source file's name alone, without its directory.
 ///
 /// The full paths are listed once at the head of the section; repeating a directory on every row
@@ -465,10 +537,10 @@ impl IntervalEstimates {
         out.push(h2("Excluded sessions"));
         out.push(String::new());
 
-        let rows: Vec<Vec<String>> = self
-            .excluded_sessions
-            .iter()
-            .map(|s| {
+        let grouped = group_by_source(
+            &self.excluded_sessions,
+            |s| s.path.as_ref().clone(),
+            |s| {
                 vec![
                     s.row.to_string(),
                     s.id.clone(),
@@ -483,13 +555,14 @@ impl IntervalEstimates {
                         .collect::<Vec<_>>()
                         .join(", "),
                 ]
-            })
-            .collect();
-        out.push(table(
+            },
+        );
+        push_tables_by_source(
+            grouped,
             &["Row", "Session", "From", "To", "In interval", "Anomaly"],
-            &rows,
             &[Right, Left, Left, Left, Left, Left],
-        ));
+            out,
+        );
         out.push(String::new());
         out.push(wrap(
             "These sessions take no part in any estimate. Times are local and name the zone they \
@@ -533,10 +606,10 @@ impl IntervalEstimates {
         // collected at all — so the column would read yes on every row of every report, and a
         // column with one possible value tells a reader nothing while inviting them to look for a
         // distinction that is not there. The scoping is stated in the note below instead.
-        let rows: Vec<Vec<String>> = self
-            .session_anomalies
-            .iter()
-            .map(|a: &Anomaly| {
+        let grouped = group_by_source(
+            &self.session_anomalies,
+            |a: &Anomaly| a.session.path.as_ref().clone(),
+            |a: &Anomaly| {
                 vec![
                     a.session.row.to_string(),
                     a.session.id.clone(),
@@ -544,16 +617,17 @@ impl IntervalEstimates {
                     // totals is the one worth seeing beside the flag.
                     anomaly_cell(a.kind, a.session.avg_kw()),
                 ]
-            })
-            .collect();
-        out.push(table(
+            },
+        );
+        push_tables_by_source(
+            grouped,
             &["Row", "Session", "Anomaly"],
-            &rows,
             &[Right, Left, Left],
-        ));
+            out,
+        );
         out.push(String::new());
-        let mut note = "Row numbers are rows of the source data file named above, so each one can \
-                        be looked up directly. Only sessions reaching the interval of interest are \
+        let mut note = "Row numbers are rows of the file named above them, so each one can be \
+                        looked up directly. Only sessions reaching the interval of interest are \
                         listed here"
             .to_owned();
         if self.excluded_sessions.is_empty() {
@@ -773,6 +847,73 @@ mod test {
             .into_iter()
             .map(|p| p.display().to_string())
             .collect()
+    }
+
+    /// A row number means nothing without the file it counts in, and a billing period straddles
+    /// two source reports by construction.
+    ///
+    /// The name goes above the rows because it cannot go beside them: the rendered report is
+    /// asserted at 90 columns and the Excluded sessions table already reaches that, so a sixth
+    /// column has nowhere to go. A heading costs height and no width, which is what this asserts.
+    #[test]
+    fn rows_from_two_files_are_tabled_under_the_name_of_each() {
+        let may = "/data/Session_Report_May_1_2026-May_31_2026.csv";
+        let june = "/data/Session_Report_June_1_2026-June_30_2026.csv";
+
+        // Given June first, to show the grouping does not follow the order it was handed.
+        let items = [(june, "9", "EXCESS"), (may, "3", "SPIKE")];
+        let grouped = group_by_source(
+            &items,
+            |(path, _, _)| PathBuf::from(path),
+            |(_, row, id)| vec![(*row).to_owned(), (*id).to_owned()],
+        );
+
+        let mut out = Vec::new();
+        push_tables_by_source(grouped, &["Row", "Session"], &[Right, Left], &mut out);
+        let rendered = out.join("\n");
+
+        // May's table first, each under its own file name, and the directory is not repeated.
+        let may_at = rendered
+            .find("Session_Report_May_1_2026-May_31_2026.csv:")
+            .expect("May is named");
+        let june_at = rendered
+            .find("Session_Report_June_1_2026-June_30_2026.csv:")
+            .expect("June is named");
+        assert!(may_at < june_at, "{rendered}");
+        assert!(!rendered.contains("/data/"), "{rendered}");
+        // May's row sits under May's name rather than in June's table.
+        assert!(
+            rendered.find("SPIKE").expect("May's row") < june_at,
+            "{rendered}"
+        );
+
+        // The widest line is a file name, not a row: the tables are no wider than before.
+        for line in rendered.lines() {
+            assert!(
+                line.chars().count() <= 90,
+                "{} columns: {line}",
+                line.chars().count()
+            );
+        }
+    }
+
+    /// One source gets no heading. There is nothing to tell apart, and the section's `Source:` line
+    /// already names the file -- which is why the fixtures, all single-source, are unchanged.
+    #[test]
+    fn a_single_source_is_tabled_without_a_heading() {
+        let items = [("/data/June.csv", "9", "EXCESS")];
+        let grouped = group_by_source(
+            &items,
+            |(path, _, _)| PathBuf::from(path),
+            |(_, row, id)| vec![(*row).to_owned(), (*id).to_owned()],
+        );
+
+        let mut out = Vec::new();
+        push_tables_by_source(grouped, &["Row", "Session"], &[Right, Left], &mut out);
+        let rendered = out.join("\n");
+
+        assert!(!rendered.contains("June.csv"), "{rendered}");
+        assert!(rendered.starts_with("| Row "), "{rendered}");
     }
 
     /// Every list of files a report prints is in this order, and the order is the dates the names

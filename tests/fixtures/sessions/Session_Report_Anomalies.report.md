@@ -73,10 +73,10 @@ Anomalies
 |   6 | SPIKE   | ZeroActiveChargeTime  |
 |   9 | EXCESS  | ExcessiveAvgKw(7.200) |
 
-Row numbers are rows of the source data file named above, so each one can be
-looked up directly. Only sessions reaching the interval of interest are
-listed here. The Excluded sessions table above is scoped differently - it
-covers the whole source report, and carries an "In interval" column for that
+Row numbers are rows of the file named above them, so each one can be looked
+up directly. Only sessions reaching the interval of interest are listed
+here. The Excluded sessions table above is scoped differently - it covers
+the whole source report, and carries an "In interval" column for that
 reason.
 
 - ZeroActiveChargeTime - zero Active_Charge_Time, so the session delivered
