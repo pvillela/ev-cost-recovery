@@ -1810,7 +1810,7 @@ mod test {
 
     /// Keeping the intervals did not put them in the report. The summary is a page of money.
     #[test]
-    fn the_surplus_report_is_unchanged_by_the_intervals_it_now_keeps() {
+    fn the_surplus_report_is_unchanged_by_the_intervals_it_keeps() {
         let s = cost_recovery_surplus(
             &bill(),
             peaks(),

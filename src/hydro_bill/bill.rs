@@ -158,8 +158,8 @@ impl fmt::Display for ZeroDenominator {
 
 impl Error for ZeroDenominator {}
 
-/// The bill as `Debug` renders it, with the two worked-out values put back where the fields they
-/// replaced used to sit.
+/// The bill as `Debug` renders it, with the two worked-out values shown among the stored fields,
+/// each in the position its subject belongs to.
 ///
 /// `Debug` is derived and so can only show what is stored. This lists the fields by hand to fold
 /// the two methods in among them, and does it through `debug_struct`, which is the same machinery

@@ -145,7 +145,7 @@ pub(crate) fn session_wall_time(ts: Timestamp) -> DateTime {
 /// Public because it appears in public signatures — [`Segment::sessions`],
 /// [`Sessions::sessions`], and the API's estimating calls — and naming the type a caller has
 /// to write is the point of an alias. The sharing is what lets one session belong to several
-/// segments, and to the crate-private `Anomaly`, without being copied.
+/// segments, and to [`Anomaly`], without being copied.
 pub type RSession = Rc<Session>;
 
 #[derive(Debug)]
@@ -176,9 +176,9 @@ pub struct Session {
     /// > to rounding as it is on a slightly different timer. These fields are here for grant
     /// > reporting, but for our system we do not track them differently.
     ///
-    /// The reason previously given here — a car that stays connected without drawing power — was
-    /// wrong, and the correction matters: it is what makes a zero `Active_Charge_Time` a reporting
-    /// fault rather than an idle connection. See `Questions_for_Evolute.md`, "Answers received".
+    /// A car that stays connected without drawing power does *not* explain the gap, and that
+    /// matters: it is what makes a zero `Active_Charge_Time` a reporting fault rather than an idle
+    /// connection. See `docs/archive/Questions_for_Evolute.md`, "Answers received".
     pub charge_time: Duration,
     /// From `session report`.
     pub energy_use: f64,
@@ -441,7 +441,10 @@ pub type RSegment = Rc<Segment>;
 /// A sub-interval of the interval-of-interest over which power estimates are computed.
 pub struct Segment {
     pub interval: Interval,
-    /// The sessions intersecting this segment, in the order the report states them.
+    /// The sessions intersecting this segment.
+    ///
+    /// In the order `Sessions` holds them, which is report order within each bucket and spikes
+    /// after the rest -- so the golden shows `N1, N2, EXCESS, SPIKE` for rows 2, 3, 9 and 6.
     pub sessions: Vec<RSession>,
 }
 
@@ -507,12 +510,11 @@ impl Segment {
     /// square of its loading.
     ///
     /// A count above aggregate capacity is one the present installation cannot hold, so it can be
-    /// interpreted in three ways, not mutually exclusive: (1) more panels have been installed but
-    /// [`PANEL_COUNT`] has not been updated; and/or (2) the session start/end adjustments cause an
-    /// artificial overlap of charging sessions; and/or (3) normal power fluctuations cause the
-    /// per-EV power draw to exceed [`site_model::ev_load`](super::site_model::ev_load). The
-    /// excess is priced as (1): further panels of
-    /// the same kind, so the load is proportional to the count at the rate one full panel sets.
+    /// interpreted in two ways, not mutually exclusive: (1) more panels have been installed but
+    /// [`PANEL_COUNT`] has not been updated; and/or (2) normal power fluctuations cause the per-EV
+    /// power draw to exceed [`site_model::ev_load`](super::site_model::ev_load). The excess is
+    /// priced as (1): further panels of the same kind, so the load is proportional to the count at
+    /// the rate one full panel sets.
     fn scaled_load(scaling: f64) -> Load {
         Self::load_over_panels(scaling, PANEL_COUNT)
     }
@@ -760,12 +762,12 @@ pub struct Sessions {
     /// and someone should see it: Evolute states that the three duration fields track the same
     /// thing to within about a second and are not measured separately, so a zero beside a non-zero
     /// `Energy_Use` is a contradiction in the report rather than an event. See
-    /// `Questions_for_Evolute.md`, "Answers received". See docs/session/README.md, "Anomalies".
+    /// `docs/archive/Questions_for_Evolute.md`, "Answers received". See docs/session/README.md, "Anomalies".
     pub spikes: Vec<RSession>,
     /// Sessions that cannot be placed on a timeline — every kind [`AnomalyKind::excludes_session`]
-    /// names. Either the reported start, end and duration contradict each other, or a reported wall
-    /// time names no instant at all and none was assigned. Excluded from the estimates and returned
-    /// only for review. See docs/session/README.md, "Anomalies".
+    /// names, which today is [`AnomalyKind::InconsistentDuration`] alone: the reported start, end
+    /// and duration contradict each other. Excluded from the estimates and returned only for
+    /// review. See docs/session/README.md, "Anomalies".
     pub excluded: Vec<RSession>,
     /// Anomalies that are not properties of any single record, and so are not reachable through
     /// [`Session::anomalies`]. Currently [`AnomalyKind::DuplicateId`] alone.
@@ -804,9 +806,9 @@ impl Sessions {
     /// readily as two files can, which is how a single-file read is the same code path as a
     /// two-file one.
     ///
-    /// Bucketing is kept here, and out of both readers, so that a session read from a CSV and the
-    /// same session read back from the workbook written from it cannot land in different buckets.
-    /// The tests are applied in this order, strongest first:
+    /// Bucketing is kept here, out of the reader, so that every caller sorts a session the same
+    /// way and a second reader could not sort it differently. The tests are applied in this order,
+    /// strongest first:
     ///
     /// 1. Flagged with any kind [`AnomalyKind::excludes_session`] names — [`Sessions::excluded`].
     ///    Such a

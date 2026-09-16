@@ -86,7 +86,7 @@ fn fonts(ctx: &Context) {
 ///
 /// An extension rather than a call to [`RichText::strong`], which does not do this: egui's `strong`
 /// only swaps in a stronger colour, and in the light theme that colour is the same black ordinary
-/// text is already drawn in — so every `strong` in this app used to be invisible on a light screen.
+/// text is already drawn in — so `strong` alone is invisible on a light screen.
 /// Calling `strong` as well is deliberate: on the dark theme the colour lift still helps, and this
 /// is the one method either theme needs.
 pub trait Bold {

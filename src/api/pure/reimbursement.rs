@@ -533,16 +533,15 @@ mod test {
         )
         .expect("a June report and rates effective on the 1st");
 
-        // About half, not exactly half. A session's energy is spread over its *adjusted* span,
-        // which pads the reported end out to the time grid, so the two halves of a two-hour
-        // session either side of midnight are not quite equal.
+        // Exactly half. A session's energy is spread over its reported span, taken as written, so
+        // a two-hour session cut at midnight puts half its energy either side.
         assert!(
-            (r.tou_kwh.total_kwh() - 4.0).abs() < 0.05,
+            (r.tou_kwh.total_kwh() - 4.0).abs() < 1e-9,
             "{:?}",
             r.tou_kwh
         );
         // Evolute billed the whole session, so the part we did not price is the variance.
-        assert!((r.kwh_variance - 4.0).abs() < 0.05, "{}", r.kwh_variance);
+        assert!((r.kwh_variance - 4.0).abs() < 1e-9, "{}", r.kwh_variance);
     }
 
     /// A session report can carry sessions dated outside the month it is named for -- the
@@ -768,7 +767,7 @@ mod test {
             .is_ok()
         );
 
-        // The slip the old check existed for: a file for the wrong month entirely.
+        // The slip this check is for: a file for the wrong month entirely.
         let may = Path::new("data/Session_Report_May_1_2026-May_31_2026.csv");
         assert!(
             check_reports_cover(CoveredSpan::CalendarMonth, june(1), june(30), &[may]).is_err()

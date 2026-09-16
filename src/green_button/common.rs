@@ -181,9 +181,8 @@ impl fmt::Display for Anomaly {
 
 /// How many offending hours a log line names before it stops and gives a count instead.
 ///
-/// The same three [`csv::note_off_grid_rows`](crate::session) settled on, and for the same reason:
-/// an export that lost a month names 744 hours under `MissingInterval`, and a log that long is a
-/// log nobody reads. Three is enough to go and look at one.
+/// Three, because an export that lost a month names 744 hours under `MissingInterval`, and a log
+/// that long is a log nobody reads. Three is enough to go and look at one.
 const EXAMPLE_HOURS: usize = 3;
 
 /// Summarises anomalies into a run log: one line per kind, however many hours carried it.

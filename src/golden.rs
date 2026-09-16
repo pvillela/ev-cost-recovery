@@ -73,7 +73,8 @@ pub(crate) fn check(relative: &str, rendered: &str) {
     });
 
     // Named rather than left to be found in a diff where every line differs and none of them
-    // visibly. `.gitattributes` pins `*.report.md` to LF for exactly this, so a golden holding CRLF
+    // visibly. `.gitattributes` pins `tests/fixtures/**` to LF for exactly this, so a golden
+    // holding CRLF
     // is a checkout that rewrote it.
     if expected != rendered && expected.replace("\r\n", "\n") == rendered {
         panic!(

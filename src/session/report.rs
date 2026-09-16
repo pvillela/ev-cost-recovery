@@ -21,8 +21,8 @@
 //! figures and the document carries the definitions. A caller assembling them opens with
 //! [`DEFINITIONS_POINTER`] and closes with [`definitions`].
 //!
-//! This is the crate's single rendering module. [`site_load_report`] lives here too: one rendering
-//! rather than two that could drift.
+//! This is where the session reports are rendered. [`site_load_report`] lives here too: one
+//! rendering rather than two that could drift.
 
 use super::{
     Anomaly, AnomalyKind, Estimate, IntervalEstimates, RSession, Session, SessionNotes,

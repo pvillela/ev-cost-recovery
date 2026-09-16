@@ -819,7 +819,8 @@ impl ReimbursementState {
     ///
     /// **Only that the name reads.** Whether the report covers the month being reconciled is
     /// decided at run time, against the month the Charges Report names — which is not known yet
-    /// here. This used to demand a whole calendar month, which the portal may never export.
+    /// here. Demanding a whole calendar month at this point would be a requirement the portal may
+    /// never let a user satisfy: it exports any range.
     pub fn select(&mut self, path: PathBuf) {
         self.input_note = parse_session_report_name(&file_stem(&path))
             .err()
@@ -1913,10 +1914,9 @@ mod test {
 
     /// A session report is taken when its name reads, whatever range it states.
     ///
-    /// It used to be refused unless the name stated a whole calendar month. The portal exports any
-    /// range, so that was a requirement a user may never be able to satisfy; whether the reports
-    /// cover the month being reconciled is settled at run time, against the month the Charges
-    /// Report names.
+    /// The portal exports any range, so demanding a whole calendar month here would be a
+    /// requirement a user may never be able to satisfy. Whether the reports cover the month being
+    /// reconciled is settled at run time, against the month the Charges Report names.
     #[test]
     fn the_reimbursement_tab_takes_any_range_whose_name_reads() {
         let mut state = ReimbursementState::default();

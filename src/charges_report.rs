@@ -203,7 +203,7 @@ pub struct ChargesReport {
     /// Kept per row rather than collapsed to one span, because rows are **not** required to agree.
     /// They did in every report seen so far — every row of every one reads the whole month — but
     /// what the two columns mean per row is an open question with Evolute (see
-    /// `docs/Questions_for_Evolute.md`), and the reading that fits the data equally well is that
+    /// `docs/archive/Questions_for_Evolute.md`), and the reading that fits the data equally well is that
     /// each row states the span its breaker was subscribed for. Under that reading a subscriber
     /// who joins mid-month produces a row that differs from its neighbours, and refusing such a
     /// file would refuse a correct one.
@@ -218,7 +218,7 @@ pub struct ChargesReport {
     /// A breaker billed for part of the month only. Under the subscription reading of the two date
     /// columns this is what a mid-month join or leave looks like, and it is ordinary; under the
     /// other reading it should never occur. Reported either way, because the two readings are not
-    /// yet told apart — see `docs/Questions_for_Evolute.md`.
+    /// yet told apart — see `docs/archive/Questions_for_Evolute.md`.
     ///
     /// A finding rather than a refusal, and the only one this document produces. A span that
     /// *leaves* the month is the refusal.
@@ -370,7 +370,7 @@ pub enum ChargesReportError {
     ///
     /// A span *inside* the month but short of it is not this — it is
     /// [`ChargesReport::partial_spans`], a finding that leaves the figures standing. Whether a row
-    /// can reach outside the month at all is the open question in `docs/Questions_for_Evolute.md`;
+    /// can reach outside the month at all is the open question in `docs/archive/Questions_for_Evolute.md`;
     /// until it is answered, a figure nobody can account for is worse than a file that will not
     /// read.
     RowsOutsideMonth {
@@ -652,7 +652,7 @@ fn parse_number(
 /// A dollar amount as the report writes it: `$70.62`, or `-$1.00` for a credit.
 ///
 /// The sign is outside the `$` in every negative figure seen, which is how spreadsheets export
-/// currency. Thousands separators are handled by `number`.
+/// currency. Thousands separators are handled by [`parse_number`].
 fn money(s: &str, path: &Path, row: usize, column: &'static str) -> Result<f64, CsvReadError> {
     let cleaned: String = s.chars().filter(|c| *c != '$').collect();
     parse_number(&cleaned, s, path, row, column)
@@ -719,10 +719,9 @@ Start_Date,End_Date,Bill_Status,Cost
 
     /// A file named as a session report is refused before it is opened, and in the same voice.
     ///
-    /// The opening comes from the slot the file was offered to, not from what the file is called —
-    /// which is the point the missing-column test above used to carry on its own, before the name
-    /// became something this reader reads. Handing a session report to this slot now fails here
-    /// rather than on a column, and has to say `Charges Report` just the same.
+    /// The opening comes from the slot the file was offered to, not from what the file is called.
+    /// A session report handed to this slot fails on its name, before any column is looked for, and
+    /// has to say `Charges Report` just the same.
     #[test]
     fn a_file_not_named_as_a_charges_report_is_refused() {
         let dir = temp_dir("wrong_name");

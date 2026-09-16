@@ -472,8 +472,8 @@ pub enum OnExistingWorkbook {
 /// - `session_csv` - the Evolute session report to convert.
 /// - `on_existing` - what to do about a workbook already standing where this one goes.
 ///
-/// The workbook's name is not an argument. It is the input's with the extension replaced, which is
-/// where every reader of these files expects to find it.
+/// The workbook's name is not an argument. It is the input's with the extension replaced, so the
+/// two sit side by side and the workbook says which report it came from.
 ///
 /// Nothing else here writes. The conversion's run log comes back unwritten on the result's `log` --
 /// see [`SessionWriteReport`] -- and [`SourceLog::write`](crate::log::SourceLog::write) is what

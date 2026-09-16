@@ -16,7 +16,7 @@ use std::{sync::LazyLock, time::Duration};
 /// from the crate.
 pub const TIME_ZONE_NAME: &str = "America/Toronto";
 
-/// The offsets the crate-private `TIME_ZONE_NAME` uses, under the names a reader of a Toronto
+/// The offsets [`TIME_ZONE_NAME`] uses, under the names a reader of a Toronto
 /// Hydro bill will recognise. Naming one resolves a wall time that occurs twice.
 ///
 /// Here rather than in `session` because it is a property of the zone, and the zone is shared.

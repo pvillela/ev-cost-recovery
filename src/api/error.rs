@@ -37,7 +37,7 @@ use crate::error::ConversionError;
 /// `path` is held for a caller that wants to act on which file failed rather than print it, and is
 /// deliberately not written into the message. All four causes are structured types, and each cause
 /// that concerns a file names it from a `path` field of its own —
-/// the crate-private `green_button::GbReadError`,
+/// [`GbReadError`](crate::green_button::GbReadError),
 /// the private `session::csv::SessionCsvError`,
 /// [`ChargesReportError`](crate::charges_report::ChargesReportError) and
 /// [`BillError`](crate::hydro_bill::BillError). Writing it here as well produced

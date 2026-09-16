@@ -95,8 +95,8 @@ impl RunLog {
 /// nowhere left to return to — writes it out.
 ///
 /// It carries `suffix` and `operation` because the reader knows them and the caller does not. A
-/// binary writing the logs it was handed should not have to know that a CSV read is called
-/// `session.csv.read` while a read-back from a workbook is called `session.xlsx.read`.
+/// binary writing the logs it was handed should not have to know that a session CSV read is called
+/// `session.csv.read` while the meter XML read is called `meter.xml.read`.
 #[derive(Debug, Clone)]
 pub struct SourceLog {
     /// The file the log is about, and the file it is written beside.
@@ -183,10 +183,10 @@ mod test {
         );
         assert_eq!(
             log_path(
-                Path::new("/data/Session_Report_June.xlsx"),
-                "session.xlsx.read"
+                Path::new("/data/green_button/TH_Electric_Usage.XML"),
+                "meter.xml.read"
             ),
-            Path::new("/data/Session_Report_June.session.xlsx.read.log")
+            Path::new("/data/green_button/TH_Electric_Usage.meter.xml.read.log")
         );
         // Beside the CSV rather than the workbook, and under its own suffix, so the three logs of
         // one session report cannot overwrite each other.

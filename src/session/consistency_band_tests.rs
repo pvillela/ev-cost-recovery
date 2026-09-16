@@ -8,10 +8,10 @@
 //! `api::peak_power`, which also wants a meter export and a bill, and neither of those bears on
 //! the band. So this reads the CSV and calls the two functions the band actually runs through.
 //!
-//! Unit tests in [`super::csv`] already pin the predicate. This pins the *consequence*. Nothing
-//! did that before, which is how commit `1d99e29` moved the band by a whole minute — excluding 116
-//! of the 238 sessions in the real June report — with the whole suite green. See
-//! `docs/archive/merger-review-findings.md`, finding 1.
+//! Unit tests in [`super::csv`] already pin the predicate. This pins the *consequence* — which
+//! sessions reach an estimate — and that is a separate thing to pin: a band that moves by a minute
+//! excludes 116 of the 238 sessions in the real June report while every predicate test still
+//! passes.
 //!
 //! # The arithmetic every record here is one second away from
 //!
@@ -25,8 +25,7 @@
 //! So `[0:29:59, 0:30:01]` is sound and everything outside it is not. The fixture puts a record on
 //! each edge, one on each side a second beyond it, and one exactly on `Δ`. Getting a bound wrong by
 //! a single second moves a real record between the two groups, so a second is the right resolution
-//! to test at — and it is now the whole width of the allowance, where it used to be a sixtieth of
-//! it.
+//! to test at, and it is the whole width of the allowance.
 //!
 //! `INVERT1` is the inversion case: a record whose end precedes its start. It is not a separate
 //! check any more — an inverted span misses by a minute, far outside the tolerance — but it is
@@ -40,8 +39,8 @@ use jiff::Timestamp;
 use std::path::PathBuf;
 
 /// The hour the fixture reports as 16:00–17:00, which contains every record. At
-/// `common::SESSION_OFFSET` that is 21:00–22:00 UTC, an hour later than the prevailing-local reading
-/// this file used before the reports were confirmed to be stated on standard time.
+/// `common::SESSION_OFFSET` that is 21:00–22:00 UTC. The reports are stated on standard time all
+/// year, so this is not a prevailing-local reading and does not move with the season.
 const LO: &str = "2026-06-15T21:00:00Z";
 const HI: &str = "2026-06-15T22:00:00Z";
 
@@ -163,10 +162,10 @@ fn the_real_portal_export_is_sound_throughout() {
 
 /// An inverted record reaches the estimates without panicking.
 ///
-/// The reason check 1 exists. `Session::intersects` panics on an inverted span and documents
-/// exclusion by this test as the reason it cannot happen; before check 1 that was untrue, and a
-/// record like `INVERT1` reached it. This is the proof that it no longer does — the excluded
-/// listing walks every excluded session, inverted ones included.
+/// The reason check 1 exists. `Session::intersects` panics on an inverted span, and names exclusion
+/// by this test as the reason that cannot happen — so this is the assertion the panic's argument
+/// rests on. The excluded listing walks every excluded session, inverted ones included, so a record
+/// like `INVERT1` reaching the estimating logic would crash here rather than anywhere quieter.
 #[test]
 fn an_inverted_record_is_listed_rather_than_crashing() {
     let report = band();

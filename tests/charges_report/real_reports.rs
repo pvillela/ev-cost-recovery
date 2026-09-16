@@ -36,7 +36,7 @@ fn check(path: &Path) {
     );
     // Printed rather than asserted. Every report seen so far carries one span on every row,
     // but whether a row may state its breaker's own subscription span is an open question with
-    // Evolute -- see docs/Questions_for_Evolute.md -- so a file with several is not a failure.
+    // Evolute -- see docs/archive/Questions_for_Evolute.md -- so a file with several is not a failure.
     // This is how a new shape gets noticed.
     for ((from, to), rows) in &report.spans {
         println!("  {from} to {to}: {} row(s)", rows.len());
@@ -120,7 +120,7 @@ fn totals_by_hand(path: &Path) -> (f64, f64) {
 /// its own parsing rather than on a discrepancy.
 ///
 /// Deliberately not a CSV library. This is the independent reading that
-/// `charges_report::Charges::read` is compared against, and sharing a parser with it would make
+/// `charges_report::charges_report` is compared against, and sharing a parser with it would make
 /// the two agree by construction.
 fn cells(line: &str) -> Vec<String> {
     let mut cells = Vec::new();

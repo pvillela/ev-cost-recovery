@@ -19,7 +19,7 @@
 //! that bill covers, and `bill.rs` says which one that is.
 //!
 //! What a billing period *is*, `billing_period.rs` defines: [`BILL_END_DAY`], and the
-//! crate-private `BillingPeriod` and `billing_period_dates`. It is here because the period is the
+//! [`BillingPeriod`] and [`billing_period_dates`]. It is here because the period is the
 //! bill's, and the rest of the crate divides its data that way only because the bill does.
 
 // Three tiers, and the `pub` on each `use` is what separates them:

@@ -286,7 +286,8 @@ pub struct GbWriteReport {
 ///
 /// `bill_end_day` is the day of the month the bill closes on, which decides how the readings are
 /// divided into the rows of the `Peak_values` sheet. The private `period_values` is what performs
-/// that division, and the crate-private `hydro_bill::BillingPeriod` is where the rule lives.
+/// that division, and [`hydro_bill::BillingPeriod`](crate::hydro_bill::BillingPeriod) is where
+/// the rule lives.
 ///
 /// # Errors
 ///

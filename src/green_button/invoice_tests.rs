@@ -135,9 +135,9 @@ fn the_tou_buckets_reproduce_the_invoice() {
     }
 
     let divisor = feed.kwh.divisor();
-    // All three are exact now. Off-peak used to need a tolerance of 12 kWh, and it was the only
-    // one that did -- the boundary error moved a midnight hour, and midnight is off-peak. That it
-    // was confined there was the clue that the boundary rather than the TOU rules was wrong.
+    // All three are exact to a milli-kWh. If one band ever needs a tolerance and the others do
+    // not, suspect the period boundary rather than the TOU rules: a boundary off by an hour moves
+    // a midnight hour, and midnight is off-peak, so the damage shows up in one band alone.
     let cases = [
         (Tou::OnPeak, "tou_on_peak_kwh", 0.001),
         (Tou::MidPeak, "tou_mid_peak_kwh", 0.001),

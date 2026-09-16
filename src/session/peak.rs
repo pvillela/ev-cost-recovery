@@ -39,11 +39,10 @@ pub struct IntervalEstimates {
     /// [`crate::session::AnomalyKind::excludes_session`] names, and the whole workbook's worth, not
     /// only those intersecting this interval.
     ///
-    /// Unfiltered on purpose. Such a record either contradicts itself or names no instant at all,
-    /// so asking whether it intersects the interval is asking a question of the very timestamps
-    /// that are in doubt. The report states which ones appear to touch the interval, dashes the
-    /// ones with no instant to compare, and lists the rest anyway, leaving the judgement to a
-    /// reader who can go back to the source rows.
+    /// Unfiltered on purpose. Such a record contradicts itself, so asking whether it intersects
+    /// the interval is asking a question of the very timestamps that are in doubt. The report
+    /// states which ones *appear* to touch the interval and lists every one of them anyway,
+    /// leaving the judgement to a reader who can go back to the source rows.
     pub excluded_sessions: Vec<RSession>,
     /// The run logs of the files the sessions were read from, unwritten.
     ///
@@ -437,8 +436,9 @@ mod test {
 
     /// An hour is four quarters, each starting one `SEGMENT_DURATION` after the last.
     ///
-    /// This is the bug that made every segment of a 1-hour interval an hour apart: the stride was
-    /// the interval's own length rather than a segment's.
+    /// The stride is a segment's length, not the interval's. Get that wrong on a one-hour interval
+    /// and the four segments come out an hour apart, which still tiles something -- just not the
+    /// hour asked for.
     #[test]
     fn segment_starts_stride_by_one_segment_duration() {
         let segments = segments_for_ioi(hour(), &[]);
@@ -484,8 +484,9 @@ mod test {
     /// Overlapping and abutting are different things, and the whole tiling rests on the
     /// difference.
     ///
-    /// `intersects` returned `overlap.is_empty()` — the exact negation — so every segment used to
-    /// collect precisely the sessions that missed it.
+    /// Asserted in both directions, because the two are one negation apart: an `intersects` that
+    /// answered `overlap.is_empty()` would have every segment collect precisely the sessions that
+    /// miss it, and every count would still look like a count.
     #[test]
     fn intersects_distinguishes_overlap_from_abutment() {
         let first = Interval::from_start_end(hour().start, hour().start + SEGMENT_DURATION);
@@ -551,10 +552,9 @@ mod test {
 
     /// A session covering part of a segment counts as that fraction of a session in it.
     ///
-    /// The fraction is a third rather than a half. Every adjusted end lands on the time grid, so a
-    /// session can only ever cover a whole number of grid steps of a segment: with a 15-minute
-    /// segment and a one-minute step, halves are not among the reachable fractions and five
-    /// minutes of fifteen is.
+    /// A third rather than a half, so that the assertion is about the proration and not about a
+    /// figure a bug could reach by another route: a half is what a session covering one segment of
+    /// two would give, and a third is not.
     #[test]
     fn a_session_covering_part_of_a_segment_counts_that_fraction() {
         // A session running well past both edges of the segment covers all of it.
@@ -599,8 +599,9 @@ mod test {
 
     /// Ties go to the earliest segment, and a maximum is never lost to a lower later one.
     ///
-    /// `hi_crit` used to start at 0.0, so the first segment was displaced by any later segment
-    /// scoring above zero — including when the first was the maximum.
+    /// The running maximum starts below every score a segment can have, not at 0.0. Starting it
+    /// at zero displaces the first segment with any later one scoring above zero, including when
+    /// the first is the maximum.
     #[test]
     fn the_first_segment_wins_when_it_is_maximal() {
         // Fills the first quarter only.
@@ -707,7 +708,7 @@ mod test {
     /// The same identity as above read at a fractional count, which is what a segment ordinarily
     /// holds. The model takes a fractional vehicle count, so the two derivations are checked
     /// against it as well as against each other. A third rather than a half, for the reason given
-    /// above: halves are off the time grid.
+    /// above.
     #[test]
     fn the_two_derivations_agree_on_a_partially_covered_segment() {
         let sessions = vec![session(

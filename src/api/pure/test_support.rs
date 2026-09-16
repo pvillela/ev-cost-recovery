@@ -125,8 +125,9 @@ pub(crate) fn bill() -> HydroBill {
 /// Sessions as the two monthly reports covering this period would yield them.
 ///
 /// Laid out against the kW peak hour, whose four segments start at 20:00, 20:15, 20:30 and 20:45.
-/// `WHOLE` runs the length of the hour; `MID_A` and `MID_B` are 14 minutes from 20:15, which with
-/// the one-minute padding on the adjusted end is exactly the 20:15 segment and no other. That
+/// `WHOLE` runs the length of the hour; `MID_A` and `MID_B` run 14 minutes from 20:15, which falls
+/// inside the 20:15 segment and no other -- spans are half-open, so ending before 20:30 keeps them
+/// out of the segment that starts there. That
 /// segment therefore holds three sessions and every other holds one, which is what makes the
 /// maximum predictable without depending on any electrical constant.
 ///

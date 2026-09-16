@@ -64,8 +64,9 @@ const REQUIRED_HEADERS: &[&str] = &[
 ///
 /// Only whole-file failures are here. A per-row *judgement* call is not an error: it is carried on
 /// [`Session::anomalies`] and summarised in the log, because the row still yields a session.
-/// Resolving a wall time is not among them. A reported time that names no instant, or two, is a
-/// judgement call and not a failure: it is flagged on the session and the row is still written.
+/// Resolving a wall time is not among them, and cannot fail: Evolute states its times on a fixed
+/// offset that does not observe daylight saving, so a reported wall time names exactly one instant
+/// all year — there is no skipped hour to refuse and no repeated one to choose between.
 #[derive(Debug)]
 pub(crate) enum SessionCsvError {
     /// The file could not be opened, is not a readable CSV, is missing a column this reader needs,
@@ -329,9 +330,8 @@ struct CsvSession {
     end_local: civil::DateTime,
     conn_duration: Duration,
     active_charge_time: Duration,
-    /// Kept for its parse: a non-numeric `Energy_Use` invalidates the row, and that is caught in
-    /// [`CsvSession::parse`]. The value itself is consumed on the reading side.
-    #[allow(dead_code)]
+    /// Parsed here so that a non-numeric `Energy_Use` invalidates the row, and read by
+    /// [`CsvSession::resolve`], which divides it by the charge time to test for a spike.
     energy_use: f64,
 }
 

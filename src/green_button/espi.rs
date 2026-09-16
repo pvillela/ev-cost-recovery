@@ -234,9 +234,10 @@ pub fn parse_espi_xml(xml: &str) -> Result<Feed, Box<dyn Error>> {
     }
 
     // An absent series and a present-but-empty one are the same fault to a reader, and are
-    // reported the same way. The empty case is the one that used to slip through: a feed carrying
-    // the full link chain and no `IntervalReading` at all satisfied every check here, and produced
-    // a workbook with headings and no rows, exit 0. Nothing said the export was empty.
+    // reported the same way. The empty case is the one that needs saying: a feed carrying the full
+    // link chain and no `IntervalReading` at all satisfies every structural check above, and
+    // without this would produce a workbook with headings and no rows, exit 0, with nothing saying
+    // the export was empty.
     let mut take = |uom: &str, name: &str| -> Result<Series, Box<dyn Error>> {
         match series.remove(uom) {
             None => Err(format!(

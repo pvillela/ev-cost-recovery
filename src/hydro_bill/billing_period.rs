@@ -35,10 +35,9 @@
 //! cut this way because the bill cuts it this way, so the rule belongs where the bill is and the
 //! rest of the crate reads it from here.
 //!
-//! It was in three places before it was here: [`BILL_END_DAY`] in `hydro_bill`, [`BillingPeriod`]
-//! in `green_button`, and [`billing_period_dates`] in `api::pure`. Each move outward was a small
-//! step, and together they meant that answering "what is a billing period" needed three files in
-//! three modules.
+//! One home, because the alternative is three: [`BILL_END_DAY`], [`BillingPeriod`] and
+//! [`billing_period_dates`] each answer part of "what is a billing period", and split across the
+//! modules that happen to consult them, the answer takes three files in three modules to read.
 //!
 //! What is *not* here is anything that reads a period rather than defining one. `green_button`
 //! knows how many meter intervals one should hold, because that is a question about the feed;
@@ -185,7 +184,7 @@ fn previous_month(year: i16, month: i8) -> (i16, i8) {
 ///
 /// A struct rather than a one-variant enum, so a function that can fail only this way says exactly
 /// that and a caller has nothing to match on. The error enums of operations that call
-/// the crate-private `billing_period_dates` embed it rather than restating it.
+/// [`billing_period_dates`] embed it rather than restating it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NotABillingPeriodEnding {
     pub ending: Date,
@@ -317,8 +316,8 @@ mod test {
     /// reads as the 24th on a wall clock but is still the 23rd on the meter's, so it closes the
     /// period rather than opening the next one.
     ///
-    /// Under the old prevailing-local boundary this hour fell the other way, which is the whole of
-    /// the discrepancy against the invoices.
+    /// The boundary is standard-time midnight, not prevailing-local. Read it as local and this
+    /// hour falls the other way, which is the whole of the discrepancy against the invoices.
     #[test]
     fn the_midnight_hour_of_the_closing_day_ends_the_period_it_is_in() {
         let midnight_edt = local_hour(date(2026, 6, 24), 0);

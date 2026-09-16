@@ -15,7 +15,8 @@
 //!
 //! What a billing period *is* is not here. It is a fact about the bill, so it lives in
 //! [`hydro_bill::billing_period`](crate::hydro_bill) with [`BILL_END_DAY`](crate::hydro_bill::BILL_END_DAY)
-//! and the crate-private `hydro_bill::BillingPeriod`, and this module reads it from there.
+//! and [`hydro_bill::BillingPeriod`](crate::hydro_bill::BillingPeriod), and this module reads it
+//! from there.
 
 mod coverage;
 mod energy;
