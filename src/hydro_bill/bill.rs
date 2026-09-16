@@ -52,6 +52,19 @@ pub struct HydroBill {
     pub adj_peak_7_7_kw: f64,
     pub demand_kw: f64,
     pub demand_kva: f64,
+
+    /// The bill's "Metering Adj." column, recorded because the bill states it.
+    ///
+    /// **Read, and used by nothing.** No calculation in the crate multiplies by this, and none
+    /// should until someone establishes what the utility does with it. Every bill read so far
+    /// states `1.0`, so what it would mean otherwise is not known, and guessing would put a factor
+    /// nobody has verified into figures that get argued against real invoices.
+    ///
+    /// Parsed rather than dropped because `HydroBill` models the bill, and a struct that silently
+    /// discarded a stated figure is the harder thing to notice later.
+    ///
+    /// Not the days-over-30 proration, which is a different adjustment and is not in doubt -- see
+    /// `api::pure::peak_power`, where the argument that it cancels is set out.
     pub metering_adj: f64,
     pub adj_kw: f64,
     pub adj_kva: f64,
@@ -61,8 +74,8 @@ impl HydroBill {
     /// The end of the period this bill covers.
     ///
     /// The bill states no period end of its own. The meter reading period is that period: it runs
-    /// from the 23rd of one month to the 23rd of the next, which is the same division, and the
-    /// same label, that the crate-private `BillingPeriod` uses.
+    /// from midnight starting the 24th of one month to midnight starting the 24th of the next, and
+    /// is labelled by the 23rd -- the same division, and the same label, that `BillingPeriod` uses.
     pub fn period_end_date(&self) -> Date {
         self.meter_reading_period_to
     }
