@@ -2,7 +2,7 @@
 //! [`HydroBill`](ev_cost_recovery::hydro_bill::HydroBill).
 
 use ev_cost_recovery::hydro_bill::{BillError, hydro_bill_from_pdf, pdf_text};
-use std::{env, error::Error, io, path::Path, process::ExitCode};
+use std::{env, error::Error, ffi::OsString, io, path::Path, process::ExitCode};
 
 const USAGE: &str = "\
 hydro_bill_dump -- what a Toronto Hydro bill PDF parses to.
@@ -28,7 +28,9 @@ Example:
 ";
 
 fn main() -> ExitCode {
-    let args: Vec<String> = env::args().skip(1).collect();
+    // `args_os`, not `args`: `env::args()` panics on an argument that is not valid
+    // Unicode, and a path need not be. Nothing here converts one to text.
+    let args: Vec<OsString> = env::args_os().skip(1).collect();
 
     if args.iter().any(|a| a == "-h" || a == "--help") {
         print!("{USAGE}");

@@ -6,7 +6,7 @@ use ev_cost_recovery::{
     session::{DEFINITIONS_POINTER, Estimate, definitions},
 };
 use jiff::civil::Date;
-use std::{env, error::Error, path::Path, process::ExitCode};
+use std::{env, error::Error, ffi::OsString, path::Path, process::ExitCode};
 
 const USAGE: &str = "\
 peak_power_cli -- peak power estimates for one billing period.
@@ -30,7 +30,9 @@ Example:
 ";
 
 fn main() -> ExitCode {
-    let args: Vec<String> = env::args().skip(1).collect();
+    // `args_os`, not `args`: `env::args()` panics on an argument that is not valid
+    // Unicode, and a path need not be. Only the date below is read as text.
+    let args: Vec<OsString> = env::args_os().skip(1).collect();
 
     if args.iter().any(|a| a == "-h" || a == "--help") {
         print!("{USAGE}");
@@ -45,6 +47,15 @@ fn main() -> ExitCode {
         return ExitCode::FAILURE;
     }
     let session_csvs: Vec<&Path> = session_csvs.iter().map(Path::new).collect();
+
+    // The one argument that has to be text. A path may be any bytes the platform allows; a date
+    // cannot, and saying so is an argument error rather than a crash in `std::env`.
+    let Some(ending) = ending.to_str() else {
+        {
+            eprintln!("error: the billing period's closing date is not valid text");
+            return ExitCode::FAILURE;
+        }
+    };
 
     match run(ending, Path::new(gb_xml), &session_csvs) {
         Ok(()) => ExitCode::SUCCESS,

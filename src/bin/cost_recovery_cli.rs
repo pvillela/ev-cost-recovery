@@ -3,7 +3,13 @@
 
 use ev_cost_recovery::api::{CostRecoveryRates, cost_recovery};
 use jiff::civil::Date;
-use std::{env, error::Error, path::Path, process::ExitCode};
+use std::{
+    env,
+    error::Error,
+    ffi::{OsStr, OsString},
+    path::Path,
+    process::ExitCode,
+};
 
 const USAGE: &str = "\
 cost_recovery_cli -- EV cost recovery for one billing period.
@@ -39,7 +45,10 @@ Examples:
 ";
 
 fn main() -> ExitCode {
-    let args: Vec<String> = env::args().skip(1).collect();
+    // `args_os`, not `args`: `env::args()` panics on an argument that is not valid
+    // Unicode, and a report path need not be. The date and the schedules are read as text below,
+    // where failing to be text is an argument error rather than a crash in `std::env`.
+    let args: Vec<OsString> = env::args_os().skip(1).collect();
 
     if args.iter().any(|a| a == "-h" || a == "--help") {
         print!("{USAGE}");
@@ -62,6 +71,21 @@ fn main() -> ExitCode {
     };
     let reports: Vec<&Path> = reports.iter().map(Path::new).collect();
 
+    // The date and the schedules are the only arguments that have to be text: a path may be any
+    // bytes the platform allows, `YYYY-MM-DD` and `DATE:ON,MID,OFF` may not. Saying so is an
+    // argument error.
+    let (Some(ending), Some(rates_at_start)) = (ending.to_str(), rates_at_start.to_str()) else {
+        eprintln!("error: the closing date and the rate schedule must be valid text");
+        return ExitCode::FAILURE;
+    };
+    let rates_at_end = match rates_at_end.map(OsStr::to_str) {
+        Some(None) => {
+            eprintln!("error: the second rate schedule is not valid text");
+            return ExitCode::FAILURE;
+        }
+        given => given.flatten(),
+    };
+
     match run(ending, rates_at_start, rates_at_end, &reports) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
@@ -74,19 +98,19 @@ fn main() -> ExitCode {
 /// A command line this tool can read: the closing date, one or two rate schedules, then one or more
 /// session reports.
 struct Args<'a> {
-    ending: &'a str,
-    rates_at_start: &'a str,
+    ending: &'a OsStr,
+    rates_at_start: &'a OsStr,
     /// Absent unless the caller gave a second schedule, which is what a rate change inside the
     /// period looks like.
-    rates_at_end: Option<&'a str>,
-    reports: &'a [String],
+    rates_at_end: Option<&'a OsStr>,
+    reports: &'a [OsString],
 }
 
 /// Reads the arguments, or `None` for a list this tool cannot read — one where the reports do not
 /// begin at the argument a rate schedule's position implies. Every argument is positional, so
 /// guessing at a shifted list would price one file's energy at another's rates; the usage is
 /// printed instead.
-fn shape(args: &[String]) -> Option<Args<'_>> {
+fn shape(args: &[OsString]) -> Option<Args<'_>> {
     match args.iter().position(|a| is_csv(a))? {
         2 if args.len() > 2 => Some(Args {
             ending: &args[0],
@@ -108,7 +132,7 @@ fn shape(args: &[String]) -> Option<Args<'_>> {
 ///
 /// The extension, case-insensitively. A rate schedule is `DATE:ON,MID,OFF`, so nothing but a path
 /// ends in `.csv`, and the first argument that does is where the reports begin.
-fn is_csv(arg: &str) -> bool {
+fn is_csv(arg: &OsStr) -> bool {
     Path::new(arg)
         .extension()
         .is_some_and(|e| e.eq_ignore_ascii_case("csv"))
@@ -148,8 +172,8 @@ fn run(
 mod test {
     use super::*;
 
-    fn args(list: &[&str]) -> Vec<String> {
-        list.iter().map(|a| (*a).to_owned()).collect()
+    fn args(list: &[&str]) -> Vec<OsString> {
+        list.iter().map(OsString::from).collect()
     }
 
     /// Where the reports begin decides what the other arguments are, and the rule is the extension
@@ -176,17 +200,20 @@ mod test {
             "June.csv",
         ]);
         let shape = shape(&two).expect("two schedules and two reports");
-        assert_eq!(shape.rates_at_end, Some("2026-06-01:0.12,0.10,0.08"));
+        assert_eq!(
+            shape.rates_at_end,
+            Some(OsStr::new("2026-06-01:0.12,0.10,0.08"))
+        );
         assert_eq!(shape.reports, ["May.csv", "June.csv"]);
     }
 
     /// The extension is read in either case, as a name from a Windows machine will spell it.
     #[test]
     fn the_extension_is_read_whatever_its_case() {
-        assert!(is_csv("/data/Reports.CSV"));
-        assert!(is_csv("June.csv"));
-        assert!(!is_csv("2026-05-01:0.11,0.09,0.07"));
-        assert!(!is_csv("/data/anything"));
+        assert!(is_csv(OsStr::new("/data/Reports.CSV")));
+        assert!(is_csv(OsStr::new("June.csv")));
+        assert!(!is_csv(OsStr::new("2026-05-01:0.11,0.09,0.07")));
+        assert!(!is_csv(OsStr::new("/data/anything")));
     }
 
     /// A list this tool cannot read is refused rather than guessed at: every argument is

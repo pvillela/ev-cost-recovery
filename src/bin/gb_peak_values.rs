@@ -5,7 +5,7 @@ use ev_cost_recovery::{
     hydro_bill::{BILL_END_DAY, bill_start_day},
     time::holidays,
 };
-use std::{env, error::Error, path::Path, process::ExitCode};
+use std::{env, error::Error, ffi::OsString, path::Path, process::ExitCode};
 
 /// The help text. A function rather than a `const` because it states the billing period boundary,
 /// which is [`BILL_END_DAY`] rather than anything this file should be repeating.
@@ -47,7 +47,9 @@ naming what was missing, rather than a workbook with a hole in it.
 }
 
 fn main() -> ExitCode {
-    let args: Vec<String> = env::args().skip(1).collect();
+    // `args_os`, not `args`: `env::args()` panics on an argument that is not valid
+    // Unicode, and a path need not be. Nothing here converts one to text.
+    let args: Vec<OsString> = env::args_os().skip(1).collect();
 
     if args.iter().any(|a| a == "-h" || a == "--help") {
         print!("{}", usage());

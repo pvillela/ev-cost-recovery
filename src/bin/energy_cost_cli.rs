@@ -2,7 +2,7 @@
 //! covering the period's two ends.
 
 use ev_cost_recovery::api::energy_cost;
-use std::{env, error::Error, path::Path, process::ExitCode};
+use std::{env, error::Error, ffi::OsString, path::Path, process::ExitCode};
 
 const USAGE: &str = "\
 energy_cost_cli -- the energy cost attributable to EV charging in one billing period.
@@ -32,7 +32,9 @@ Example:
 ";
 
 fn main() -> ExitCode {
-    let args: Vec<String> = env::args().skip(1).collect();
+    // `args_os`, not `args`: `env::args()` panics on an argument that is not valid
+    // Unicode, and a path need not be. Nothing here converts one to text.
+    let args: Vec<OsString> = env::args_os().skip(1).collect();
 
     if args.iter().any(|a| a == "-h" || a == "--help") {
         print!("{USAGE}");
