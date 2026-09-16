@@ -163,12 +163,7 @@ pub(crate) fn estimates_from_sessions(
     // and a spike has both. Zero `Active_Charge_Time` says the charger reported no charging time,
     // which is worth flagging and does not bear on how much energy reached the segment. See
     // docs/session/README.md, "Anomalies".
-    let rsessions: Vec<RSession> = sessions
-        .sessions
-        .iter()
-        .chain(&sessions.spikes)
-        .cloned()
-        .collect();
+    let rsessions = sessions.countable();
     let segments = segments_for_ioi(ioi, &rsessions);
     let seg_estimates: Vec<(RSegment, EstimateSet)> = segments
         .iter()

@@ -211,13 +211,12 @@ pub(super) fn csv_session_rows(path: &Path) -> Result<SessionRows, SessionCsvErr
         // writes one.
         let csv_row = Table::row_number(i);
         let session = CsvSession::parse(&table, i, csv_row)?;
-        for row in session.resolve(&source, csv_row) {
-            anomalies.extend(row.session.anomalies.iter().map(|&kind| Anomaly {
-                session: row.session.clone(),
-                kind,
-            }));
-            rows.push(row);
-        }
+        let row = session.resolve(&source, csv_row);
+        anomalies.extend(row.session.anomalies.iter().map(|&kind| Anomaly {
+            session: row.session.clone(),
+            kind,
+        }));
+        rows.push(row);
     }
 
     // Anomalies only: there is nothing to compare against on this side, since this is what
@@ -400,13 +399,13 @@ impl CsvSession {
 
     /// Resolves this session's reported wall times to UTC instants.
     ///
-    /// Always one row. Evolute states its times on a clock that does not observe daylight saving —
+    /// Evolute states its times on a clock that does not observe daylight saving —
     /// `common::SESSION_OFFSET` — so a reported wall time names exactly one instant, all year.
     /// There is no repeated hour to choose between and no skipped hour to refuse, which is why
     /// nothing here consults `Conn_Duration` to place the record. That value is still checked, by
     /// [`duration_is_consistent`], but it is now evidence about the record's own consistency rather
     /// than about which instant it sits on.
-    fn resolve(&self, source: &Rc<PathBuf>, row: usize) -> Vec<Row> {
+    fn resolve(&self, source: &Rc<PathBuf>, row: usize) -> Row {
         let mut anomalies = Vec::new();
 
         // avg_kw is a division by Active_Charge_Time. The sheet shows it as #DIV/0!; it is
@@ -431,7 +430,7 @@ impl CsvSession {
             anomalies.push(AnomalyKind::InconsistentDuration);
         }
 
-        vec![self.row(source, row, conn_start, conn_end, anomalies)]
+        self.row(source, row, conn_start, conn_end, anomalies)
     }
 
     /// Builds one output row from a pair of resolved instants.
@@ -542,33 +541,33 @@ mod test {
     /// second, and each is taken exactly as written.
     #[test]
     fn the_reported_end_is_taken_at_face_value() {
-        let rows = session("2026-08-27 12:52:56", "2026-08-27 13:07:36", "0:14:40")
+        let row = session("2026-08-27 12:52:56", "2026-08-27 13:07:36", "0:14:40")
             .resolve(&test_source(), 2);
         assert_eq!(
-            reported_of(rows[0].session.conn_end),
+            reported_of(row.session.conn_end),
             civil::date(2026, 8, 27).at(13, 7, 36, 0)
         );
-        assert!(timing_anomalies(&rows[0].session.anomalies).is_empty());
+        assert!(timing_anomalies(&row.session.anomalies).is_empty());
 
-        let rows = session("2026-08-27 13:09:03", "2026-08-27 15:05:06", "1:56:03")
+        let row = session("2026-08-27 13:09:03", "2026-08-27 15:05:06", "1:56:03")
             .resolve(&test_source(), 2);
         assert_eq!(
-            reported_of(rows[0].session.conn_end),
+            reported_of(row.session.conn_end),
             civil::date(2026, 8, 27).at(15, 5, 6, 0)
         );
-        assert!(timing_anomalies(&rows[0].session.anomalies).is_empty());
+        assert!(timing_anomalies(&row.session.anomalies).is_empty());
     }
 
     /// The row of the real portal export that the tolerance exists for: `16:57:00 + 2:03:50` lands
     /// at `19:00:50` and the report states `19:00:49`. One second out, and sound.
     #[test]
     fn a_record_one_second_out_is_sound() {
-        let rows = session("2026-08-30 16:57:00", "2026-08-30 19:00:49", "2:03:50")
+        let row = session("2026-08-30 16:57:00", "2026-08-30 19:00:49", "2:03:50")
             .resolve(&test_source(), 2);
         assert!(
-            timing_anomalies(&rows[0].session.anomalies).is_empty(),
+            timing_anomalies(&row.session.anomalies).is_empty(),
             "{:?}",
-            rows[0].session.anomalies
+            row.session.anomalies
         );
     }
 
@@ -576,14 +575,10 @@ mod test {
     /// hours behind UTC and not four — not the prevailing four that the date would suggest.
     #[test]
     fn utc_conversion_uses_the_fixed_offset_in_june() {
-        let rows =
+        let row =
             session("2026-06-01 16:22", "2026-06-01 21:29", "5:07:53").resolve(&test_source(), 2);
         assert_eq!(
-            rows[0]
-                .session
-                .conn_start
-                .to_zoned(TimeZone::UTC)
-                .datetime(),
+            row.session.conn_start.to_zoned(TimeZone::UTC).datetime(),
             civil::date(2026, 6, 1).at(21, 22, 0, 0)
         );
     }
@@ -592,30 +587,25 @@ mod test {
     /// read the same way. Nothing about the record has to say which reading is meant.
     #[test]
     fn utc_conversion_uses_the_fixed_offset_in_november() {
-        let rows =
+        let row =
             session("2026-11-01 01:30", "2026-11-01 04:30", "3:00:00").resolve(&test_source(), 2);
-        assert_eq!(rows.len(), 1);
         assert_eq!(
-            rows[0]
-                .session
-                .conn_start
-                .to_zoned(TimeZone::UTC)
-                .datetime(),
+            row.session.conn_start.to_zoned(TimeZone::UTC).datetime(),
             civil::date(2026, 11, 1).at(6, 30, 0, 0)
         );
-        assert!(timing_anomalies(&rows[0].session.anomalies).is_empty());
+        assert!(timing_anomalies(&row.session.anomalies).is_empty());
     }
 
     /// A reported boundary carrying seconds is ordinary: the portal states seconds, and no
     /// allowance is made for truncation.
     #[test]
     fn a_boundary_carrying_seconds_is_sound() {
-        let rows = session("2026-06-10 02:00:30", "2026-06-10 03:00:00", "0:59:30")
+        let row = session("2026-06-10 02:00:30", "2026-06-10 03:00:00", "0:59:30")
             .resolve(&test_source(), 2);
         assert!(
-            timing_anomalies(&rows[0].session.anomalies).is_empty(),
+            timing_anomalies(&row.session.anomalies).is_empty(),
             "{:?}",
-            rows[0].session.anomalies
+            row.session.anomalies
         );
     }
 
@@ -623,39 +613,37 @@ mod test {
     /// instant, and the record is never duplicated.
     #[test]
     fn a_wall_time_in_the_former_fold_names_one_instant() {
-        let rows =
+        let row =
             session("2026-11-01 01:10", "2026-11-01 01:40", "0:30:00").resolve(&test_source(), 2);
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].session.id, "S1");
+        assert_eq!(row.session.id, "S1");
         // 01:10 at -05:00.
         assert_eq!(
-            rows[0].session.conn_start,
+            row.session.conn_start,
             "2026-11-01T06:10:00Z".parse::<Timestamp>().unwrap()
         );
-        assert!(timing_anomalies(&rows[0].session.anomalies).is_empty());
+        assert!(timing_anomalies(&row.session.anomalies).is_empty());
     }
 
     /// The zone has no gap either. A wall time the prevailing clock skips is an ordinary reading
     /// here, so the record keeps its instants and carries no anomaly.
     #[test]
     fn a_wall_time_in_the_former_gap_is_ordinary() {
-        let rows =
+        let row =
             session("2026-03-08 02:10", "2026-03-08 02:40", "0:30:00").resolve(&test_source(), 2);
-        assert_eq!(rows.len(), 1);
         assert_eq!(
-            rows[0].session.conn_start,
+            row.session.conn_start,
             "2026-03-08T07:10:00Z".parse::<Timestamp>().unwrap()
         );
-        assert!(timing_anomalies(&rows[0].session.anomalies).is_empty());
+        assert!(timing_anomalies(&row.session.anomalies).is_empty());
     }
 
     /// A session spanning the prevailing clock's transition has the elapsed time its own fields
     /// state. The fixed offset is what makes that arithmetic ordinary: there is no hour to lose.
     #[test]
     fn a_session_spanning_the_transition_has_its_reported_duration() {
-        let rows =
+        let row =
             session("2026-11-01 00:30", "2026-11-01 02:30", "2:00:00").resolve(&test_source(), 2);
-        let row = &rows[0];
+        let row = &row;
         assert_eq!(
             row.session.conn_end.duration_since(row.session.conn_start),
             SignedDuration::from_hours(2)
@@ -667,15 +655,14 @@ mod test {
     /// real readings, and the excluded listing prints them.
     #[test]
     fn an_inconsistent_record_keeps_its_instants() {
-        let rows =
+        let row =
             session("2026-06-15 01:30", "2026-06-15 02:00", "9:00:00").resolve(&test_source(), 2);
-        assert_eq!(rows.len(), 1);
         assert_eq!(
-            rows[0].session.conn_start,
+            row.session.conn_start,
             "2026-06-15T06:30:00Z".parse::<Timestamp>().unwrap()
         );
         assert_eq!(
-            timing_anomalies(&rows[0].session.anomalies),
+            timing_anomalies(&row.session.anomalies),
             vec![AnomalyKind::InconsistentDuration]
         );
     }
@@ -684,10 +671,10 @@ mod test {
     /// the workbook's local columns show, verbatim as the report stated them.
     #[test]
     fn a_row_keeps_the_wall_times_the_report_stated() {
-        let rows =
+        let row =
             session("2026-03-08 02:30", "2026-03-08 04:00", "1:30:00").resolve(&test_source(), 2);
-        assert_eq!(rows[0].start_local, dt("2026-03-08 02:30"));
-        assert_eq!(rows[0].end_local, dt("2026-03-08 04:00"));
+        assert_eq!(row.start_local, dt("2026-03-08 02:30"));
+        assert_eq!(row.end_local, dt("2026-03-08 04:00"));
     }
 
     /// Zero `Active_Charge_Time` is flagged whatever the energy: the `avg_kw` cell shows `#DIV/0!`
@@ -697,9 +684,9 @@ mod test {
         for energy in [5.0, 0.0] {
             let mut s = session("2026-06-01 10:00", "2026-06-01 10:00", "0:00:00");
             s.energy_use = energy;
-            let rows = s.resolve(&test_source(), 7);
+            let row = s.resolve(&test_source(), 7);
             assert_eq!(
-                timing_anomalies(&rows[0].session.anomalies),
+                timing_anomalies(&row.session.anomalies),
                 vec![AnomalyKind::ZeroActiveChargeTime],
                 "energy {energy}"
             );
@@ -718,7 +705,6 @@ mod test {
         let kinds = |start, end, conn| {
             let all = session(start, end, conn)
                 .resolve(&test_source(), 2)
-                .swap_remove(0)
                 .session
                 .anomalies
                 .clone();

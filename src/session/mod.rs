@@ -30,7 +30,10 @@ mod site_model;
 
 // --- Named outside the crate -------------------------------------------------------------------
 
-pub use common::{Segment, Session, Sessions};
+// `RSession` among them: `Sessions::sessions` and `Segment::sessions` are public fields typed
+// with it, and the API's estimating calls take it. A caller that has to write the type needs to be
+// able to name it -- which is the whole point of an alias, and what `unnameable_types` cannot see.
+pub use common::{RSession, Segment, Session, Sessions};
 pub use excel::SessionWriteReport;
 pub use file_name::{SessionReportNameError, parse_session_report_name, report_coverage};
 // `Estimate` is what a caller passes `IntervalEstimates::to_markdown` to say which figure to mark,
@@ -57,7 +60,6 @@ pub use common::{BREAKER_MAX_NORMAL_KW, BREAKER_RATING_KW};
 
 // --- Named elsewhere inside the crate ----------------------------------------------------------
 
-pub(crate) use common::RSession;
 pub(crate) use csv::csv_sessions;
 // Overwrites without asking; the policy is `api::session_csv_to_xlsx`'s. See its doc comment.
 pub(crate) use energy::tou_kwh;
