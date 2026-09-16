@@ -16,21 +16,19 @@ use crate::{
         BILL_END_DAY, BillingPeriod, NotABillingPeriodEnding, billing_period_dates,
         billing_period_span,
     },
-    markdown::{amounts, field, h1, h2, rounding_note, table, wrap},
+    markdown::{Align, Left, Right, amounts, field, h1, h2, rounding_note, table, wrap},
     session::{AnomalyKind, RSession, SessionNotes, TouKwh, tou_kwh},
     time::{Interval, local_midnight},
 };
 use jiff::{Timestamp, civil::Date};
-use std::{error::Error, fmt, mem};
+use std::{error::Error, fmt, mem, num::ParseFloatError, str::FromStr};
 
 // Through `super`, not through `crate::api`. The two cost breakdowns are computed here in `pure`;
 // reaching them by the path the reading half re-exports them under would point this half of the
 // API at the other, which is the one direction the split exists to prevent.
 use super::{
-    BAND_ALIGNMENT, BAND_HEADERS, band_row,
     energy::{EnergyCost, EnergyError, energy_cost},
     peak_power::{DeliveryCost, PeakPowerError, peak_power_cost},
-    to_the_cent,
 };
 
 // Re-exported because the functions here take these and return those, and a caller should not have
@@ -38,6 +36,9 @@ use super::{
 pub use crate::{green_button::PeriodValues, hydro_bill::HydroBill, session::Sessions};
 
 /// EV cost-recovery TOU rates. The rates are effective for at least one month.
+///
+/// Parses from the form the cost-recovery tools take a schedule in — see
+/// [`FromStr`](CostRecoveryRates#impl-FromStr-for-CostRecoveryRates).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CostRecoveryRates {
     /// Effective date of the rates. Normally, the first day of a month.
@@ -48,6 +49,168 @@ pub struct CostRecoveryRates {
     pub mid_peak: f64,
     /// Off-peak EV cost-recovery rate.
     pub off_peak: f64,
+}
+
+/// The form a schedule is written in, quoted by every error that reports it was not followed.
+const RATE_SCHEDULE_FORM: &str = "expected EFFECTIVE_DATE:ON_PEAK,MID_PEAK,OFF_PEAK, \
+                                  as in 2026-05-01:0.1100,0.0900,0.0700";
+
+/// Which time-of-use band a rate belongs to.
+///
+/// Carried by [`CostRecoveryRatesError`] so a refusal can name the band it is about; the three
+/// rates are positional in the text, and "the second rate" is not what a reader is looking at.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RateBand {
+    OnPeak,
+    MidPeak,
+    OffPeak,
+}
+
+impl RateBand {
+    /// The band's name as the errors write it.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::OnPeak => "on-peak",
+            Self::MidPeak => "mid-peak",
+            Self::OffPeak => "off-peak",
+        }
+    }
+}
+
+/// Why a rate schedule would not read.
+///
+/// Each variant holds the text that failed, so the message can quote it back. A command line has
+/// nowhere else to explain itself, and the three rates are positional: without the band named, a
+/// refusal leaves the reader counting commas.
+#[derive(Debug)]
+pub enum CostRecoveryRatesError {
+    /// No `:` anywhere, so there is no effective date to separate from the rates.
+    NotASchedule { spec: String },
+    /// The part before the `:` is not a date.
+    EffectiveDate { text: String, cause: jiff::Error },
+    /// The part after the `:` is not three comma-separated fields.
+    NotThreeRates { text: String },
+    /// A rate is not a number at all.
+    Rate {
+        band: RateBand,
+        text: String,
+        cause: ParseFloatError,
+    },
+    /// A rate parses as `nan`, `inf` or `-inf`.
+    ///
+    /// Refused here rather than deeper in: all three parse as `f64`, and a band priced at one of
+    /// them still produces a report.
+    NotFinite { band: RateBand, text: String },
+    /// A rate parses as a negative number, which would price a band's energy at less than nothing.
+    Negative { band: RateBand, text: String },
+}
+
+impl fmt::Display for CostRecoveryRatesError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NotASchedule { spec } => write!(
+                f,
+                "cannot read \"{spec}\" as a rate schedule: {RATE_SCHEDULE_FORM}"
+            ),
+            Self::EffectiveDate { text, cause } => write!(
+                f,
+                "cannot read \"{text}\" as an effective date, YYYY-MM-DD: {cause}"
+            ),
+            Self::NotThreeRates { text } => {
+                write!(f, "\"{text}\" is not three rates: {RATE_SCHEDULE_FORM}")
+            }
+            Self::Rate { band, text, cause } => write!(
+                f,
+                "cannot read \"{text}\" as the {} rate: {cause}",
+                band.as_str()
+            ),
+            Self::NotFinite { band, text } => write!(
+                f,
+                "cannot read \"{text}\" as the {} rate: it is not a finite number",
+                band.as_str()
+            ),
+            Self::Negative { band, text } => write!(
+                f,
+                "the {} rate cannot be negative: \"{text}\"",
+                band.as_str()
+            ),
+        }
+    }
+}
+
+impl Error for CostRecoveryRatesError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::EffectiveDate { cause, .. } => Some(cause),
+            Self::Rate { cause, .. } => Some(cause),
+            Self::NotASchedule { .. }
+            | Self::NotThreeRates { .. }
+            | Self::NotFinite { .. }
+            | Self::Negative { .. } => None,
+        }
+    }
+}
+
+impl FromStr for CostRecoveryRates {
+    type Err = CostRecoveryRatesError;
+
+    /// Reads one schedule as the cost-recovery tools take it:
+    /// `EFFECTIVE_DATE:ON_PEAK,MID_PEAK,OFF_PEAK`, as in `2026-05-01:0.1100,0.0900,0.0700`.
+    ///
+    /// One argument rather than four, so that the effective date cannot drift away from the rates
+    /// it belongs to when a second schedule is added to a command line.
+    ///
+    /// Here rather than in either binary because both take the same argument and have to read it
+    /// the same way; compiled into two binaries, it would be two definitions that happen to agree
+    /// today.
+    fn from_str(spec: &str) -> Result<Self, Self::Err> {
+        let (date, rates) =
+            spec.split_once(':')
+                .ok_or_else(|| CostRecoveryRatesError::NotASchedule {
+                    spec: spec.to_owned(),
+                })?;
+
+        let effective_date: Date =
+            date.parse()
+                .map_err(|cause| CostRecoveryRatesError::EffectiveDate {
+                    text: date.to_owned(),
+                    cause,
+                })?;
+
+        let [on_peak, mid_peak, off_peak] = rates.split(',').collect::<Vec<_>>()[..] else {
+            return Err(CostRecoveryRatesError::NotThreeRates {
+                text: rates.to_owned(),
+            });
+        };
+
+        let rate = |s: &str, band: RateBand| -> Result<f64, CostRecoveryRatesError> {
+            let value: f64 = s.parse().map_err(|cause| CostRecoveryRatesError::Rate {
+                band,
+                text: s.to_owned(),
+                cause,
+            })?;
+            if !value.is_finite() {
+                return Err(CostRecoveryRatesError::NotFinite {
+                    band,
+                    text: s.to_owned(),
+                });
+            }
+            if value < 0.0 {
+                return Err(CostRecoveryRatesError::Negative {
+                    band,
+                    text: s.to_owned(),
+                });
+            }
+            Ok(value)
+        };
+
+        Ok(Self {
+            effective_date,
+            on_peak: rate(on_peak, RateBand::OnPeak)?,
+            mid_peak: rate(mid_peak, RateBand::MidPeak)?,
+            off_peak: rate(off_peak, RateBand::OffPeak)?,
+        })
+    }
 }
 
 /// One stretch of a billing period over which a single schedule of rates was in effect: the dates
@@ -541,6 +704,47 @@ fn stretch(
     }
 }
 
+/// One time-of-use band's row in a cost-recovery table: name, kilowatt-hours, rate, recovery.
+///
+/// Shared with `reimbursement`, which prints one table for the month where this module prints one
+/// per stretch of rates. The two differ in how many tables they print, not in what a band's row
+/// holds, and a change to a cell's precision that landed in one and missed the other would be a
+/// difference a reader has no way to explain.
+///
+/// Here rather than in `pure`'s own file because a table of cost-recovery bands is cost-recovery,
+/// and `pure/mod.rs` states what the module holds rather than holding it.
+pub(super) const BAND_HEADERS: [&str; 4] = ["TOU", "kWh", "EV rate", "Recovery"];
+
+/// See [`BAND_HEADERS`]: right against the name, so the three figures line up under each other.
+pub(super) const BAND_ALIGNMENT: [Align; 4] = [Left, Right, Right, Right];
+
+/// See [`BAND_HEADERS`].
+pub(super) fn band_row(name: &str, kwh: f64, rate: f64, recovery: f64) -> Vec<String> {
+    vec![
+        name.to_owned(),
+        format!("{kwh:.3}"),
+        format!("{rate:.5}"),
+        format!("{recovery:.2}"),
+    ]
+}
+
+/// An amount rounded to the cent, as the reports state it.
+///
+/// Shared by the two money reports, each of which prints a column that has to add down to a figure
+/// stated below it: this module's surplus and `reimbursement`'s two variances. A stored figure that
+/// disagreed with the printed column it summarizes reads as an arithmetic error in a report whose
+/// subject is arithmetic.
+///
+/// Through the formatter rather than by arithmetic on the value. `(x * 100.0).round() / 100.0`
+/// rounds a half away from zero while `{:.2}` rounds it to even, so the two disagree on an amount
+/// landing exactly on half a cent. The round trip through a string is what makes the result the
+/// printed figure by construction rather than by an argument that the two rules coincide.
+pub(super) fn to_the_cent(amount: f64) -> f64 {
+    format!("{amount:.2}")
+        .parse()
+        .expect("a decimal written by this formatter parses back")
+}
+
 /// The table one stretch of the period is shown as, bands then total.
 ///
 /// The total row leaves the rate cell empty rather than averaging the three: a weighted mean of
@@ -734,6 +938,108 @@ mod test {
         session::test_support::session,
     };
     use std::{path::PathBuf, rc::Rc};
+
+    /// The form both cost-recovery tools document, read once here rather than agreeing by
+    /// inspection in two binaries.
+    #[test]
+    fn a_schedule_reads_as_the_tools_write_it() {
+        let parsed: CostRecoveryRates = "2026-05-01:0.1100,0.0900,0.0700"
+            .parse()
+            .expect("a schedule");
+        assert_eq!(parsed.effective_date, Date::constant(2026, 5, 1));
+        assert_eq!(
+            (parsed.on_peak, parsed.mid_peak, parsed.off_peak),
+            (0.11, 0.09, 0.07)
+        );
+
+        // Zero is a rate. A schedule pricing one band at nothing is odd but not malformed.
+        let free: CostRecoveryRates = "2026-06-01:0,0,0".parse().expect("a schedule");
+        assert_eq!(
+            (free.on_peak, free.mid_peak, free.off_peak),
+            (0.0, 0.0, 0.0)
+        );
+    }
+
+    /// Every way the argument can be wrong says which part was wrong, because a command line has
+    /// nowhere else to explain itself.
+    ///
+    /// Matched on the variant as well as the message: the variants are the reason this is a typed
+    /// error rather than a `String`, and a caller that wants to act on which part failed reads
+    /// them rather than the prose.
+    #[test]
+    fn a_schedule_that_will_not_read_names_the_part_that_failed() {
+        use CostRecoveryRatesError as E;
+
+        let cases: [(&str, &str, fn(&E) -> bool); 7] = [
+            ("bad", "as a rate schedule", |e| {
+                matches!(e, E::NotASchedule { .. })
+            }),
+            ("2026-05-01:0.11,0.09", "is not three rates", |e| {
+                matches!(e, E::NotThreeRates { .. })
+            }),
+            (
+                "2026-05-01:0.11,0.09,0.07,0.05",
+                "is not three rates",
+                |e| matches!(e, E::NotThreeRates { .. }),
+            ),
+            ("May 1 2026:0.11,0.09,0.07", "as an effective date", |e| {
+                matches!(e, E::EffectiveDate { .. })
+            }),
+            ("2026-05-01:nan,0.09,0.07", "not a finite number", |e| {
+                matches!(
+                    e,
+                    E::NotFinite {
+                        band: RateBand::OnPeak,
+                        ..
+                    }
+                )
+            }),
+            ("2026-05-01:0.11,inf,0.07", "not a finite number", |e| {
+                matches!(
+                    e,
+                    E::NotFinite {
+                        band: RateBand::MidPeak,
+                        ..
+                    }
+                )
+            }),
+            ("2026-05-01:0.11,0.09,-0.07", "cannot be negative", |e| {
+                matches!(
+                    e,
+                    E::Negative {
+                        band: RateBand::OffPeak,
+                        ..
+                    }
+                )
+            }),
+        ];
+
+        for (spec, expected, is_variant) in cases {
+            let err = spec.parse::<CostRecoveryRates>().expect_err(spec);
+            assert!(is_variant(&err), "{spec}: wrong variant, {err:?}");
+            let message = err.to_string();
+            assert!(message.contains(expected), "{spec}: {message}");
+        }
+    }
+
+    /// A rate that is not a number keeps the cause, so `{:#}` and `source()` reach it.
+    #[test]
+    fn a_rate_that_is_not_a_number_keeps_its_cause() {
+        let err = "2026-05-01:0.11,two,0.07"
+            .parse::<CostRecoveryRates>()
+            .expect_err("a schedule");
+        assert!(
+            matches!(
+                err,
+                CostRecoveryRatesError::Rate {
+                    band: RateBand::MidPeak,
+                    ..
+                }
+            ),
+            "{err:?}"
+        );
+        assert!(err.source().is_some(), "{err:?}");
+    }
 
     /// No sessions at all, as a report.
     ///

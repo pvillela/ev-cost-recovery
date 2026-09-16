@@ -1,7 +1,7 @@
 //! Cost recovery for one billing period, at the EV cost-recovery rates given, from the Evolute
 //! session reports covering the period's two ends.
 
-use ev_cost_recovery::api::{cost_recovery, parse_rates};
+use ev_cost_recovery::api::{CostRecoveryRates, cost_recovery};
 use jiff::civil::Date;
 use std::{env, error::Error, path::Path, process::ExitCode};
 
@@ -126,8 +126,8 @@ fn run(
     let billing_period_ending: Date = ending.parse().map_err(|e| {
         format!("cannot read \"{ending}\" as the billing period's closing date, YYYY-MM-DD: {e}")
     })?;
-    let recovery_rates_at_start = parse_rates(rates1)?;
-    let recovery_rates_at_end = rates2.map(parse_rates).transpose()?;
+    let recovery_rates_at_start: CostRecoveryRates = rates1.parse()?;
+    let recovery_rates_at_end = rates2.map(str::parse).transpose()?;
 
     let recovery = cost_recovery(
         billing_period_ending,

@@ -25,5 +25,9 @@ pub mod time;
 
 mod markdown;
 
+// Number *text*, as a person writes it: the rule both document readers apply before stripping
+// thousands separators. A leaf -- it reads no file and knows no format.
+mod number;
+
 #[cfg(test)]
 mod golden;

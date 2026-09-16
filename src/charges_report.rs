@@ -22,9 +22,10 @@
 //! In production these files sit in the same folder as the session reports.
 
 use crate::{
-    csv::{CsvReadError, Document, Table, commas_group_thousands},
+    csv::{CsvReadError, Document, Table},
     log::{RunLog, SourceLog},
     markdown::{h2, wrap},
+    number::commas_group_thousands,
 };
 use jiff::civil::Date;
 use std::{

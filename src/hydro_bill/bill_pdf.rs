@@ -21,7 +21,7 @@ use super::{
     HydroBill,
     pdf_text::{Fragment, Line, PdfTextError, read_pages},
 };
-use crate::csv::commas_group_thousands;
+use crate::number::commas_group_thousands;
 use jiff::civil::Date;
 use std::{
     error::Error,

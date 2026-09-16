@@ -2,7 +2,7 @@
 //! the Toronto Hydro bill cost, from the bill, a Green Button export and the session reports
 //! covering the period's two ends.
 
-use ev_cost_recovery::api::{cost_recovery_surplus, parse_rates};
+use ev_cost_recovery::api::{CostRecoveryRates, cost_recovery_surplus};
 use std::{env, error::Error, path::Path, process::ExitCode};
 
 const USAGE: &str = "\
@@ -142,8 +142,8 @@ fn run(
 ) -> Result<(), Box<dyn Error>> {
     // The rates are read before anything is opened, so a typo in one is reported as such rather
     // than after a bill and a year of meter readings have been parsed.
-    let recovery_rates_at_start = parse_rates(rates1)?;
-    let recovery_rates_at_end = rates2.map(parse_rates).transpose()?;
+    let recovery_rates_at_start: CostRecoveryRates = rates1.parse()?;
+    let recovery_rates_at_end = rates2.map(str::parse).transpose()?;
 
     let surplus = cost_recovery_surplus(
         bill_pdf,

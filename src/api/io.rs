@@ -52,8 +52,9 @@ pub use crate::{
     api::{
         ApiError,
         pure::{
-            CostRecovery, CostRecoveryRates, CostRecoverySurplus, DeliveryCost, Energy, EnergyCost,
-            PowerEstimates, ReimbursementReconciliation,
+            CostRecovery, CostRecoveryRates, CostRecoveryRatesError, CostRecoverySurplus,
+            DeliveryCost, Energy, EnergyCost, PowerEstimates, RateBand,
+            ReimbursementReconciliation,
         },
     },
     green_button::GbWriteReport,

@@ -23,7 +23,7 @@ use crate::{
 use jiff::civil::Date;
 use std::{error::Error, fmt};
 
-use super::{BAND_ALIGNMENT, BAND_HEADERS, band_row, to_the_cent};
+use super::recovery::{BAND_ALIGNMENT, BAND_HEADERS, band_row, to_the_cent};
 
 // Re-exported for the same reason `recovery` re-exports what it takes: a caller should not have to
 // know which module a type comes from in order to spell the call.
