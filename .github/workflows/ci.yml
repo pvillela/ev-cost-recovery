@@ -1,0 +1,46 @@
+name: CI
+
+# Every push and every pull request. The release workflow runs on tags alone, so until this one
+# existed a broken test, a clippy warning or a rotted intra-doc link was discovered when a release
+# was tagged — and the examples were compiled by nothing at all.
+on:
+  push:
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    name: Test, lint and document
+    # Pinned to the same image the release is built on, so a failure here and a failure there are
+    # the same failure. See the release workflow for why 22.04 rather than `ubuntu-latest`.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+      # The app opens files through rfd's GTK backend on Linux (see Cargo.toml), which compiles
+      # against GTK's headers. Without them the build fails rather than falling back to anything.
+      - name: Install GTK development files
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libgtk-3-dev
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      # Warnings are errors here: a warning that nobody sees is a warning that accumulates. This is
+      # also the only job that compiles the examples, benches and test targets.
+      - name: Lint every target and feature
+        run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: Test every target and feature
+        run: cargo test --all-targets --all-features
+      # The two data-gated tests are `#[ignore]`d because the sample invoice and the sample export
+      # are not in the repository — they are real customer documents. Each reports a skip when its
+      # file is absent, so this pass is green on a fresh checkout and checks the real parse wherever
+      # the data is present. Without it, the ignored set would only ever be run by hand.
+      - name: Run the data-gated tests too
+        run: cargo test --all-targets --all-features -- --ignored
+      # The cheapest rename detector the crate has: a broken intra-doc link is a `warning`, not an
+      # error, so without this flag `cargo doc` would stay green while a type lost its only path.
+      - name: Check the intra-doc links
+        env:
+          RUSTDOCFLAGS: -D rustdoc::broken_intra_doc_links
+        run: cargo doc --no-deps --all-features

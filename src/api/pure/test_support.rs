@@ -7,6 +7,12 @@
 //!
 //! What stays with a module's own tests is anything that reads a result rather than builds an
 //! input. Those are about one operation and belong beside it.
+//!
+//! A module may also keep an input of its own where the *values* are the point: `energy`'s
+//! `round_bill` is a bill whose lines divide into rates of 0.20, 0.15 and 0.10, so the arithmetic
+//! under test can be followed on paper. It is named for what it is rather than as another `bill`,
+//! and the two are not expected to agree — which is the distinction that keeps this rule from being
+//! an instruction to delete a fixture on sight.
 
 use crate::{
     green_button::{Peak, PeriodValues},

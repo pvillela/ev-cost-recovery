@@ -41,7 +41,7 @@ Implications:
 - Bracketing of values is no longer appropriate. The Bracket type should be removed.
 - Most logic related to the DST fold and gap should be removed. Only logic related to the display of
   data in local time (where required) would likely survive.
-- The `docs/session/time-reporting-uncertainty.md` document becomes obsolete. The invariant
+- The `docs/archive/session/time-reporting-uncertainty.md` document becomes obsolete. The invariant
   `Conn_DateTime_Start + Conn_Duration == Conn_DateTime_End` or its UTC equivalent should be used to
   judge start-end time consistency.
 - Anomalies related to the above that are no longer needed should be removed.

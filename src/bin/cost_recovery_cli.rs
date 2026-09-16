@@ -1,7 +1,7 @@
 //! Cost recovery for one billing period, at the EV cost-recovery rates given, from the Evolute
 //! session reports covering the period's two ends.
 
-use ev_cost_recovery::api::{CostRecoveryRates, cost_recovery};
+use ev_cost_recovery::api::{cost_recovery, parse_rates};
 use jiff::civil::Date;
 use std::{env, error::Error, path::Path, process::ExitCode};
 
@@ -50,27 +50,57 @@ fn main() -> ExitCode {
     // however many the caller has, so a count no longer tells the two shapes apart. The first
     // argument ending `.csv` is where the reports begin: a rate schedule is
     // `DATE:ON,MID,OFF` and never ends that way.
-    let first_csv = args.iter().position(|a| is_csv(a));
-    let (ending, rates1, rates2, session_csvs) = match (args.as_slice(), first_csv) {
-        ([ending, rates1, csvs @ ..], Some(2)) => (ending, rates1, None, csvs),
-        ([ending, rates1, rates2, csvs @ ..], Some(3)) => (ending, rates1, Some(rates2), csvs),
-        _ => {
-            eprint!("{USAGE}");
-            return ExitCode::FAILURE;
-        }
-    };
-    if session_csvs.is_empty() {
+    let Some(Args {
+        ending,
+        rates_at_start,
+        rates_at_end,
+        reports,
+    }) = shape(&args)
+    else {
         eprint!("{USAGE}");
         return ExitCode::FAILURE;
-    }
-    let session_csvs: Vec<&Path> = session_csvs.iter().map(Path::new).collect();
+    };
+    let reports: Vec<&Path> = reports.iter().map(Path::new).collect();
 
-    match run(ending, rates1, rates2.map(String::as_str), &session_csvs) {
+    match run(ending, rates_at_start, rates_at_end, &reports) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("error: {e}");
             ExitCode::FAILURE
         }
+    }
+}
+
+/// A command line this tool can read: the closing date, one or two rate schedules, then one or more
+/// session reports.
+struct Args<'a> {
+    ending: &'a str,
+    rates_at_start: &'a str,
+    /// Absent unless the caller gave a second schedule, which is what a rate change inside the
+    /// period looks like.
+    rates_at_end: Option<&'a str>,
+    reports: &'a [String],
+}
+
+/// Reads the arguments, or `None` for a list this tool cannot read — one where the reports do not
+/// begin at the argument a rate schedule's position implies. Every argument is positional, so
+/// guessing at a shifted list would price one file's energy at another's rates; the usage is
+/// printed instead.
+fn shape(args: &[String]) -> Option<Args<'_>> {
+    match args.iter().position(|a| is_csv(a))? {
+        2 if args.len() > 2 => Some(Args {
+            ending: &args[0],
+            rates_at_start: &args[1],
+            rates_at_end: None,
+            reports: &args[2..],
+        }),
+        3 if args.len() > 3 => Some(Args {
+            ending: &args[0],
+            rates_at_start: &args[1],
+            rates_at_end: Some(&args[2]),
+            reports: &args[3..],
+        }),
+        _ => None,
     }
 }
 
@@ -113,50 +143,61 @@ fn run(
     Ok(())
 }
 
-/// One rate schedule, written `EFFECTIVE_DATE:ON_PEAK,MID_PEAK,OFF_PEAK`.
-///
-/// One argument rather than four, so that the effective date cannot drift away from the rates it
-/// belongs to when a second schedule is added to the command line.
-///
-/// Duplicated verbatim in `cost_recovery_surplus_cli.rs`. Change one and change the other: the two
-/// binaries take the same argument and must read it the same way.
-fn parse_rates(spec: &str) -> Result<CostRecoveryRates, String> {
-    const SHAPE: &str = "expected EFFECTIVE_DATE:ON_PEAK,MID_PEAK,OFF_PEAK, \
-                         as in 2026-05-01:0.1100,0.0900,0.0700";
+#[cfg(test)]
+// cargo test --bin cost_recovery_cli -- test --nocapture
+mod test {
+    use super::*;
 
-    let (date, rates) = spec
-        .split_once(':')
-        .ok_or_else(|| format!("cannot read \"{spec}\" as a rate schedule: {SHAPE}"))?;
+    fn args(list: &[&str]) -> Vec<String> {
+        list.iter().map(|a| (*a).to_owned()).collect()
+    }
 
-    let effective_date: Date = date
-        .parse()
-        .map_err(|e| format!("cannot read \"{date}\" as an effective date, YYYY-MM-DD: {e}"))?;
+    /// Where the reports begin decides what the other arguments are, and the rule is the extension
+    /// rather than a count: a schedule is `DATE:ON,MID,OFF` and never ends `.csv`.
+    #[test]
+    fn the_arguments_are_split_where_the_reports_begin() {
+        let one = args(&["2026-06-23", "2026-05-01:0.11,0.09,0.07", "June.csv"]);
+        let Args {
+            ending,
+            rates_at_start,
+            rates_at_end,
+            reports,
+        } = shape(&one).expect("one schedule and one report");
+        assert_eq!(ending, "2026-06-23");
+        assert_eq!(rates_at_start, "2026-05-01:0.11,0.09,0.07");
+        assert_eq!(rates_at_end, None);
+        assert_eq!(reports, ["June.csv"]);
 
-    let [on_peak, mid_peak, off_peak] = rates.split(',').collect::<Vec<_>>()[..] else {
-        return Err(format!("\"{rates}\" is not three rates: {SHAPE}"));
-    };
-    // `"nan"`, `"inf"` and `"-inf"` all parse as `f64`, and a negative parses as itself. A NaN rate
-    // spreads into every total it touches and still produces a report; a negative one prices that
-    // band's energy at less than nothing. Both are refused here, where the band can be named.
-    let rate = |s: &str, band: &str| -> Result<f64, String> {
-        let value: f64 = s
-            .parse()
-            .map_err(|e| format!("cannot read \"{s}\" as the {band} rate: {e}"))?;
-        if !value.is_finite() {
-            return Err(format!(
-                "cannot read \"{s}\" as the {band} rate: it is not a finite number"
-            ));
+        let two = args(&[
+            "2026-06-23",
+            "2026-05-01:0.11,0.09,0.07",
+            "2026-06-01:0.12,0.10,0.08",
+            "May.csv",
+            "June.csv",
+        ]);
+        let shape = shape(&two).expect("two schedules and two reports");
+        assert_eq!(shape.rates_at_end, Some("2026-06-01:0.12,0.10,0.08"));
+        assert_eq!(shape.reports, ["May.csv", "June.csv"]);
+    }
+
+    /// The extension is read in either case, as a name from a Windows machine will spell it.
+    #[test]
+    fn the_extension_is_read_whatever_its_case() {
+        assert!(is_csv("/data/Reports.CSV"));
+        assert!(is_csv("June.csv"));
+        assert!(!is_csv("2026-05-01:0.11,0.09,0.07"));
+        assert!(!is_csv("/data/anything"));
+    }
+
+    /// A list this tool cannot read is refused rather than guessed at: every argument is
+    /// positional, so a shifted list would price one file against another's rates.
+    #[test]
+    fn a_list_that_does_not_fit_the_shape_is_refused() {
+        for list in [vec!["2026-06-23"],
+            vec!["2026-06-23", "June.csv"],
+            vec!["2026-06-23", "2026-05-01:0.11,0.09,0.07"],
+            vec!["2026-06-23", "r1", "r2", "r3", "June.csv"],] {
+            assert!(shape(&args(&list)).is_none(), "{list:?} should be refused");
         }
-        if value < 0.0 {
-            return Err(format!("the {band} rate cannot be negative: \"{s}\""));
-        }
-        Ok(value)
-    };
-
-    Ok(CostRecoveryRates {
-        effective_date,
-        on_peak: rate(on_peak, "on-peak")?,
-        mid_peak: rate(mid_peak, "mid-peak")?,
-        off_peak: rate(off_peak, "off-peak")?,
-    })
+    }
 }

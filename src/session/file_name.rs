@@ -83,11 +83,17 @@ impl fmt::Display for SessionReportNameError {
 
 impl std::error::Error for SessionReportNameError {}
 
-/// The first and last calendar dates a session report's file name says it covers, as in
-/// `Session_Report_June_1_2026-June_30_2026.csv`. The second is inclusive.
+/// The first and last calendar dates a session report's **name** says it covers, as in
+/// `Session_Report_June_1_2026-June_30_2026`. The second is inclusive.
+///
+/// A name, not a file name and not a path: the extension is not part of it, and a caller holding a
+/// path passes `file_stem`, which is what [`report_coverage`] does. So
+/// `Session_Report_June_1_2026-June_30_2026.csv` is a name this rejects — the year it reads from
+/// the closing date is `2026.csv` — and the form its messages quote is the file name a user
+/// renames, which is where the `.csv` belongs.
 ///
 /// A range, not a month. A report covers whatever dates its name states — the portal exports any
-/// start date and any later end date, and `Session_Report_August_28_2026-September_1_2026.csv` is
+/// start date and any later end date, and `Session_Report_August_28_2026-September_1_2026` is
 /// as ordinary as a whole month.
 ///
 /// Nothing else about the file is inspected — in particular, not whether it exists, and not what is

@@ -9,11 +9,10 @@ Usage: ev_csv_to_xlsx <SESSION_REPORT.csv>...
 Each workbook is written beside its input with the extension replaced. A file already standing
 where the workbook would go is refused, not overwritten: move or delete it first.
 
-Rows needing a judgement
-call — a session with no charge time, one drawing more power than the breaker should allow, one
-whose reported start, end and duration contradict each other — are reported on stderr and recorded
-in the workbook's Anomalies column; they do not stop the conversion. Row numbers are rows of the
-CSV, counting the header.
+Rows needing a judgement call — a session with no charge time, one drawing more power than the
+breaker should allow, one whose reported start, end and duration contradict each other — are
+reported on stderr and recorded in the workbook's Anomalies column; they do not stop the
+conversion. Row numbers are rows of the CSV, counting the header.
 
 A .session.convert.log is written beside the workbook. It lists the same findings, or says there
 were none.";

@@ -9,8 +9,9 @@ ignore-dev-dependencies = true
 
 # An OR expression resolves to the first accepted entry, so this order is the
 # preference order. GPL-2.0-only and LGPL-2.1-or-later are deliberately absent:
-# excluding them is what makes self_cell resolve to Apache-2.0 and r-efi to MIT,
-# rather than a choice that would have to be defended somewhere.
+# excluding them is what makes self_cell resolve to Apache-2.0, rather than a
+# choice that would have to be defended somewhere. (r-efi, which arrives on UEFI
+# targets alone, is dropped by `targets` above before this list is consulted.)
 accepted = [
     "MIT",
     "Apache-2.0",

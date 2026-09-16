@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # scripts/gen-notices.sh
 #
-# Generates THIRD-PARTY-NOTICES.md and stamps it with a hash of the inputs it was made from.
+# Generates THIRD-PARTY-NOTICES.md and stamps it with two hashes: the inputs it was made from, and
+# the text it wrote.
 #
-# `build.rs` recomputes that hash on release builds and refuses to build if it does not match, so
-# a release binary cannot embed notices that have fallen behind the dependency graph. The file is
-# gitignored: a committed copy would go stale the moment a dependency moved, and a stale notice is
-# worse than none -- it names crates the binary no longer carries and omits ones it does.
+# `build.rs` recomputes both on release builds and refuses to build if either does not match, so a
+# release binary cannot embed notices that have fallen behind the dependency graph, nor notices
+# somebody has edited. The file is gitignored: a committed copy would go stale the moment a
+# dependency moved, and a stale notice is worse than none -- it names crates the binary no longer
+# carries and omits ones it does.
 #
 # Installs cargo-about if it is missing, so this script is the only thing anyone needs to know
 # about. Runs from anywhere: it moves to the repository root itself.
@@ -46,9 +48,16 @@ fi
 
 cargo about generate about.md.hbs -o "$OUTPUT"
 
-# Appended rather than templated in: the template renders what cargo-about knows about, and it
-# knows nothing about the lockfile that decided its input.
+# Two hashes, appended rather than templated in: the template renders what cargo-about knows about,
+# and it knows nothing about the lockfile that decided its input, nor about the text it has just
+# written.
+#
+# The inputs hash catches notices that have fallen behind the dependency graph. The body hash
+# catches the file itself having been edited: without it, deleting a licence section and leaving
+# the stamp alone passed every check, which is exactly what the template tells a reader cannot
+# happen. Hashed before the stamp is appended, so the hash covers the generated text alone.
+body=$(sha256sum "$OUTPUT" | cut -d' ' -f1)
 hash=$(cat "${INPUTS[@]}" | sha256sum | cut -d' ' -f1)
-printf '\n<!-- inputs-sha256: %s -->\n' "$hash" >> "$OUTPUT"
+printf '\n<!-- inputs-sha256: %s body-sha256: %s -->\n' "$hash" "$body" >> "$OUTPUT"
 
-echo "gen-notices: wrote $OUTPUT ($(wc -c < "$OUTPUT") bytes, inputs-sha256 $hash)"
+echo "gen-notices: wrote $OUTPUT ($(wc -c < "$OUTPUT") bytes, inputs-sha256 $hash, body-sha256 $body)"

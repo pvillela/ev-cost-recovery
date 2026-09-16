@@ -67,8 +67,10 @@ jobs:
         with:
           targets: ${{ matrix.target }}
       # Ahead of the build so a failure stops the release before any artifact is uploaded.
+      # `--all-targets`: the release and test builds do not compile the same code, which is exactly
+      # how a broken example or test target once reached a tag.
       - name: Run tests
-        run: cargo test --verbose
+        run: cargo test --all-targets --verbose
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-about

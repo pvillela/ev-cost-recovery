@@ -42,12 +42,12 @@ Do not edit the derived values to a literal — `ev_pilot_current_a()`, `ev_appa
 
 ## Likely to change: a different utility or province
 
-- `src/hydro_bill/billing_period.rs:70` — `BILL_END_DAY = 23`, the day of the month a period closes
+- `src/hydro_bill/billing_period.rs` — `BILL_END_DAY = 23`, the day of the month a period closes
   on. Changing it moves every billing period boundary in the crate. `MAX_BILL_END_DAY = 27` bounds
   what the type will accept.
-- `src/time/base.rs:16` — `TIME_ZONE_NAME = "America/Toronto"`, and `TZ_OFFSETS`, which names the
+- `src/time/base.rs` — `TIME_ZONE_NAME = "America/Toronto"`, and `TZ_OFFSETS`, which names the
   two offsets `EST` and `EDT` as a bill reader would recognise them.
-- `src/time/base.rs:88` — `BILLING_OFFSET`, the standard-time entry of `TZ_OFFSETS`. Toronto Hydro
+- `src/time/base.rs` — `BILLING_OFFSET`, the standard-time entry of `TZ_OFFSETS`. Toronto Hydro
   cuts a billing period on standard time all year round; another utility may not.
 - `src/time/tou.rs` — `SUMMER_WEEKDAY` and `WINTER_WEEKDAY`, the 07:00 / 11:00 / 17:00 / 19:00
   boundaries, and the May–October summer window. Ontario Energy Board policy, quoted in the module
@@ -56,7 +56,7 @@ Do not edit the derived values to a literal — `ev_pilot_current_a()`, `ev_appa
 - `src/time/holidays.rs` — the OEB Time-of-Use holiday calendar, deliberately not the Employment
   Standards Act list. The August Civic Holiday is on it; leaving it out reclassifies a summer
   weekday's 07:00–19:00 block.
-- `src/green_button/common.rs:23` — `METER_INTERVAL`, one hour. Checked against the feed rather than
+- `src/green_button/common.rs` — `METER_INTERVAL`, one hour. Checked against the feed rather than
   assumed, so a 15-minute export fails in `parse_espi_xml` rather than reading wrongly.
 - `src/hydro_bill/bill.rs` — the *set* of `HydroBill` fields, not a constant but the same question. A
   utility with different line items needs new fields, and `bill_pdf.rs` refuses a charge line it
@@ -64,18 +64,18 @@ Do not edit the derived values to a literal — `ev_pilot_current_a()`, `ev_appa
 
 ## Likely to change: a different vendor or file layout
 
-- `src/hydro_bill/bill_pdf.rs:41` — `CHARGE_COLUMN_RIGHT = 360.0`, in PDF points, the vertical cut
+- `src/hydro_bill/bill_pdf.rs` — `CHARGE_COLUMN_RIGHT = 360.0`, in PDF points, the vertical cut
   that removes the promotional column. Tied to where this issuer prints things.
 - `src/hydro_bill/bill_pdf.rs` — every charge label matched there, and `MONTHS`, the month
   abbreviations as the bill spells them.
-- `src/hydro_bill/pdf_text.rs:37` — `ROW_TOLERANCE = 1.5`, how far off a shared baseline a label and
+- `src/hydro_bill/pdf_text.rs` — `ROW_TOLERANCE = 1.5`, how far off a shared baseline a label and
   its value may sit.
-- `src/session/csv.rs:54` — `REQUIRED_HEADERS`, the charger vendor's session-export columns.
-- `src/charges_report.rs:27` — `REQUIRED_HEADERS`, and `DATE_FORMAT = "%d-%b-%y"` on line 33.
-- `src/session/excel.rs:418` — `SESSION_REPORT_PREFIX`, and `src/session/file_name.rs`, which reads
+- `src/session/csv.rs` — `REQUIRED_HEADERS`, the charger vendor's session-export columns.
+- `src/charges_report.rs` — `REQUIRED_HEADERS`, and `DATE_FORMAT = "%d-%b-%y"` beside it.
+- `src/session/excel.rs` — `SESSION_REPORT_PREFIX`, and `src/session/file_name.rs`, which reads
   `Session_Report_June_1_2026-June_30_2026.csv` with English month names spelled in full;
   `src/charges_report.rs` reads `XX-XX_Charges_June 2026-June 2026.csv` the same way.
-- `src/green_button/espi.rs:52` — the unit-of-measure codes 72, 38 and 61 for kWh, kW and kVA.
+- `src/green_button/espi.rs` — the unit-of-measure codes 72, 38 and 61 for kWh, kW and kVA.
   Standard ESPI, but a feed that omits kVA changes what can be reported.
 
 ## Probably fine as they are
@@ -84,7 +84,7 @@ Properties of the reporting grid rather than of the site:
 
 - `src/session/common.rs` — `DURATION_TOLERANCE`, 1 second, the slack allowed between a session's
   reported duration and its reported span. Its doc comment carries the evidence for the value.
-- `src/session/common.rs:59` — `SEGMENT_DURATION`, 15 minutes.
+- `src/session/common.rs` — `SEGMENT_DURATION`, 15 minutes.
 - Spreadsheet cosmetics in `src/green_button/excel.rs` and `src/session/excel.rs`: fonts, column
   widths, number formats.
 

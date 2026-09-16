@@ -59,18 +59,24 @@ pub const BREAKER_MAX_NORMAL_KW: f64 =
 
 /// Whether a record's reported start, end and duration can all be true at once.
 ///
-/// One check: `conn_start + conn_duration` must land within [`DURATION_TOLERANCE`] of `conn_end`,
-/// either side. Any failure raises [`AnomalyKind::InconsistentDuration`].
+/// Two checks. The end must not precede the start, and `conn_start + conn_duration` must land
+/// within [`DURATION_TOLERANCE`] of `conn_end`, either side. Any failure raises
+/// [`AnomalyKind::InconsistentDuration`].
 ///
-/// An inversion is caught without a check of its own. `conn_duration` is unsigned, so
-/// `conn_start + conn_duration` is never before `conn_start`; a record whose end precedes its start
-/// therefore misses by the whole inversion. That matters because [`Session::intersects`] panics on
-/// an inverted span and names exclusion by this test as the reason it cannot happen.
+/// The inversion is checked in its own right rather than left to the tolerance, which cannot see
+/// all of them. A one-second inversion with a zero `Conn_Duration` misses `conn_end` by exactly
+/// `DURATION_TOLERANCE`, so the comparison below would call the record consistent and the
+/// estimating logic would meet an inverted span — which [`Session::intersects`] panics on, in
+/// `Interval::from_start_end`. An inverted record has to be excluded whatever the arithmetic says,
+/// so the arithmetic is not asked.
 pub(crate) fn duration_is_consistent(
     conn_start: Timestamp,
     conn_end: Timestamp,
     conn_duration: Duration,
 ) -> bool {
+    if conn_end < conn_start {
+        return false;
+    }
     let implied_end = conn_start + conn_duration;
     let gap = match implied_end >= conn_end {
         true => implied_end.duration_since(conn_end),
@@ -159,14 +165,12 @@ pub struct Session {
     /// Exclusive: `[conn_start, conn_end)` is the span every estimate places the session on, so a
     /// session starting at this instant abuts this one rather than overlapping it.
     pub conn_end: Timestamp,
-    /// `Conn_Duration` from `session report`: the physical elapsed time of the connection, which
-    /// is what `duration_is_consistent` checks the reported start and end against.
-    pub conn_duration: Duration,
     /// Active charge time from `session report`.
     ///
     /// Differs from the reported span — [`Self::conn_end`] less [`Self::conn_start`], which
-    /// `Session::interval` places the session on — and from `conn_duration` by about a second. It
-    /// does **not** measure charging as distinct from connection. Evolute, 22 Jul 2026:
+    /// `Session::interval` places the session on — and from the report's own `Conn_Duration` by
+    /// about a second. It does **not** measure charging as distinct from connection. Evolute,
+    /// 22 Jul 2026:
     ///
     /// > All 3 will show as almost the same, with Active charging being off by maybe 1 second due
     /// > to rounding as it is on a slightly different timer. These fields are here for grant
@@ -679,8 +683,8 @@ impl fmt::Display for AnomalyKind {
             }
             Self::InconsistentDuration => {
                 "reported start, end and duration contradict each other by more than a second, \
-                 which is the rounding the source does; the session is excluded from every \
-                 estimate"
+                 which is the rounding the source does, or report an end before the start; the \
+                 session is excluded from every estimate"
             }
             Self::ExcessiveAvgKw => {
                 "average kilowatts above the Evolute breaker rating at the top of the normal \
@@ -742,17 +746,19 @@ pub struct Sessions {
     /// legitimately zero, and it still occupies a breaker.
     pub sessions: Vec<RSession>,
     /// Sessions with zero `Active_Charge_Time`, so [`Session::charge_time`] is zero and energy
-    /// over charge time is infinite or `NaN`. Kept out of `session` because those values would
-    /// swamp or poison any segment they entered.
+    /// over charge time is infinite or `NaN`.
+    ///
+    /// Kept apart from [`Self::sessions`] because the two differ in what a reader has to do about
+    /// them, not because the value is unusable. What a session contributes to an estimate is its
+    /// energy prorated over its connection span, and a spike has both, so these take part in every
+    /// estimate on the same footing as any other session. [`Session::avg_kw`] keeps the infinity or
+    /// `NaN` rather than substituting a figure, and the estimate never asks it.
     ///
     /// Surfaced rather than dropped because such a row is almost certainly a **reporting fault**
-    /// and someone should see it. That is a correction: the reason given here used to be that
-    /// energy delivered in no time at all is what a demand charge bills on, which read the field
-    /// as a real measurement of charging. Evolute has since stated that the three duration fields
-    /// track the same thing to within about a second and are not measured separately, so a zero
-    /// beside a non-zero `Energy_Use` is a contradiction in the report rather than an event. See
-    /// `Questions_for_Evolute.md`, "Answers received". [`Session::avg_kw`] substitutes a finite
-    /// figure so the row can still be listed. See docs/session/README.md, "Anomalies".
+    /// and someone should see it: Evolute states that the three duration fields track the same
+    /// thing to within about a second and are not measured separately, so a zero beside a non-zero
+    /// `Energy_Use` is a contradiction in the report rather than an event. See
+    /// `Questions_for_Evolute.md`, "Answers received". See docs/session/README.md, "Anomalies".
     pub spikes: Vec<RSession>,
     /// Sessions that cannot be placed on a timeline — every kind [`AnomalyKind::excludes_session`]
     /// names. Either the reported start, end and duration contradict each other, or a reported wall
@@ -945,6 +951,7 @@ impl Sessions {
     /// out whatever the figure is, and every file read is worth naming even when it contributed
     /// nothing — that is the case a reader cannot tell from a wrong file otherwise.
     pub fn notes(&self, relevant: fn(&AnomalyKind) -> bool) -> SessionNotes {
+        let excluded = self.excluded.clone();
         let own = self
             .sessions
             .iter()
@@ -961,8 +968,15 @@ impl Sessions {
             anomalies: own
                 .chain(self.anomalies.iter().cloned())
                 .filter(|a| relevant(&a.kind))
+                // A left-out session is not one "needing a look": that section says its rows count
+                // towards the figures, and these do not. Its anomalies are listed with the session
+                // itself under "Sessions left out", which prints every one it carries.
+                //
+                // By identity, not by kind: the two lists hold the same `Rc` when a record is in
+                // both, and a session's duplicate-id flag matters only if the session counts.
+                .filter(|a| !excluded.iter().any(|e| Rc::ptr_eq(e, &a.session)))
                 .collect(),
-            excluded: self.excluded.clone(),
+            excluded,
             logs: self.logs.clone(),
         }
     }
@@ -1047,7 +1061,6 @@ mod test {
             id: id.to_owned(),
             conn_start,
             conn_end: conn_start + conn_duration,
-            conn_duration,
             charge_time: conn_duration,
             energy_use,
             anomalies: Vec::new(),
@@ -1301,6 +1314,38 @@ mod test {
         ] {
             assert_eq!(notes.excluded.len(), 1, "{notes:?}");
             assert!(!notes.is_clean());
+        }
+    }
+
+    /// A session that is left out is not also listed as one needing a look.
+    ///
+    /// The two sections say opposite things about the same row — one that its figures take no part
+    /// in any total, the other that its rows count towards them — and a session carries its
+    /// exclusion anomaly like any other, so it reached both. A reader reconciling the month was
+    /// told the same record counted and did not.
+    #[test]
+    fn a_left_out_session_is_not_listed_as_counting() {
+        let mut broken = session("June.csv", 2, "BAD", "2026-06-01T12:00:00Z", 4.0);
+        Rc::get_mut(&mut broken)
+            .expect("sole owner")
+            .anomalies
+            .push(AnomalyKind::InconsistentDuration);
+        let report = Sessions::from_session_lists(
+            vec![vec![broken]],
+            vec![PathBuf::from("June.csv")],
+            Vec::new(),
+        );
+
+        for notes in [
+            report.notes(AnomalyKind::bears_on_energy),
+            report.notes(|_| true),
+        ] {
+            assert_eq!(notes.excluded.len(), 1, "{notes:?}");
+            assert!(
+                notes.anomalies.is_empty(),
+                "a session that is left out counts towards nothing: {:?}",
+                notes.anomalies
+            );
         }
     }
 

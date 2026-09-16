@@ -16,7 +16,7 @@ use crate::{
         BILL_END_DAY, BillingPeriod, NotABillingPeriodEnding, billing_period_dates,
         billing_period_span,
     },
-    markdown::{Left, Right, amounts, field, h1, h2, rounding_note, table, wrap},
+    markdown::{amounts, field, h1, h2, rounding_note, table, wrap},
     session::{AnomalyKind, RSession, SessionNotes, TouKwh, tou_kwh},
     time::{Interval, local_midnight},
 };
@@ -27,8 +27,10 @@ use std::{error::Error, fmt, mem};
 // reaching them by the path the reading half re-exports them under would point this half of the
 // API at the other, which is the one direction the split exists to prevent.
 use super::{
+    BAND_ALIGNMENT, BAND_HEADERS, band_row,
     energy::{EnergyCost, EnergyError, energy_cost},
     peak_power::{DeliveryCost, PeakPowerError, peak_power_cost},
+    to_the_cent,
 };
 
 // Re-exported because the functions here take these and return those, and a caller should not have
@@ -514,20 +516,6 @@ pub fn cost_recovery_surplus(
     })
 }
 
-/// An amount rounded to the cent, as the reports state it.
-///
-/// Through the formatter rather than by arithmetic on the value. `(x * 100.0).round() / 100.0`
-/// rounds a half away from zero while `{:.2}` rounds it to even, so the two disagree on an amount
-/// landing exactly on half a cent -- and a surplus that disagreed with its own column in that case
-/// would be the one defect this rounding exists to prevent. The round trip through a string is what
-/// makes the result the printed figure by construction rather than by an argument that the two
-/// rules coincide.
-fn to_the_cent(amount: f64) -> f64 {
-    format!("{amount:.2}")
-        .parse()
-        .expect("a decimal written by this formatter parses back")
-}
-
 /// One stretch of the period priced at one schedule of rates.
 ///
 /// The dates and the instants are given separately because they are not the same cut. `from` and
@@ -551,16 +539,6 @@ fn stretch(
         to,
         kwh,
     }
-}
-
-/// The four columns one time-of-use band occupies in a recovery table.
-fn band_row(name: &str, kwh: f64, rate: f64, recovery: f64) -> Vec<String> {
-    vec![
-        name.to_owned(),
-        format!("{kwh:.3}"),
-        format!("{rate:.5}"),
-        format!("{recovery:.2}"),
-    ]
 }
 
 /// The table one stretch of the period is shown as, bands then total.
@@ -595,11 +573,7 @@ fn stretch_table(s: &CostRecoveryStretch) -> String {
             format!("{:.2}", s.recovery()),
         ],
     ];
-    table(
-        &["TOU", "kWh", "EV rate", "Recovery"],
-        &rows,
-        &[Left, Right, Right, Right],
-    )
+    table(&BAND_HEADERS, &rows, &BAND_ALIGNMENT)
 }
 
 impl fmt::Display for CostRecovery {

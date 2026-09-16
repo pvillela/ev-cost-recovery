@@ -346,7 +346,7 @@ The predecessor of this document modelled a generic 75 kVA dry-type unit. Its co
 
 The vehicle side — power factor, THD, pilot current, per-vehicle kVA — did not change, so §1 and §2 carry the same numbers as before.
 
-The archived predecessor is `docs/session/archive/ev-charger-power-factor-and-kva-allocation-20260828.md`. It also carried a table reconciling several rounds of working notes that preceded it; that history is settled and is not repeated here.
+The archived predecessor is `docs/archive/session/ev-charger-power-factor-and-kva-allocation-20260828.md`. It also carried a table reconciling several rounds of working notes that preceded it; that history is settled and is not repeated here.
 
 ---
 

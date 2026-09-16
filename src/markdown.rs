@@ -22,7 +22,33 @@ pub(crate) enum Align {
 pub(crate) use Align::{Left, Right};
 
 /// A markdown pipe table, every cell padded to its column width so it also lines up in monospace.
+///
+/// # Panics
+///
+/// If `align` does not hold one entry per header, or a row does not hold one cell per header.
+/// Both are caller mistakes rather than data errors: every table in the crate is built from a
+/// literal header list with its rows constructed beside it, so a mismatch means the two have
+/// drifted. Rendered anyway, a short `align` silently drops the tail of every row — `zip` stops at
+/// the shorter side — and a short row panics further down, in the width pass, with a message about
+/// an index rather than about the table.
 pub(crate) fn table(headers: &[&str], rows: &[Vec<String>], align: &[Align]) -> String {
+    assert_eq!(
+        align.len(),
+        headers.len(),
+        "a table needs one alignment per column: {} headers, {} alignments",
+        headers.len(),
+        align.len()
+    );
+    for (i, row) in rows.iter().enumerate() {
+        assert_eq!(
+            row.len(),
+            headers.len(),
+            "row {i} has {} cells for {} columns",
+            row.len(),
+            headers.len()
+        );
+    }
+
     let widths: Vec<usize> = headers
         .iter()
         .enumerate()
@@ -141,4 +167,67 @@ pub(crate) fn amounts(rows: &[(&str, f64)]) -> String {
         .map(|(label, amount)| vec![(*label).to_owned(), format!("{amount:.2}")])
         .collect();
     table(&["Item", "Amount"], &cells, &[Left, Right])
+}
+
+// cargo test --lib -- markdown::test
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    /// Every line comes out the same width, which is the whole point of padding the cells: the
+    /// table has to line up in a terminal before it lines up in a renderer, and a report is read as
+    /// text at least as often as it is rendered.
+    #[test]
+    fn every_line_of_a_table_is_one_width() {
+        let rows = vec![
+            vec!["a".to_owned(), "1".to_owned()],
+            vec!["longer".to_owned(), "22".to_owned()],
+        ];
+        let rendered = table(&["Item", "N"], &rows, &[Left, Right]);
+
+        let widths: Vec<usize> = rendered.lines().map(|l| l.chars().count()).collect();
+        assert!(
+            widths.windows(2).all(|w| w[0] == w[1]),
+            "lines differ in width: {widths:?}\n{rendered}"
+        );
+        // Header, rule, then one line per row.
+        assert_eq!(rendered.lines().count(), rows.len() + 2);
+        // Both alignments are written into the rule, which is what a renderer reads.
+        let rule = rendered.lines().nth(1).expect("a rule row");
+        assert!(rule.contains(":--"), "{rule}");
+        assert!(rule.contains("--:"), "{rule}");
+    }
+
+    /// No rows is a header and its rule and nothing else. An empty list is a case the reports hit:
+    /// a period with nothing in it prices no band, and the table is still laid out.
+    #[test]
+    fn a_table_with_no_rows_is_its_header() {
+        let rendered = table(&["Item", "N"], &[], &[Left, Right]);
+        assert_eq!(rendered.lines().count(), 2);
+        assert!(rendered.starts_with("| Item"), "{rendered}");
+    }
+
+    /// A row with fewer cells than the header has columns is refused rather than rendered.
+    ///
+    /// The width pass indexes each row by column, so rendering one would panic there instead, with
+    /// a message about an index rather than about the table.
+    #[test]
+    #[should_panic(expected = "cells for")]
+    fn a_row_shorter_than_the_header_is_refused() {
+        table(&["Item", "N"], &[vec!["a".to_owned()]], &[Left, Right]);
+    }
+
+    /// A short alignment list is refused rather than truncating every row.
+    ///
+    /// `zip` stops at the shorter side, so a table rendered anyway would print rows narrower than
+    /// its own headings and say nothing about it.
+    #[test]
+    #[should_panic(expected = "alignments")]
+    fn an_alignment_list_shorter_than_the_header_is_refused() {
+        table(
+            &["Item", "N"],
+            &[vec!["a".to_owned(), "1".to_owned()]],
+            &[Left],
+        );
+    }
 }

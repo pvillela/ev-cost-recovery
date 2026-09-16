@@ -253,7 +253,7 @@ re-anchored to local midnight in summer — e.g. a mid-June block also starts at
 which is 01:00 local EDT. In effect the file uses a permanent “midnight-EST” day boundary.
 
 Because of this, **both DST-transition days still contain exactly 24 readings** (verified
-by `explore_model.py`):
+by `docs/archive/green_button/python/explore_model.py`):
 
 ```
 2025-03-09 (spring-forward): 24 readings

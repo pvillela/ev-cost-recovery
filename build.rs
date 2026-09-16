@@ -21,8 +21,12 @@ const NOTICES: &str = "THIRD-PARTY-NOTICES.md";
 /// and its order, identical to `scripts/gen-notices.sh`.
 const INPUTS: [&str; 3] = ["Cargo.lock", "about.toml", "about.md.hbs"];
 
-/// The marker `scripts/gen-notices.sh` appends, naming the inputs the file was generated from.
-const STAMP: &str = "<!-- inputs-sha256: ";
+/// The comment `scripts/gen-notices.sh` appends, naming what the file was generated from and what
+/// it holds.
+///
+/// Split on the opener rather than on the first field's name, so that the fields below can be read
+/// by name — splitting on `inputs-sha256:` would consume the very token the check looks for.
+const STAMP: &str = "\n<!-- ";
 
 /// Shown by every build that is not a release. Says so plainly: a developer meeting this in the
 /// About window should not go looking for a bug.
@@ -76,21 +80,41 @@ fn notices() {
 /// Failing is the point. Embedding a placeholder, or a file left over from an older dependency
 /// graph, would ship a binary whose stated licences are not the ones it was built from, and
 /// nothing downstream would catch it.
+///
+/// Two things are checked, because the file has two ways to be wrong. The inputs hash catches
+/// notices that have fallen behind `Cargo.lock`; the body hash catches the text having been edited,
+/// which the template's own advice assumes cannot happen.
 fn release_notices() -> String {
     let Ok(text) = fs::read_to_string(Path::new(NOTICES)) else {
         panic!("{}", complaint("they have not been generated"));
     };
 
-    let stamped = text
-        .rsplit_once(STAMP)
-        .and_then(|(_, rest)| rest.split_once(" -->"))
-        .map(|(hash, _)| hash.trim().to_owned());
+    let Some((body, stamp)) = text.rsplit_once(STAMP) else {
+        panic!("{}", complaint("they carry no inputs-sha256 stamp"));
+    };
+    let Some((stamp, _)) = stamp.split_once(" -->") else {
+        panic!("{}", complaint("their stamp is not closed"));
+    };
+    // `inputs-sha256: <hex> body-sha256: <hex>`, read by name so a third field can be added
+    // without every check below moving.
+    let field = |name: &str| -> Option<&str> {
+        let key = format!("{name}-sha256:");
+        let fields: Vec<&str> = stamp.split_whitespace().collect();
+        let at = fields.iter().position(|f| *f == key)?;
+        fields.get(at + 1).copied()
+    };
 
-    match stamped {
-        Some(hash) if hash == input_hash() => text,
+    match field("inputs") {
+        Some(hash) if hash == input_hash() => {}
         Some(_) => panic!("{}", complaint("they are older than the dependency graph")),
         None => panic!("{}", complaint("they carry no inputs-sha256 stamp")),
     }
+    match field("body") {
+        Some(hash) if hash == sha256(body.as_bytes()) => {}
+        Some(_) => panic!("{}", complaint("they have been edited since they were generated")),
+        None => panic!("{}", complaint("they carry no body-sha256 stamp")),
+    }
+    text
 }
 
 /// Hashes the generating inputs, in the order `scripts/gen-notices.sh` concatenates them.
@@ -100,8 +124,16 @@ fn input_hash() -> String {
         let bytes = fs::read(input).unwrap_or_else(|e| panic!("{input} must be readable: {e}"));
         hasher.update(&bytes);
     }
-    hasher
-        .finalize()
+    hex(hasher.finalize())
+}
+
+fn sha256(bytes: &[u8]) -> String {
+    hex(Sha256::digest(bytes))
+}
+
+fn hex(digest: impl AsRef<[u8]>) -> String {
+    digest
+        .as_ref()
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect()

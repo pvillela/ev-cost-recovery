@@ -61,8 +61,9 @@ other cannot be trusted to say where it belongs. It reads the same doubtful
 times, so no row was dropped on its say-so.
 
 - InconsistentDuration - reported start, end and duration contradict each
-  other by more than a second, which is the rounding the source does; the
-  session is excluded from every estimate.
+  other by more than a second, which is the rounding the source does, or
+  report an end before the start; the session is excluded from every
+  estimate.
 
 
 Anomalies

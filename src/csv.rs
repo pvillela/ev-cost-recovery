@@ -160,7 +160,34 @@ impl Error for CsvReadError {
     }
 }
 
-/// One CSV file, read whole, with its header row resolved to column positions.
+/// Whether every comma in `text` separates a group of three digits.
+///
+/// `1,234.5` and `12,345,678` pass; `1,2`, `,123` and `1,2345` do not, and neither does a comma
+/// after the decimal point. A number with no comma in it passes untouched.
+///
+/// Here rather than in either reader, because both need it over the same question about a different
+/// document: a Charges Report's kWh and Cost columns, and a bill's charge amounts. Each used to
+/// carry its own copy under a comment asking that the two be changed together, which is one
+/// definition wearing the costume of two — and the rule is subtle enough that changing one and
+/// forgetting the other would read `1,2` as 12 in one document and refuse it in the other.
+pub(crate) fn commas_group_thousands(text: &str) -> bool {
+    if !text.contains(',') {
+        return true;
+    }
+    let (integer, fraction) = text.split_once('.').unwrap_or((text, ""));
+    if fraction.contains(',') {
+        return false;
+    }
+    let digits = integer
+        .strip_prefix('-')
+        .or_else(|| integer.strip_prefix('+'))
+        .unwrap_or(integer);
+    let mut groups = digits.split(',');
+    let leading = groups.next().unwrap_or("");
+    (1..=3).contains(&leading.len()) && groups.all(|g| g.len() == 3)
+}
+
+/// An open CSV file, read whole, with its header row resolved to column positions.
 ///
 /// Whole, because a reader is not done with a record when it has parsed it: the session report's
 /// pass-through columns are read again when the workbook is written, long after the parse. Both

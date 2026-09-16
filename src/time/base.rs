@@ -11,8 +11,9 @@ use std::{sync::LazyLock, time::Duration};
 
 /// Time zone the session report's timestamps are stated in. See docs/time/README.md, "Time zone".
 ///
-/// Referenced by `session::ioi` and several doc comments; a reader who finds "in local time" in a
-/// message needs somewhere to learn which zone that is. Not exported from the crate.
+/// Referenced by the doc comments that say "in local time" — a reader who meets one needs
+/// somewhere to learn which zone that is — and resolved once, by `time_zone` below. Not exported
+/// from the crate.
 pub const TIME_ZONE_NAME: &str = "America/Toronto";
 
 /// The offsets the crate-private `TIME_ZONE_NAME` uses, under the names a reader of a Toronto
