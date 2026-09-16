@@ -1,16 +1,11 @@
 //! Turns a Toronto Hydro Green Button export into the peak-values workbook.
 
 use ev_cost_recovery::{
-    green_button::{Feed, read_gb_feed, write_gb_workbook},
+    api::{GbWriteReport, OnExistingWorkbook, gb_xml_to_xlsx},
     hydro_bill::{BILL_END_DAY, bill_start_day},
-    time::{holidays, local_date},
+    time::holidays,
 };
-use std::{
-    env,
-    error::Error,
-    path::{Path, PathBuf},
-    process::ExitCode,
-};
+use std::{env, error::Error, path::Path, process::ExitCode};
 
 /// The help text. A function rather than a `const` because it states the billing period boundary,
 /// which is [`BILL_END_DAY`] rather than anything this file should be repeating.
@@ -73,21 +68,15 @@ fn main() -> ExitCode {
 }
 
 fn run(input: &Path) -> Result<(), Box<dyn Error>> {
-    let output = output_path(input)?;
-    if output.exists() {
-        return Err(format!(
-            "{} already exists. Move or delete it first -- this tool never overwrites its output.",
-            output.display()
-        )
-        .into());
-    }
+    // Through the API rather than `read_gb_feed` and `write_gb_workbook` directly. The API is
+    // where the refusal to overwrite an existing workbook lives, and where the input's own
+    // extension is checked so that a conversion cannot read and write one file. Doing either here
+    // would be a second copy of a rule the desktop app and `ev_csv_to_xlsx` already share.
+    let report = gb_xml_to_xlsx(input, OnExistingWorkbook::Refuse)?;
 
-    let feed = read_gb_feed(input)?;
+    report_holidays(&report);
 
-    report_holidays(&feed);
-
-    let report = write_gb_workbook(&output, &feed, BILL_END_DAY)?;
-    println!("{}", output.display());
+    println!("{}", report.path.display());
     // Reported rather than fatal — the workbook is already on disk, and failing here would claim it
     // was not.
     if let Err(e) = report.log.write() {
@@ -109,40 +98,18 @@ fn run(input: &Path) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-/// The input's path with an `.xlsx` extension.
-///
-/// # Errors
-///
-/// Returns an error if that would name the input itself, which would mean reading and writing the
-/// same file.
-///
-/// The extension is tested rather than the two paths compared. `Feed.XLSX` and the `Feed.xlsx`
-/// derived from it differ as bytes and are the same file on Windows and macOS, and there the
-/// comparison would let the exists-check below report the user's own input as something to move or
-/// delete.
-fn output_path(input: &Path) -> Result<PathBuf, String> {
-    if input
-        .extension()
-        .is_some_and(|ext| ext.eq_ignore_ascii_case("xlsx"))
-    {
-        return Err(format!("{} is already an .xlsx file", input.display()));
-    }
-    Ok(input.with_extension("xlsx"))
-}
-
 /// Prints the holiday calendar actually applied.
 ///
 /// Worth the noise: which days count as holidays decides which hours are off-peak, and therefore
 /// the demand figures the bill is built from. A wrong calendar is otherwise invisible -- it just
 /// produces a slightly different number.
-fn report_holidays(feed: &Feed) {
-    let Some((first, _)) = feed.kwh.values.first_key_value() else {
+///
+/// Read off the report rather than the feed, so that saying which calendar was applied does not
+/// mean parsing an 18 MB export a second time.
+fn report_holidays(report: &GbWriteReport) {
+    let Some((from, to)) = report.covered else {
         return;
     };
-    let Some((last, _)) = feed.kwh.values.last_key_value() else {
-        return;
-    };
-    let (from, to) = (local_date(*first), local_date(*last));
 
     eprintln!("Ontario TOU holidays applied ({from} to {to}):");
     for year in from.year()..=to.year() {
@@ -156,26 +123,5 @@ fn report_holidays(feed: &Feed) {
             };
             eprintln!("  {} {}{}", holiday.date, holiday.name, note);
         }
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    #[test]
-    fn the_output_sits_beside_the_input_with_an_xlsx_extension() {
-        assert_eq!(
-            output_path(Path::new(
-                "data/green_button/TH_Electric_Usage_23-11-2024_to_24-06-2026.XML"
-            ))
-            .unwrap(),
-            PathBuf::from("data/green_button/TH_Electric_Usage_23-11-2024_to_24-06-2026.xlsx")
-        );
-    }
-
-    #[test]
-    fn an_xlsx_input_is_refused_rather_than_read_and_written_at_once() {
-        assert!(output_path(Path::new("already.xlsx")).is_err());
     }
 }

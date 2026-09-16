@@ -30,9 +30,9 @@ use super::{Anomaly, Feed, Peak, PeriodValues, Reading, note_anomalies, period_v
 use crate::{
     error::ConversionError,
     log::{RunLog, SourceLog},
-    time::{serial_of_date, serial_of_instant, serial_of_local},
+    time::{local_date, serial_of_date, serial_of_instant, serial_of_local},
 };
-use jiff::Timestamp;
+use jiff::{Timestamp, civil::Date};
 use std::{
     collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
@@ -274,6 +274,13 @@ pub struct GbWriteReport {
     pub incomplete_periods: usize,
     pub anomaly_counts: BTreeMap<Anomaly, usize>,
 
+    /// The first and last local dates the export covers, if it covered any.
+    ///
+    /// Carried so that a caller can say which holiday calendar was applied without re-reading an
+    /// 18 MB export to find out. Which days count as holidays decides which hours are off-peak,
+    /// and therefore the demand figures a bill is built from, so it is worth being able to print.
+    pub covered: Option<(Date, Date)>,
+
     /// The run log, unwritten: what the conversion found, or that it found nothing.
     ///
     /// Held rather than written, for the reason [`SourceLog`] gives — a library returns what it
@@ -336,6 +343,13 @@ pub fn write_gb_workbook(
         period_rows: periods.len(),
         incomplete_periods,
         anomaly_counts,
+        covered: match (
+            feed.kwh.values.first_key_value(),
+            feed.kwh.values.last_key_value(),
+        ) {
+            (Some((first, _)), Some((last, _))) => Some((local_date(*first), local_date(*last))),
+            _ => None,
+        },
         log: SourceLog {
             // Beside the workbook rather than the export, because that is what this run produced.
             // The session conversion puts its log in the same place for the same reason.

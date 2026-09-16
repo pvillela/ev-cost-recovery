@@ -19,13 +19,16 @@ were none.";
 
 fn main() -> ExitCode {
     let args: Vec<PathBuf> = env::args_os().skip(1).map(PathBuf::from).collect();
-    if args.is_empty() || args.iter().any(|a| a == "-h" || a == "--help") {
+    // Asked for, so it is the output: stdout, exit 0. Not asked for, so it is a refusal: stderr,
+    // exit 1. The other nine binaries split it the same way, and a shell redirecting stdout should
+    // not capture a complaint.
+    if args.iter().any(|a| a == "-h" || a == "--help") {
         println!("{USAGE}");
-        return if args.is_empty() {
-            ExitCode::FAILURE
-        } else {
-            ExitCode::SUCCESS
-        };
+        return ExitCode::SUCCESS;
+    }
+    if args.is_empty() {
+        eprintln!("{USAGE}");
+        return ExitCode::FAILURE;
     }
 
     let mut failed = false;
@@ -37,17 +40,20 @@ fn main() -> ExitCode {
             Ok(report) => {
                 println!("{}", report.output_path.display());
                 // A binary is the end of the line: there is nowhere left to return a finding to.
+                // Reported, not fatal. The workbook is on disk and its figures are right; exiting
+                // non-zero would tell a script the conversion failed when only its log did.
+                // `gb_peak_values` and the desktop app treat it the same way.
                 if let Err(e) = report.log.write() {
                     eprintln!("{}: {e}", report.log.path().display());
-                    failed = true;
                 }
                 for anomaly in &report.anomalies {
                     eprintln!("{}: {anomaly}", path.display());
                 }
             }
-            // No path prefix: `session_csv_to_xlsx` names the file in every error it returns.
+            // `error: ` as the other nine binaries write it; no path prefix beyond that, because
+            // `session_csv_to_xlsx` names the file in every error it returns.
             Err(e) => {
-                eprintln!("{e}");
+                eprintln!("error: {e}");
                 failed = true;
             }
         }
