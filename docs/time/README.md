@@ -14,7 +14,7 @@ instant with the zone it is read in, `excel.rs` for serial-date conversion, `tou
 | The zones, and converting a wall time to an instant or back | here |
 | Rendering an instant for a person, with the zone it is read in | here |
 | The standard-time clock billing periods are cut on | here |
-| Excel serial dates, in both directions | here |
+| Excel serial dates, writing only | here |
 | Ontario time-of-use periods and the holiday calendar | here |
 | `METER_INTERVAL`, the interval a Toronto Hydro meter records, and `is_on_grid` | `green_button` |
 
@@ -78,8 +78,8 @@ two agree.
 Two clocks are in play, and keeping them apart is the whole of this section.
 
 **The session report is stated on standard time, all year.** Evolute's `Conn_DateTime_Start` and
-`Conn_DateTime_End` do not observe daylight saving. `time::SESSION_OFFSET` names that offset and
-`time::session_instant` does the conversion, which cannot fail: a fixed offset has no hour that
+`Conn_DateTime_End` do not observe daylight saving. `session::common::SESSION_OFFSET` names that
+offset and `session::common::session_instant` does the conversion, which cannot fail: a fixed offset has no hour that
 occurs twice and none that is skipped, so every reported wall time names exactly one instant. There
 is nothing for the reader to infer, and no anomaly it can raise about placing a record.
 
@@ -113,7 +113,11 @@ along with the four anomaly kinds it raised. The history is in
 
 ## Where the labour divides
 
-`time` owns the zone arithmetic and knows nothing about sessions: `session_instant` converts a
-reported wall time to an instant, and `format` renders one for a reader. `session::csv` owns the
-policy — whether a record's own three fields agree, and which `AnomalyKind` to raise when they do
-not.
+`time` owns the zone arithmetic and knows nothing about sessions. That is why `SESSION_OFFSET` and
+`session_instant` are in `session::common` and not here: the offset is a fact about Evolute's
+exports, and only `session` reads it. What `time` provides is the general machinery those are built
+on -- `TZ_OFFSETS`, the standard-time midnight a billing period is cut at, and `format`, which
+renders an instant for a reader.
+
+`session::csv` owns the policy — whether a record's own three fields agree, and which
+`AnomalyKind` to raise when they do not.
