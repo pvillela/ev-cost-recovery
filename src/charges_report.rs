@@ -116,12 +116,18 @@ impl fmt::Display for ChargesReportNameError {
 
 impl Error for ChargesReportNameError {}
 
-/// The first and last day of the range a Charges Report's file name says it covers.
+/// The first and last day of the range a Charges Report's **name** says it covers.
 ///
 /// The portal names these `<building>_Charges_<Month Year>-<Month Year>.csv`, as in
-/// `123 Foo Bar Road_Charges_November 2026-January 2027.csv`. Both months are inclusive, and the
+/// `123 Foo Bar Road_Charges_November 2026-January 2027`. Both months are inclusive, and the
 /// second date returned is the **last day** of the closing month — `2027-01-31` for that example —
 /// so the pair bounds the whole range rather than naming its two first days.
+///
+/// A name, not a file name and not a path: the extension is not part of it, and a caller holding a
+/// path passes `file_stem`, which is what [`charges_report`] does. So
+/// `123 Foo Bar Road_Charges_November 2026-January 2027.csv` is a name this rejects — the year it
+/// reads from the closing month is `2027.csv` — and the form its messages quote is the file name a
+/// user renames, which is where the `.csv` belongs.
 ///
 /// The marker is found with `rsplit_once` and matched case-insensitively, because a building name
 /// is arbitrary text: it may contain spaces, hyphens, and in principle the marker itself. Taking
@@ -1042,6 +1048,32 @@ Start_Date,End_Date,Bill_Status,kWh,Cost
                 "{name}"
             );
         }
+    }
+
+    /// The extension is not part of the name, and a name carrying one is refused.
+    ///
+    /// Every caller passes `file_stem`, so this is the contract rather than an oversight -- but
+    /// nothing pinned it, and the doc comment gave its worked example *with* the `.csv`, which is
+    /// a name this cannot read. `docs/Evolute_portal_alignment.md` copied that example and called
+    /// the function on it.
+    #[test]
+    fn a_name_carrying_its_extension_is_refused() {
+        let err =
+            parse_charges_report_name("123 Foo Bar Road_Charges_November 2026-January 2027.csv")
+                .expect_err("the extension is not part of the name");
+        assert!(
+            matches!(err, ChargesReportNameError::BadMonth { ref text, .. } if text == "January 2027.csv"),
+            "{err:?}"
+        );
+
+        // The same name without it reads.
+        assert_eq!(
+            parse_charges_report_name("123 Foo Bar Road_Charges_November 2026-January 2027"),
+            Ok((
+                Date::new(2026, 11, 1).unwrap(),
+                Date::new(2027, 1, 31).unwrap()
+            ))
+        );
     }
 
     /// Each way a name can fail says which way it failed, so a caller can tell a file picked in the

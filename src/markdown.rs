@@ -164,15 +164,49 @@ pub(crate) fn rounding_note() -> String {
 pub(crate) fn amounts(rows: &[(&str, f64)]) -> String {
     let cells: Vec<Vec<String>> = rows
         .iter()
-        .map(|(label, amount)| vec![(*label).to_owned(), format!("{amount:.2}")])
+        .map(|(label, amount)| vec![(*label).to_owned(), money(*amount)])
         .collect();
     table(&["Item", "Amount"], &cells, &[Left, Right])
+}
+
+/// One amount to the cent, with no sign on a zero.
+///
+/// Rust prints `-0.00` for a negative zero, and these tables negate whatever they subtract: a month
+/// with no sessions negates a total of `0.0`, a bill with no rebate negates `0.0`, and a figure
+/// that rounds to nothing from below rounds to `-0.0`. A reader taking `-0.00` for a credit of
+/// nothing is reading a sign the arithmetic does not mean -- zero is neither owed nor credited.
+pub(crate) fn money(amount: f64) -> String {
+    let text = format!("{amount:.2}");
+    match text
+        .trim_start_matches('-')
+        .chars()
+        .all(|c| c == '0' || c == '.')
+    {
+        true => text.trim_start_matches('-').to_owned(),
+        false => text,
+    }
 }
 
 // cargo test --lib -- markdown::test
 #[cfg(test)]
 mod test {
     use super::*;
+
+    /// Zero carries no sign, however it was arrived at.
+    ///
+    /// Every negated figure that is zero reaches this: a month with no sessions, a bill with no
+    /// rebate, a surplus that rounds to nothing from below. Rust prints all of them `-0.00`, which
+    /// reads as a credit of nothing rather than as nothing.
+    #[test]
+    fn a_zero_amount_is_printed_without_a_sign() {
+        for zero in [0.0, -0.0, -0.001, 0.001, -0.0049] {
+            assert_eq!(money(zero), "0.00", "{zero}");
+        }
+        // Everything else keeps its sign and its rounding.
+        assert_eq!(money(-1.0), "-1.00");
+        assert_eq!(money(-0.006), "-0.01");
+        assert_eq!(money(12.345), "12.35");
+    }
 
     /// Every line comes out the same width, which is the whole point of padding the cells: the
     /// table has to line up in a terminal before it lines up in a renderer, and a report is read as

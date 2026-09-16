@@ -118,7 +118,7 @@ Impact of changes to session and charges report files scope and name.
   name specifies. For example, the second date returned by
 
   ```
-  parse_charges_report_name("123 Foo Bar Road_Charges_November 2026-January 2027.csv")
+  parse_charges_report_name("123 Foo Bar Road_Charges_November 2026-January 2027")
   ```
 
   should correspond to 2027-01-31.

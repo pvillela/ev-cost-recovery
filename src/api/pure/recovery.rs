@@ -740,9 +740,13 @@ pub(super) fn band_row(name: &str, kwh: f64, rate: f64, recovery: f64) -> Vec<St
 /// landing exactly on half a cent. The round trip through a string is what makes the result the
 /// printed figure by construction rather than by an argument that the two rules coincide.
 pub(super) fn to_the_cent(amount: f64) -> f64 {
-    format!("{amount:.2}")
+    let cents: f64 = format!("{amount:.2}")
         .parse()
-        .expect("a decimal written by this formatter parses back")
+        .expect("a decimal written by this formatter parses back");
+    // `+ 0.0` turns a negative zero positive and leaves every other value alone. Without it a
+    // surplus that rounds to nothing from below is stored as `-0.0`, and prints as `-0.00` beside
+    // a verdict saying the recovery covered the cost -- a sign the arithmetic does not mean.
+    cents + 0.0
 }
 
 /// The table one stretch of the period is shown as, bands then total.
