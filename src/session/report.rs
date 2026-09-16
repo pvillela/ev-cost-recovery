@@ -198,7 +198,8 @@ impl SessionNotes {
         out.push(String::new());
     }
 
-    /// What needed a judgement call, filtered to what bears on the figure. See [`Sessions::notes`].
+    /// What needed a judgement call, filtered to what bears on the figure. See
+    /// [`Sessions::notes`](crate::session::Sessions::notes).
     fn push_anomalies(&self, out: &mut Vec<String>) {
         if self.anomalies.is_empty() {
             return;

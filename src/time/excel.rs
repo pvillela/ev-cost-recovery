@@ -6,7 +6,8 @@
 //!
 //! The names say which input a function takes, because that is where the two modules previously
 //! disagreed: both had a function called `excel_serial`, one taking a [`Timestamp`] and one taking
-//! a [`civil::DateTime`], with different meanings. Keeping either name would have silently changed
+//! a [`jiff::civil::DateTime`], with different meanings. Keeping either name would have silently
+//! changed
 //! behaviour on one side, so neither survives.
 //!
 //! All of these are infallible. The fallible forms could only fail on a civil date-time that UTC
@@ -21,7 +22,7 @@ use jiff::{
 use std::time::Duration;
 
 /// Excel's day zero for the 1900 date system, as a Unix timestamp: 1899-12-30T00:00:00Z.
-/// Verified by [`test::the_epoch_constant_matches_jiff`].
+/// Verified by the unit test `the_epoch_constant_matches_jiff`, below.
 const EXCEL_EPOCH_UNIX_SECS: i64 = -2_209_161_600;
 
 const SECS_PER_DAY: f64 = 86_400.0;

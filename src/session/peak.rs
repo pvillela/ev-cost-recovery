@@ -147,7 +147,8 @@ impl IntervalEstimates {
 /// The estimate proper, once the sessions have been read.
 ///
 /// Separate from the reader because a [`Sessions`] can be assembled several ways —
-/// [`crate::peak_power`] merges the CSVs a billing period spans, and a caller outside the crate can
+/// [`api::peak_power`](crate::api::peak_power) merges the CSVs a billing period spans, and a
+/// caller outside the crate can
 /// build one with `Sessions::from_session_lists`. All of them must produce the same figures from
 /// the same sessions, which they do by coming through here.
 ///
@@ -275,7 +276,8 @@ pub(crate) fn maximal_segment_estimate(
 
 /// Every anomaly on every session that intersects the interval of interest.
 ///
-/// Deliberately blind to [`crate::AnomalyKind`]: it matches on nothing, so a kind added later
+/// Deliberately blind to [`AnomalyKind`](crate::session::AnomalyKind): it matches on nothing, so
+/// a kind added later
 /// surfaces here without anyone having to remember to wire it up.
 fn collect_session_anomalies(
     interval: &Interval,

@@ -1238,6 +1238,68 @@ mod test {
         paths
     }
 
+    /// The four inputs `checked_figure` refuses, and the one it accepts.
+    ///
+    /// Its own doc names them; nothing asserted them. These are the messages a user meets when a
+    /// rate will not read, and they are the app's alone -- the library never sees the text of a
+    /// form field.
+    #[test]
+    fn a_figure_that_is_not_a_number_a_rate_could_be_is_refused() {
+        for (value, text, expected) in [
+            (f64::NAN, "nan", "not a finite number"),
+            (f64::INFINITY, "inf", "not a finite number"),
+            (f64::NEG_INFINITY, "-inf", "not a finite number"),
+            (-0.07, "-0.07", "cannot be negative"),
+        ] {
+            let err = checked_figure(value, "off-peak rate", text).expect_err(text);
+            assert!(err.contains(expected), "{text}: {err}");
+            assert!(err.contains("off-peak rate"), "{text}: {err}");
+        }
+
+        // Zero is a figure. A band priced at nothing is odd, not malformed.
+        assert_eq!(checked_figure(0.0, "off-peak rate", "0"), Ok(0.0));
+        assert_eq!(checked_figure(0.11, "on-peak rate", "0.11"), Ok(0.11));
+    }
+
+    /// `WorkingDir::remember` keeps the folder of the file it is given, and ignores a bare name.
+    ///
+    /// The bare-name case is the whole reason the method is not a one-liner: a bare filename's
+    /// parent is `""`, and storing that would send the next dialog nowhere in particular.
+    #[test]
+    fn the_working_directory_follows_the_last_file_chosen() {
+        let mut dir = WorkingDir::default();
+
+        dir.remember(Path::new("/data/evolute/June.csv"));
+        assert_eq!(dir.0.as_deref(), Some(Path::new("/data/evolute")));
+
+        // A bare name leaves the last real folder standing.
+        dir.remember(Path::new("June.csv"));
+        assert_eq!(dir.0.as_deref(), Some(Path::new("/data/evolute")));
+
+        dir.remember(Path::new("/data/hydro_bills/June.pdf"));
+        assert_eq!(dir.0.as_deref(), Some(Path::new("/data/hydro_bills")));
+    }
+
+    /// Choosing a file drops whatever the last one produced.
+    ///
+    /// A result left standing under a different file name is the one thing the Convert tab must
+    /// not show, and `select` is where that is decided.
+    #[test]
+    fn choosing_a_file_to_convert_drops_the_last_result() {
+        let mut slot: ConversionSlot<SessionConversion> = ConversionSlot::default();
+        slot.select(PathBuf::from("/data/evolute/June.csv"));
+        slot.error = Some("stale".to_owned());
+        slot.confirm_replace = Some(PathBuf::from("/data/evolute/June.xlsx"));
+
+        slot.select(PathBuf::from("/data/evolute/July.csv"));
+        assert_eq!(
+            slot.input.as_deref(),
+            Some(Path::new("/data/evolute/July.csv"))
+        );
+        assert!(slot.error.is_none(), "{:?}", slot.error);
+        assert!(slot.confirm_replace.is_none(), "{:?}", slot.confirm_replace);
+    }
+
     /// A schedule, as the form holds one once it has been filled in.
     fn form(effective: civil::Date, on: &str, mid: &str, off: &str) -> RatesForm {
         RatesForm {

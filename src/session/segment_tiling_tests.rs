@@ -136,10 +136,13 @@ fn a_shared_instant_is_counted_once() {
     let (third, _) = &report.seg_estimates[2];
     assert_eq!(hm(third.start()), "17:30");
 
-    // Five sessions meet the quarter, each covering part of it, so the total lies strictly between
-    // one session's worth and five.
+    // The exact fraction, not a band. Five sessions meet the quarter: `A` covers the whole of it,
+    // and `C`, `D`, `E` and `F` cover 12, 4, 4 and 8 of its 15 minutes. A band from 1 to 5 admits
+    // 3.0, which is what the padded-end regression this test guards against produced -- so the
+    // assertion it was written to make was the one it could not fail.
     let count = third.agg_count();
-    assert!(count > 1.0 && count < 5.0, "{count:?}");
+    let expected = 1.0 + 12.0 / 15.0 + 4.0 / 15.0 + 4.0 / 15.0 + 8.0 / 15.0;
+    assert!((count - expected).abs() < 1e-9, "{count} is not {expected}");
 }
 
 /// A session outrunning the interval on both sides counts as a full session in every quarter.

@@ -37,8 +37,12 @@ jobs:
       # harness has no skip outcome, so the only ways to do that are a failure or a pass that says
       # nothing. They are run by hand, by name, on a machine that has the data.
       # The cheapest rename detector the crate has: a broken intra-doc link is a `warning`, not an
-      # error, so without this flag `cargo doc` would stay green while a type lost its only path.
+      # error, so without these flags `cargo doc` would stay green while a type lost its only path.
+      #
+      # `--document-private-items` because most of this crate is not `pub`, and without it the
+      # check sees none of those links; `private_intra_doc_links` because a public item linking to
+      # a private one is the shape that left `ReadError` unreachable with `cargo check` green.
       - name: Check the intra-doc links
         env:
-          RUSTDOCFLAGS: -D rustdoc::broken_intra_doc_links
-        run: cargo doc --no-deps --all-features
+          RUSTDOCFLAGS: -D rustdoc::broken_intra_doc_links -D rustdoc::private_intra_doc_links
+        run: cargo doc --no-deps --all-features --document-private-items

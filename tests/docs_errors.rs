@@ -4,10 +4,18 @@
 //! anomaly added to either vocabulary would otherwise reach a workbook column, a run log and the
 //! Convert tab while the document that explains it says nothing.
 //!
-//! Only the anomaly tokens are checked. They are a stable wire format — `AnomalyKind::as_str` and
-//! `Anomaly::as_str` both say so — where the error variants' `Display` output carries placeholders,
-//! and a test over fragments of those would fail on innocent rewording. What keeps the error
-//! entries honest is the procedure in `docs/maintenance-manual.md`.
+//! The anomalies are checked two ways: that each token has an entry, and that the entry's block
+//! quote is the description the software actually prints. The descriptions are placeholder-free
+//! static strings, so the comparison is exact.
+//!
+//! The quote is worth pinning because it is what a user reads. `ZeroActiveChargeTime`'s description
+//! said the estimating logic substitutes an average power, which it does not and never did; the
+//! sentence sat in `AnomalyKind::Display`, in this document quoting it, and in the session report
+//! rendering it, and none of the three could tell the others were wrong.
+//!
+//! The *error variants* are not checked here. Their `Display` output carries placeholders, so a
+//! test over fragments of it would fail on innocent rewording; what keeps those entries honest is
+//! the procedure in `docs/maintenance-manual.md`.
 //!
 //! cargo test --test docs_errors
 
@@ -79,6 +87,33 @@ fn has_entry(doc: &str, token: &str) -> bool {
         .any(|line| line.trim() == format!("### `{token}`"))
 }
 
+/// The block quote under a token's entry, unwrapped to one line and stripped of its backticks.
+///
+/// Two differences are expected and are not drift. The document wraps its quote across several `>`
+/// lines where the software holds it as one string, so both sides are joined on single spaces. And
+/// the document marks up column names -- `` `Active_Charge_Time` `` -- which a message written to a
+/// log file or a terminal cannot carry, so the backticks come off. Everything else has to match.
+fn quoted_description(doc: &str, token: &str) -> Option<String> {
+    let heading = format!("### `{token}`");
+    let mut lines = doc.lines().skip_while(|line| line.trim() != heading);
+    lines.next()?;
+    let quote: Vec<&str> = lines
+        .skip_while(|line| line.trim().is_empty())
+        .take_while(|line| line.trim_start().starts_with('>'))
+        .map(|line| line.trim_start().trim_start_matches('>').trim())
+        .collect();
+    let quote: Vec<String> = quote.into_iter().map(|l| l.replace('`', "")).collect();
+    match quote.is_empty() {
+        true => None,
+        false => Some(quote.join(" ")),
+    }
+}
+
+/// The same joining, applied to what the software prints.
+fn unwrapped(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 #[test]
 fn every_session_anomaly_has_an_entry_in_the_errors_document() {
     let doc = errors_doc();
@@ -87,6 +122,13 @@ fn every_session_anomaly_has_an_entry_in_the_errors_document() {
         assert!(
             has_entry(&doc, token),
             "docs/ERRORS.md has no `### `{token}`` entry"
+        );
+        let quoted = quoted_description(&doc, token)
+            .unwrap_or_else(|| panic!("`{token}`'s entry has no block quote"));
+        assert_eq!(
+            quoted,
+            unwrapped(&kind.to_string()),
+            "`{token}`'s block quote is not what the software prints"
         );
     }
 }
@@ -99,6 +141,13 @@ fn every_meter_anomaly_has_an_entry_in_the_errors_document() {
         assert!(
             has_entry(&doc, token),
             "docs/ERRORS.md has no `### `{token}`` entry"
+        );
+        let quoted = quoted_description(&doc, token)
+            .unwrap_or_else(|| panic!("`{token}`'s entry has no block quote"));
+        assert_eq!(
+            quoted,
+            unwrapped(kind.description()),
+            "`{token}`'s block quote is not what the software prints"
         );
     }
 }

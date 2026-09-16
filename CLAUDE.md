@@ -22,11 +22,19 @@ that actually went wrong, not a general principle.
 - **Check doc links too.**
 
   ```sh
-  RUSTDOCFLAGS="-D rustdoc::broken_intra_doc_links" cargo doc --no-deps
+  RUSTDOCFLAGS="-D rustdoc::broken_intra_doc_links -D rustdoc::private_intra_doc_links" \
+    cargo doc --no-deps --all-features --document-private-items
   ```
 
   Intra-doc links are the cheapest rename detector this crate has. A link into a feature-gated
   module resolves in one configuration and not the other, so write those as plain code spans.
+
+  **`--document-private-items`, and the private-links lint beside the broken-links one.** Without
+  them the check sees only what `pub` reaches, and most of this crate is not that: ten links inside
+  private items were broken at once, naming `crate::peak_power`, `crate::AnomalyKind`,
+  `SessionRows::records` and seven more that no longer existed. Separately, a link from a public
+  item *to* a private one is a `warning` and not an error — which is how `ReadError` stayed
+  unreachable while `cargo check` was green. Write those as plain code spans too.
 
 - **`grep` the prose too, not just the code.** `docs/`, `README.md`, `.github/` and test module
   docs all named things that no longer existed. The release workflow ran a command that had stopped
@@ -71,8 +79,8 @@ that actually went wrong, not a general principle.
   one that does not. Convert a reader to a typed error and the wrappers above it need re-reading.
 
 - **One utility that every caller uses, or none.** A shared helper only half the callers reach is
-  two definitions wearing the costume of one. `with_extension("xlsx")` is written out in seven
-  places; a session-scoped `workbook_path` reached four of them and left the Green Button
+  two definitions wearing the costume of one. `with_extension("xlsx")` is written out in several
+  places; a session-scoped `workbook_path` reached some of them and left the Green Button
   conversion deriving its own, which is why it was deleted rather than restored. Before extracting
   a utility, list every site that would have to call it.
 

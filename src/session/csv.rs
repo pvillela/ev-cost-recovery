@@ -344,7 +344,8 @@ struct CsvSession {
 /// The pass-through CSV columns are not part of a `Session` and never should be, so the row keeps
 /// an index back into the records instead — see [`SessionRows::field`].
 pub(super) struct Row {
-    /// Index into [`SessionRows::records`], for the pass-through columns.
+    /// Index into the records of [`SessionRows`]'s own table, for the pass-through columns.
+    /// Read through [`SessionRows::field`], which is what holds the table.
     record: usize,
     pub session: RSession,
     /// The two reported wall times, kept as written rather than re-derived from the instants.

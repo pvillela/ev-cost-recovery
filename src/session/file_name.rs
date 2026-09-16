@@ -233,6 +233,53 @@ mod test {
         }
     }
 
+    /// Each way a name can fail says which way it failed.
+    ///
+    /// The variants are argued for -- "the reasons are not interchangeable" -- and nothing asserted
+    /// them apart: the refusal test below reads only `is_none()`, which every variant satisfies.
+    /// `Inverted` was constructed and matched nowhere, while its Charges Report twin was pinned.
+    #[test]
+    fn a_refusal_says_which_way_the_name_failed() {
+        use SessionReportNameError as E;
+
+        let err = |name: &str| parse_session_report_name(name).expect_err(name);
+
+        // No prefix at all: not a session report, whatever follows.
+        assert!(matches!(err("June"), E::NotAReport { .. }));
+        assert!(matches!(
+            err("Charges_June_1_2026-June_30_2026"),
+            E::NotAReport { .. }
+        ));
+
+        // The prefix, but nothing that could be two dates.
+        assert!(matches!(
+            err("Session_Report_June_2026"),
+            E::MissingRange { .. }
+        ));
+
+        // Two fields, one of which is not a date. June has 30 days, so the second is a name to
+        // refuse rather than a date to build.
+        assert!(matches!(
+            err("Session_Report_Jun_1_2026-Jun_30_2026"),
+            E::BadDate { .. }
+        ));
+        assert!(matches!(
+            err("Session_Report_June_1_2026-June_31_2026"),
+            E::BadDate { .. }
+        ));
+
+        // Two real dates the wrong way round, which is a different fault from either of those and
+        // the one nothing reached.
+        let inverted = err("Session_Report_June_30_2026-June_1_2026");
+        assert!(
+            matches!(
+                inverted,
+                E::Inverted { from, to, .. } if from == date(2026, 6, 30) && to == date(2026, 6, 1)
+            ),
+            "{inverted:?}"
+        );
+    }
+
     /// Anything else is refused rather than guessed at, because the guess would be checked against
     /// the billing period and could pass.
     #[test]

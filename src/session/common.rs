@@ -510,7 +510,8 @@ impl Segment {
     /// interpreted in three ways, not mutually exclusive: (1) more panels have been installed but
     /// [`PANEL_COUNT`] has not been updated; and/or (2) the session start/end adjustments cause an
     /// artificial overlap of charging sessions; and/or (3) normal power fluctuations cause the
-    /// per-EV power draw to exceed [`ev_load()`]. The excess is priced as (1): further panels of
+    /// per-EV power draw to exceed [`site_model::ev_load`](super::site_model::ev_load). The
+    /// excess is priced as (1): further panels of
     /// the same kind, so the load is proportional to the count at the rate one full panel sets.
     fn scaled_load(scaling: f64) -> Load {
         Self::load_over_panels(scaling, PANEL_COUNT)

@@ -17,7 +17,7 @@
 //! representable there at all.
 //!
 //! Alignment follows the column: the template left-aligns everything in column A — title, header,
-//! machine name and data alike — and centres every other column. That is why [`Kind`] carries the
+//! machine name and data alike — and centres every other column. That is why [`ColKind`] carries the
 //! alignment rather than the row deciding it.
 //!
 //! Three deliberate departures from the template: the `kW at interval` header over `max_kva_kw` is

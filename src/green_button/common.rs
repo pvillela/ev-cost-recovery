@@ -1,6 +1,6 @@
 //! Domain types shared across the `green_button` module.
 //!
-//! The Excel serial-date arithmetic that used to live here is in [`crate::time::excel`], which both
+//! The Excel serial-date arithmetic is in the crate-private `time::excel`, which both
 //! sheet writers now share.
 //!
 //! The readings carry raw source integers rather than kilowatt figures. Green Button reports each
