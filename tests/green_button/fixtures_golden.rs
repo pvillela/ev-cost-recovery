@@ -6,9 +6,14 @@
 //! | fixture | proves |
 //! |---|---|
 //! | `civic_holiday` | the August Civic Holiday is off-peak -- the one date where the OEB list and the ESA list disagree |
-//! | `dst_fall` | a 745-interval period is complete |
-//! | `dst_spring` | a 671-interval period is complete |
+//! | `dst_fall` | a 744-interval period is complete |
+//! | `dst_spring` | a 672-interval period is complete |
 //! | `billed_period` | the month that reconciles against a real invoice |
+//!
+//! 744 and 672, not 745 and 671: the period boundary is standard-time midnight, so a
+//! daylight-saving month holds the same hours as any other. `billing.rs` states the rule, and
+//! `docs/maintenance-manual.md` calls a 745 the signal that the boundary has drifted back to
+//! prevailing time -- so a table offering one as expected points a maintainer the wrong way.
 //!
 //! The goldens are text, not workbooks. A generated `.xlsx` is a zip and has no readable diff, and
 //! the entire value of a golden file is that somebody reads the diff before committing it.

@@ -12,8 +12,9 @@
 //! session report, split by time-of-use band. Neither is computed from the other, which is the
 //! whole of what makes comparing them worth anything.
 //!
-//! Nothing here opens anything. The month comes from the session report's file name, which is the
-//! only thing that states it — see [`report_coverage`].
+//! Nothing here opens anything. The month comes from the Charges Report's own file name, which is
+//! what `api::reconcile_evolute_reimbursement` reads it from; the session reports are then checked
+//! against it, by `check_reports_cover`.
 
 use crate::{
     markdown::{amounts, field, h1, h2, rounding_note, table, wrap},

@@ -3,6 +3,7 @@
 This module contains functionality to:
 - Read downloaded Toronto Hydro Green Button XML files of hourly meter readings.
 - Identify the intervals that maximise the building's kW, kVA, and 7-7 kW during a billing period.
+- Write those maxima to a workbook, one column per unit, 7-7 kVA included.
 - Compute total kWh consumed during a billing period (to cross-check with a bill).
 - Convert the downloaded XML data to an Excel workbook.
 
@@ -30,7 +31,7 @@ An hour is **aligned** when it starts on a whole hour. All intervals in the feed
 
 As much of this module's functionality involves billing periods, it is important to characterize billing periods precisely.
 
-A billing period spans 00:00:00 EST (inclusive) on the 24th of a month to 00:00:00 EST (exclusive) on the 23rd of the following month. Notice that billing periods are always defined in terms of EST (Eastern **Standard** Time), which does not change with DST. 
+A billing period spans 00:00:00 EST (inclusive) on the 24th of a month to 00:00:00 EST (exclusive) on the 24th of the following month, and is labelled by the 23rd — the last date it covers. The whole of the 23rd is inside it. Notice that billing periods are always defined in terms of EST (Eastern **Standard** Time), which does not change with DST. 
 
 A data feed contains readings for a full billing period when the number of hourly readings inside it equals the number of hours between the billing period boundaries.
 

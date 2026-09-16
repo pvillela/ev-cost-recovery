@@ -1,5 +1,14 @@
 # Google: Transformer characteristics
 
+> **A transcript, kept as it was given. Two things in section 3 are wrong, and are corrected in
+> `docs/session/site-model-marcus.md`, which is what the code follows.**
+>
+> - The 1490 W it divides by is the datasheet's *total* loss. Winding resistance carries only the
+>   load loss, 1490 − 197 = 1293 W, which is what gives the 0.0172 pu it then uses. The arithmetic
+>   `1490 / 75000` comes to 0.0199, not 0.0172.
+> - Its headline "~0.040 to 0.041 per unit" disagrees with the 0.0383 its own calculation reaches.
+>   `XFMR_REACTANCE_PU` is 0.0383.
+
 ## Question 1
 
 **Can Core loss, constant whenever energised, Copper loss at rated load, Magnetizing current, per unit of rating, Leakage reactance, per unit of rating be determined from a transformer's kVA nameplate?**

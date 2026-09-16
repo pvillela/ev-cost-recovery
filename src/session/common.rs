@@ -678,8 +678,9 @@ impl fmt::Display for AnomalyKind {
         let s = match self {
             Self::ZeroActiveChargeTime => {
                 "zero Active_Charge_Time, so the session delivered its energy in no time at all \
-                 and has no finite average power; the estimating logic substitutes one, and the \
-                 session is worth reviewing individually"
+                 and has no finite average power; its energy still counts towards every estimate, \
+                 prorated over its connection span like any other session's, and the session is \
+                 worth reviewing individually"
             }
             Self::InconsistentDuration => {
                 "reported start, end and duration contradict each other by more than a second, \

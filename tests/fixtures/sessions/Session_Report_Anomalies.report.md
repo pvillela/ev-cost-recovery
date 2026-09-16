@@ -80,9 +80,9 @@ the whole source report, and carries an "In interval" column for that
 reason.
 
 - ZeroActiveChargeTime - zero Active_Charge_Time, so the session delivered
-  its energy in no time at all and has no finite average power; the
-  estimating logic substitutes one, and the session is worth reviewing
-  individually.
+  its energy in no time at all and has no finite average power; its energy
+  still counts towards every estimate, prorated over its connection span
+  like any other session's, and the session is worth reviewing individually.
 - ExcessiveAvgKw - average kilowatts above the Evolute breaker rating at the
   top of the normal voltage band, which the hardware should not allow; the
   session still counts towards every estimate.

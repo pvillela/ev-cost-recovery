@@ -240,9 +240,15 @@ The software is structured as top-level library modules, each of which may have 
 ### Building the GUI app and command line tools
 
 ```sh
+bash scripts/gen-notices.sh    # once, and again whenever Cargo.lock changes
 cargo build --release          # every binary: the desktop app and the command-line tools below
 cargo test --all-targets       # every test, examples included
 ```
+
+The first line is a prerequisite of the second, not an optional step: a release build checks that
+`THIRD-PARTY-NOTICES.md` was generated from the current `Cargo.lock`, and panics without it, so that
+a release binary cannot carry a list that has fallen behind what is linked into it. Debug builds do
+not need it.
 
 The command-line tools are listed below. Each prints its usage when run with no arguments.
 

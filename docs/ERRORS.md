@@ -535,12 +535,16 @@ An inversion is refused however small it is, tolerance or no tolerance.
 ### `ZeroActiveChargeTime`
 
 > zero `Active_Charge_Time`, so the session delivered its energy in no time at all and has no finite
-> average power; the estimating logic substitutes one, and the session is worth reviewing
-> individually
+> average power; its energy still counts towards every estimate, prorated over its connection span
+> like any other session's, and the session is worth reviewing individually
 
-The record reports energy delivered over no time. Average power cannot be worked out from that, so
-the estimate uses a substituted figure — which is why the session is worth looking at rather than
-taken on trust.
+The record reports energy delivered over no time, so no average power can be worked out from it and
+the `avg_kw` cell shows `#DIV/0!`.
+
+The estimates are unaffected. What a session contributes to an interval is its energy spread over
+its *connection* span, which this record states like any other — average power is not an input to
+any figure. The flag is there because the record contradicts itself, which is worth a look, not
+because a number had to be invented.
 
 `src/session/common.rs`: `AnomalyKind::Display`
 

@@ -143,7 +143,7 @@ The above-mentioned [electrotechnical document](site-model-marcus.md) derives ev
 
 An anomaly is something about a reported session that needed a judgement call. This section says why each one exists and what the software does about it. What the user is shown when one is raised, and where, is in [docs/ERRORS.md](../ERRORS.md).
 
-One of the five excludes a session from every estimate — `InconsistentDuration`. Nothing else removes a session.
+One of the four excludes a session from every estimate — `InconsistentDuration`. Nothing else removes a session.
 
 Excluded sessions get a section of their own in the report, listing **every** one in the session data rather than only those near the interval of interest, with an `In interval` column saying whether each *appears* to fall in that interval. Appears only: a record whose own fields contradict each other cannot be trusted to say where it belongs, so filtering on that judgement could hide exactly the session a reader most needs to see. Such a record may even report an end before its start, and the column answers for it.
 
@@ -165,10 +165,10 @@ Excluded sessions get a section of their own in the report, listing **every** on
   - The flag cannot distinguish a reused id from two reports disagreeing about one session; from the merge the two look identical. Neither is treated as fatal, because refusing the first would make June 2026 unestimatable, and the judgement belongs to a reader who can go back to the source rows.
 - **`ZeroActiveChargeTime`** — the session delivered energy in no time at all, so its average power is unbounded or undefined. These are designated as *spike*s. Spikes are a theoretical possibility the software must guard against, though it is highly unlikely they would occur in practice.
 
-  - The `csv_sessions` reader function separates spikes from the normal sessions before feeding them all to the peak power estimating logic.
+  - The `csv_sessions` reader function separates spikes from the normal sessions, so that a figure dividing by charge time can hold them out. Every other figure takes them back: `Sessions::countable` chains the two lists.
+  - **No average power is substituted.** A spike takes part in the estimates on the same footing as any other session — its energy prorated over its connection span, which the record states like any other. Average power is not an input to any estimate; the only things that read `avg_kw` are the `ExcessiveAvgKw` test and the figure the report prints beside that flag, and for a spike it stays non-finite. Inventing a figure for a record that states none would put it in front of a reader as though the record had said it.
+  - So a spike with non-zero `Energy_Use` contributes to `energy_based_kw` and `energy_based_kva` like any other session, and one with zero `Energy_Use` contributes nothing to either. Both contribute to `count_based_kw` and `count_based_kva`, which count sessions.
   - If spikes do occur, they are worth reviewing individually for their effect on the building's demand charge.
-  - The power estimating logic treats spikes as follows:
-    - If `Energy_Use == 0`, set `avg_kw` to 0. These sessions do not contribute to `energy_based_kw` and `energy_based_kva` but they do contribute to `count_based_kw` and `count_based_kva`.
-    - Otherwise, set `avg_kw` to the constant `BREAKER_RATING_KW`. These sessions contribute to all four estimate types.
 - **`ExcessiveAvgKw`** — the session's own average power exceeds `BREAKER_MAX_NORMAL_KW`, the rating at the top of the normal supply voltage band, which the hardware should not allow. The breaker limits current, so a vehicle draws more kW when the voltage runs high; only a draw above the whole band says something is wrong. It is not excluded, because the figure says something is wrong with `Energy_Use` or `Active_Charge_Time` and not which. See [Assumptions](#assumptions), where the uniform-rating assumption this rests on is stated.
+
 Not an anomaly, but easily mistaken for one: a session with zero `Energy_Use` and non-zero `Active_Charge_Time` is an ordinary record. It does not contribute to `energy_based_kw` or `energy_based_kva`, and it does contribute to `count_based_kw` and `count_based_kva`.

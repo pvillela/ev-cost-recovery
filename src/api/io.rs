@@ -79,12 +79,13 @@ pub use crate::{
 /// - `billing_period_ending` - the billing period, named by the date it closes on. Must be
 ///   [`BILL_END_DAY`] of its month.
 /// - `gb_xml` - source Green Button XML file covering the billing period.
-/// - `session_csv1` - Evolute session report covering the left end of the billing period.
-/// - `session_csv2` - Evolute session report covering the right end of the billing period.
+/// - `session_csvs` - the Evolute session reports covering the billing period.
 ///
-/// The two reports must cover the billing period completely between them, which is checked from
-/// their file names before anything is read. Which is given first makes no difference; the names
-/// say what each holds.
+/// They must cover the billing period completely between them, which is checked from their file
+/// names before anything is read. **How many there are is not a rule**: one report covering the
+/// whole period is as good as three, and a report reaching outside it neither helps nor blocks.
+/// What is refused is a gap. The order they are given in makes no difference either; the names say
+/// what each holds.
 ///
 /// Nothing here writes, as the module docs state: each read's log comes back unwritten on the
 /// result's `notes`, for
@@ -125,8 +126,7 @@ pub fn peak_power(
 /// # Arguments
 /// - `bill_pdf` - the Toronto Hydro bill PDF for the period.
 /// - `gb_xml` - source Green Button XML file covering the billing period.
-/// - `session_csv1` - Evolute session report covering the left end of the billing period.
-/// - `session_csv2` - Evolute session report covering the right end of the billing period.
+/// - `session_csvs` - the Evolute session reports covering the billing period.
 ///
 /// There is no `billing_period_ending` argument. The bill states which period it covers, and it is
 /// read first so that every other file is fetched for that period — the meter export selected by
@@ -134,8 +134,8 @@ pub fn peak_power(
 /// or contradict it, and [`pure::peak_power_cost`](fn@super::pure::peak_power_cost) drops it for
 /// the same reason.
 ///
-/// The two reports must cover the billing period completely between them, checked from their file
-/// names. Which is given first makes no difference; the names say what each holds.
+/// They must cover the billing period completely between them, checked from their file names. How
+/// many there are is not a rule, and nor is the order; the names say what each holds.
 ///
 /// Nothing here writes, as the module docs state: each read's log comes back unwritten on the
 /// result's `notes`, for
@@ -183,11 +183,11 @@ pub fn peak_power_cost(
 /// # Arguments
 /// - `billing_period_ending` - the billing period, named by the date it closes on. Must be
 ///   [`BILL_END_DAY`] of its month.
-/// - `session_csv1` - Evolute session report covering the left end of the billing period.
-/// - `session_csv2` - Evolute session report covering the right end of the billing period.
+/// - `session_csvs` - the Evolute session reports covering the billing period.
 ///
-/// The two reports must cover the billing period completely between them, which is checked from
-/// their file names before anything is read. That check matters more here than to a peak estimate:
+/// They must cover the billing period completely between them, which is checked from their file
+/// names before anything is read; how many there are is not a rule. That check matters more here
+/// than to a peak estimate:
 /// [`pure::energy`](fn@super::pure::energy) sums whatever it is given, so a month's report missing
 /// from the call yields a total that is simply too low, with nothing in the figures to say so.
 ///
@@ -218,15 +218,14 @@ pub fn energy(billing_period_ending: Date, session_csvs: &[&Path]) -> Result<Ene
 ///
 /// # Arguments
 /// - `bill_pdf` - the Toronto Hydro bill PDF for the period.
-/// - `session_csv1` - Evolute session report covering the left end of the billing period.
-/// - `session_csv2` - Evolute session report covering the right end of the billing period.
+/// - `session_csvs` - the Evolute session reports covering the billing period.
 ///
 /// There is no `billing_period_ending` argument. The bill states which period it covers, and it is
 /// read first so that the reports are checked against that period rather than against one passed
 /// alongside it, which could only agree with the bill or contradict it.
 ///
-/// The two reports must cover the billing period completely between them, checked from their file
-/// names. Which is given first makes no difference; the names say what each holds.
+/// They must cover the billing period completely between them, checked from their file names. How
+/// many there are is not a rule, and nor is the order; the names say what each holds.
 ///
 /// Nothing here writes, as the module docs state: each read's log comes back unwritten on the
 /// result's `notes`, for
@@ -263,16 +262,16 @@ pub fn energy_cost(bill_pdf: &Path, session_csvs: &[&Path]) -> Result<EnergyCost
 /// # Arguments
 /// - `billing_period_ending` - the billing period, named by the date it closes on. Must be
 ///   [`BILL_END_DAY`] of its month.
-/// - `session_csv1` - Evolute session report covering the left end of the billing period.
-/// - `session_csv2` - Evolute session report covering the right end of the billing period.
+/// - `session_csvs` - the Evolute session reports covering the billing period.
 /// - `recovery_rates_at_start` - the rates in effect on the period's first day.
 /// - `recovery_rates_at_end` - the rates the period changed to, or `None` if it did not.
 ///
 /// The rates are values rather than a path. Nothing in this crate writes them down, so there is no
 /// file for this to read them from and no file a rate failure could be about.
 ///
-/// The two reports must cover the billing period completely between them, which is checked from
-/// their file names before anything is read. That check matters as much here as to
+/// They must cover the billing period completely between them, which is checked from their file
+/// names before anything is read; how many there are is not a rule. That check matters as much
+/// here as to
 /// [`energy`]: the recovery is a sum over whatever it is given, so a month's report missing from
 /// the call yields a figure that is simply too low, with nothing in it to say so.
 ///
@@ -311,8 +310,7 @@ pub fn cost_recovery(
 /// # Arguments
 /// - `bill_pdf` - the Toronto Hydro bill PDF for the period.
 /// - `gb_xml` - source Green Button XML file covering the billing period.
-/// - `session_csv1` - Evolute session report covering the left end of the billing period.
-/// - `session_csv2` - Evolute session report covering the right end of the billing period.
+/// - `session_csvs` - the Evolute session reports covering the billing period.
 /// - `recovery_rates_at_start` - the rates in effect on the period's first day.
 /// - `recovery_rates_at_end` - the rates the period changed to, or `None` if it did not.
 ///
@@ -321,8 +319,8 @@ pub fn cost_recovery(
 /// only agree with the bill or contradict it, and contradicting it here would subtract two periods'
 /// figures from each other.
 ///
-/// The two reports must cover the billing period completely between them, checked from their file
-/// names. Which is given first makes no difference; the names say what each holds.
+/// They must cover the billing period completely between them, checked from their file names. How
+/// many there are is not a rule, and nor is the order; the names say what each holds.
 ///
 /// Nothing here writes, as the module docs state: each read's log comes back unwritten on the
 /// result's `notes`, for

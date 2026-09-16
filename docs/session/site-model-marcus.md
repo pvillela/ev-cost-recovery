@@ -75,7 +75,7 @@ Values for the installed Marcus AMTH75A1. Bold entries are declared constants; t
 
 The unit meets DOE 2016 / NRCAN 2019 premium efficiency standards, which is why both loss figures are well below the 300–450 W and 1800–2500 W typical of the class.
 
-**How the reactance was obtained.** The nameplate gives total impedance, not its split. Per-unit winding resistance is total loss over rating, 1490 W / 75 000 VA = 0.0172 pu. The impedance triangle then gives $X_{pu} = \sqrt{0.042^2 - 0.0172^2} = 0.0383$.
+**How the reactance was obtained.** The nameplate gives total impedance, not its split. Per-unit winding resistance is the *load* loss over rating, 1293 W / 75 000 VA = 0.0172 pu — the copper loss from the row above, not the datasheet's 1490 W total, which includes the 197 W of core loss that the winding resistance does not carry. The impedance triangle then gives $X_{pu} = \sqrt{0.042^2 - 0.0172^2} = 0.0383$.
 
 ### 3.1 Formulas
 
