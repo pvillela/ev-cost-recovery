@@ -110,17 +110,16 @@ mod test {
         let parsed = parse_rates("2026-05-01:0.1100,0.0900,0.0700").expect("a schedule");
         assert_eq!(parsed.effective_date, date(2026, 5, 1));
         assert_eq!(
-            (
-                parsed.on_peak,
-                parsed.mid_peak,
-                parsed.off_peak
-            ),
+            (parsed.on_peak, parsed.mid_peak, parsed.off_peak),
             (0.11, 0.09, 0.07)
         );
 
         // Zero is a rate. A schedule pricing one band at nothing is odd but not malformed.
         let free = parse_rates("2026-06-01:0,0,0").expect("a schedule");
-        assert_eq!((free.on_peak, free.mid_peak, free.off_peak), (0.0, 0.0, 0.0));
+        assert_eq!(
+            (free.on_peak, free.mid_peak, free.off_peak),
+            (0.0, 0.0, 0.0)
+        );
     }
 
     /// Every way the argument can be wrong says which part was wrong, because a command line has

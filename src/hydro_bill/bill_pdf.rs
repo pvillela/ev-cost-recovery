@@ -726,7 +726,10 @@ mod test {
     fn a_rate_line_is_added_to_the_charge_named_above_it() {
         let charges = Charges::read(&charge_lines(vec![
             line(10.0, &["Transmission Connection Charge"]),
-            line(20.0, &["140.640 kW at $3.1008 per kW per 30 Days", "435.69"]),
+            line(
+                20.0,
+                &["140.640 kW at $3.1008 per kW per 30 Days", "435.69"],
+            ),
             line(30.0, &["Standard Supply Service Administrative Charge"]),
             line(40.0, &["at $0.25 per 30 Days", "0.25"]),
         ]))
@@ -761,10 +764,7 @@ mod test {
     #[test]
     fn time_of_use_lines_sum_by_the_band_their_season_names() {
         let charges = Charges::read(&charge_lines(vec![
-            line(
-                10.0,
-                &["13,240.523 kWh On-peak @ $0.158 / kWh", "2,092.00"],
-            ),
+            line(10.0, &["13,240.523 kWh On-peak @ $0.158 / kWh", "2,092.00"]),
             line(20.0, &["1,000.000 kWh On-peak @ $0.170 / kWh", "170.00"]),
             line(30.0, &["500.000 kWh Off-peak @ $0.070 / kWh", "35.00"]),
         ]))

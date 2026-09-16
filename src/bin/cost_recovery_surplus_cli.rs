@@ -222,10 +222,12 @@ mod test {
     /// positional, so a shifted list would price one file against another's rates.
     #[test]
     fn a_list_that_does_not_fit_the_shape_is_refused() {
-        for list in [vec!["bill.pdf"],
+        for list in [
+            vec!["bill.pdf"],
             vec!["bill.pdf", "usage.xml", "June.csv"],
             vec!["bill.pdf", "usage.xml", "2026-05-01:0.11,0.09,0.07"],
-            vec!["bill.pdf", "usage.xml", "r1", "r2", "r3", "June.csv"],] {
+            vec!["bill.pdf", "usage.xml", "r1", "r2", "r3", "June.csv"],
+        ] {
             assert!(shape(&args(&list)).is_none(), "{list:?} should be refused");
         }
     }

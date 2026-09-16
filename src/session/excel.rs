@@ -473,8 +473,8 @@ fn set_widths(sheet: &mut Worksheet) {
 // cargo test --lib -- session::excel::test --nocapture
 mod test {
     use super::*;
-    use crate::session::test_support::{timing_anomalies, timing_anomalies_in_cell};
     use crate::golden;
+    use crate::session::test_support::{timing_anomalies, timing_anomalies_in_cell};
     use std::fmt::Write as _;
     use std::{env, fs, process};
 
@@ -499,8 +499,8 @@ mod test {
             let input = dir.join(format!("{stem}.csv"));
             fs::copy(golden::fixture(&format!("sessions/{stem}.csv")), &input).unwrap();
 
-            let report = session_csv_to_xlsx(&input)
-                .unwrap_or_else(|e| panic!("{stem} converts: {e}"));
+            let report =
+                session_csv_to_xlsx(&input).unwrap_or_else(|e| panic!("{stem} converts: {e}"));
             golden::check(
                 &format!("sessions/{stem}.workbook.txt"),
                 &dump_workbook(&report.output_path),
@@ -612,7 +612,6 @@ mod test {
         }
         out
     }
-
 
     #[test]
     fn sheet_name_strips_the_report_prefix() {

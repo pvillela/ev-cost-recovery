@@ -631,7 +631,13 @@ fn parse_number(
     // sum and prints as an amount no document stated. Same posture as the comma check above: an
     // error rather than a partial sum.
     if !value.is_finite() {
-        return Err(bad_value(cell, path, row, column, "expected a finite number"));
+        return Err(bad_value(
+            cell,
+            path,
+            row,
+            column,
+            "expected a finite number",
+        ));
     }
     Ok(value)
 }

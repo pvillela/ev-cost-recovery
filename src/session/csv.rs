@@ -901,7 +901,11 @@ S1,2026-06-01 16:22,2026-06-01 21:29,5:07:53,5:07:52
             )
             .unwrap();
 
-            assert_eq!(csv_sessions(&csv_path).unwrap().sessions.len(), 1, "{value}");
+            assert_eq!(
+                csv_sessions(&csv_path).unwrap().sessions.len(),
+                1,
+                "{value}"
+            );
             fs::remove_dir_all(&dir).ok();
         }
     }
@@ -923,7 +927,12 @@ S1,2026-06-01 16:22:00,2026-06-01 21:29:53,5:07:53,not-a-duration,5:07:52,30.6
         fs::write(&csv_path, CSV).unwrap();
 
         let err = csv_sessions(&csv_path).unwrap_err().to_string();
-        for expected in ["Session Report", "Charge_Duration", "row 2", "not-a-duration"] {
+        for expected in [
+            "Session Report",
+            "Charge_Duration",
+            "row 2",
+            "not-a-duration",
+        ] {
             assert!(err.contains(expected), "{expected:?} missing from {err:?}");
         }
         // Nothing was being written, so no workbook is named.

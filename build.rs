@@ -111,7 +111,10 @@ fn release_notices() -> String {
     }
     match field("body") {
         Some(hash) if hash == sha256(body.as_bytes()) => {}
-        Some(_) => panic!("{}", complaint("they have been edited since they were generated")),
+        Some(_) => panic!(
+            "{}",
+            complaint("they have been edited since they were generated")
+        ),
         None => panic!("{}", complaint("they carry no body-sha256 stamp")),
     }
     text
