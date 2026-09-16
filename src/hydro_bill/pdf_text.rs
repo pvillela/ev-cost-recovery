@@ -599,6 +599,7 @@ fn into_lines(mut fragments: Vec<Fragment>) -> Vec<Line> {
 #[cfg(test)]
 mod test {
     use super::*;
+    use lopdf::{Stream, StringFormat, content::Content, dictionary};
 
     fn at(x: f64, y: f64, text: &str) -> Fragment {
         Fragment {
@@ -606,6 +607,243 @@ mod test {
             y,
             text: text.to_string(),
         }
+    }
+
+    /// A one-page document whose single font maps the codes `fonts()` declares.
+    ///
+    /// Built in memory rather than read from a fixture: the operator interpreter is the half of
+    /// this module the ignored real-bill test cannot exercise case by case, and a PDF on disk
+    /// pins a whole page rather than one operator.
+    fn page_with(
+        operations: Vec<Operation>,
+        fonts: &[(&str, &[(u8, char)])],
+    ) -> (Document, ObjectId) {
+        let mut doc = Document::with_version("1.5");
+
+        let mut font_entries = lopdf::Dictionary::new();
+        for (name, codes) in fonts {
+            let mut cmap = String::from(
+                "/CIDInit /ProcSet findresource begin\n\
+                 1 begincodespacerange\n<00> <ff>\nendcodespacerange\n",
+            );
+            cmap.push_str(&format!("{} beginbfchar\n", codes.len()));
+            for (code, ch) in *codes {
+                cmap.push_str(&format!("<{code:02x}> <{:04x}>\n", *ch as u32));
+            }
+            cmap.push_str("endbfchar\nend\n");
+
+            let cmap_id = doc.add_object(Stream::new(lopdf::Dictionary::new(), cmap.into_bytes()));
+            let font_id = doc.add_object(dictionary! {
+                "Type" => "Font",
+                "Subtype" => "Type0",
+                "BaseFont" => "Test",
+                "ToUnicode" => cmap_id,
+            });
+            font_entries.set(*name, font_id);
+        }
+
+        let content = Content { operations };
+        let content_id = doc.add_object(Stream::new(
+            lopdf::Dictionary::new(),
+            content.encode().expect("the operations encode"),
+        ));
+        let pages_id = doc.new_object_id().0;
+        let page_id = doc.add_object(dictionary! {
+            "Type" => "Page",
+            "Parent" => (pages_id, 0),
+            "Contents" => content_id,
+            "Resources" => dictionary! { "Font" => font_entries },
+        });
+        doc.objects.insert(
+            (pages_id, 0),
+            dictionary! {
+                "Type" => "Pages",
+                "Kids" => vec![page_id.into()],
+                "Count" => 1,
+            }
+            .into(),
+        );
+        let catalog_id = doc.add_object(dictionary! {
+            "Type" => "Catalog",
+            "Pages" => (pages_id, 0),
+        });
+        doc.trailer.set("Root", catalog_id);
+        (doc, page_id)
+    }
+
+    fn op(operator: &str, operands: Vec<Object>) -> Operation {
+        Operation::new(operator, operands)
+    }
+
+    /// The text-positioning operators each place a run where the PDF says.
+    ///
+    /// `Td` moves relative to the line, `TD` sets the leading as it moves, `T*` repeats that move,
+    /// `Tm` replaces the matrix outright and `'` is `T*` then `Tj`. Only the ignored real-bill test
+    /// reached any of these before, and it reads a whole page rather than one operator.
+    #[test]
+    fn the_text_operators_place_each_run_where_the_content_stream_says() {
+        let font = [(0x41u8, 'A'), (0x42, 'B'), (0x43, 'C'), (0x44, 'D')];
+        let (doc, page) = page_with(
+            vec![
+                op("BT", vec![]),
+                op("Tf", vec!["F1".into(), 12.into()]),
+                op("TL", vec![10.into()]),
+                op("Td", vec![100.into(), 700.into()]),
+                op(
+                    "Tj",
+                    vec![Object::String(vec![0x41], StringFormat::Literal)],
+                ),
+                // `T*` drops one leading.
+                op("T*", vec![]),
+                op(
+                    "Tj",
+                    vec![Object::String(vec![0x42], StringFormat::Literal)],
+                ),
+                // `TD` sets the leading to -ty and moves.
+                op("TD", vec![0.into(), (-20).into()]),
+                op(
+                    "Tj",
+                    vec![Object::String(vec![0x43], StringFormat::Literal)],
+                ),
+                // `Tm` replaces the matrix rather than moving relative to it.
+                op(
+                    "Tm",
+                    vec![
+                        1.into(),
+                        0.into(),
+                        0.into(),
+                        1.into(),
+                        300.into(),
+                        500.into(),
+                    ],
+                ),
+                op(
+                    "Tj",
+                    vec![Object::String(vec![0x44], StringFormat::Literal)],
+                ),
+                op("ET", vec![]),
+            ],
+            &[("F1", &font)],
+        );
+
+        let fragments = page_fragments(&doc, page).expect("the page reads");
+        let placed: Vec<(f64, f64, &str)> = fragments
+            .iter()
+            .map(|f| (f.x, f.y, f.text.as_str()))
+            .collect();
+        assert_eq!(
+            placed,
+            [
+                (100.0, 700.0, "A"),
+                (100.0, 690.0, "B"),
+                (100.0, 670.0, "C"),
+                (300.0, 500.0, "D"),
+            ]
+        );
+    }
+
+    /// `q` and `Q` restore the font as well as the matrix.
+    ///
+    /// PDF's graphics state holds both. Restoring the matrix alone leaves a run after `Q` decoded
+    /// with whatever font was selected inside the block, which shows up as the wrong characters
+    /// rather than as an error.
+    #[test]
+    fn a_saved_graphics_state_restores_the_font_with_the_matrix() {
+        let (doc, page) = page_with(
+            vec![
+                op("BT", vec![]),
+                op("Tf", vec!["F1".into(), 12.into()]),
+                op("Td", vec![10.into(), 700.into()]),
+                op("q", vec![]),
+                op("Tf", vec!["F2".into(), 12.into()]),
+                op(
+                    "cm",
+                    vec![1.into(), 0.into(), 0.into(), 1.into(), 50.into(), 0.into()],
+                ),
+                op(
+                    "Tj",
+                    vec![Object::String(vec![0x01], StringFormat::Literal)],
+                ),
+                op("Q", vec![]),
+                op(
+                    "Tj",
+                    vec![Object::String(vec![0x01], StringFormat::Literal)],
+                ),
+                op("ET", vec![]),
+            ],
+            &[("F1", &[(0x01u8, 'X')]), ("F2", &[(0x01u8, 'Y')])],
+        );
+
+        let fragments = page_fragments(&doc, page).expect("the page reads");
+        let placed: Vec<(f64, &str)> = fragments.iter().map(|f| (f.x, f.text.as_str())).collect();
+        // Inside the block: F2, shifted 50 right. After `Q`: F1 again, back at 10.
+        assert_eq!(placed, [(60.0, "Y"), (10.0, "X")]);
+    }
+
+    /// A font the page never shows anything in does not refuse the page.
+    ///
+    /// Resolving every declared font's CMap up front refused a whole bill over a font that
+    /// contributes no text to it. `UndeclaredFont` still fires for a font the content stream
+    /// actually selects.
+    #[test]
+    fn a_font_that_is_never_selected_is_never_resolved() {
+        let doc_ops = vec![
+            op("BT", vec![]),
+            op("Tf", vec!["F1".into(), 12.into()]),
+            op("Td", vec![10.into(), 700.into()]),
+            op(
+                "Tj",
+                vec![Object::String(vec![0x41], StringFormat::Literal)],
+            ),
+            op("ET", vec![]),
+        ];
+        let (mut doc, page) = page_with(doc_ops.clone(), &[("F1", &[(0x41u8, 'A')])]);
+
+        // A second font with no `ToUnicode` at all, which the page lists and never selects.
+        let broken = doc.add_object(dictionary! {
+            "Type" => "Font",
+            "Subtype" => "Type0",
+            "BaseFont" => "NoCMap",
+        });
+        let fonts = doc
+            .get_object_mut(page)
+            .and_then(Object::as_dict_mut)
+            .and_then(|d| d.get_mut(b"Resources"))
+            .and_then(Object::as_dict_mut)
+            .and_then(|d| d.get_mut(b"Font"))
+            .and_then(Object::as_dict_mut)
+            .expect("the page has a font dictionary");
+        fonts.set("F9", broken);
+
+        let fragments =
+            page_fragments(&doc, page).expect("an unused font does not refuse the page");
+        assert_eq!(fragments.len(), 1);
+        assert_eq!(fragments[0].text, "A");
+
+        // Selecting it is a different matter: a font the page shows text in and this cannot
+        // decode is refused, and the refusal names the font.
+        let mut selecting = doc_ops.clone();
+        selecting.insert(2, op("Tf", vec!["F9".into(), 12.into()]));
+        let (mut doc2, page2) = page_with(selecting, &[("F1", &[(0x41u8, 'A')])]);
+        let broken2 = doc2.add_object(dictionary! {
+            "Type" => "Font",
+            "Subtype" => "Type0",
+            "BaseFont" => "NoCMap",
+        });
+        doc2.get_object_mut(page2)
+            .and_then(Object::as_dict_mut)
+            .and_then(|d| d.get_mut(b"Resources"))
+            .and_then(Object::as_dict_mut)
+            .and_then(|d| d.get_mut(b"Font"))
+            .and_then(Object::as_dict_mut)
+            .expect("the page has a font dictionary")
+            .set("F9", broken2);
+
+        let err = page_fragments(&doc2, page2).expect_err("a font with no CMap is refused");
+        assert!(
+            matches!(err, PdfTextCause::NoCMap { ref font, .. } if font == "F9"),
+            "{err:?}"
+        );
     }
 
     /// Damage a font this does not understand causes is shown, not dropped.

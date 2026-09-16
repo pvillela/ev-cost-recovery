@@ -294,8 +294,11 @@ fn peak(
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{hydro_bill::BILL_END_DAY, time::local_hour};
-    use jiff::civil::date;
+    use crate::{
+        hydro_bill::BILL_END_DAY,
+        time::{holidays, local_hour},
+    };
+    use jiff::civil::{Weekday, date};
     use std::collections::BTreeSet;
 
     /// [`period_values`] on Toronto Hydro's own billing calendar, which is the only one these
@@ -380,6 +383,49 @@ mod test {
         assert!(values[0].max_kw.is_some());
         assert!(values[0].max_kw_nop.is_none());
         assert!(values[0].max_kva_nop.is_none());
+    }
+
+    /// A statutory holiday is off-peak all day, so its hours are outside the demand window.
+    ///
+    /// The holiday half of the 7-7 rule had no check of its own: the weekend case above is a
+    /// different branch of `is_off_peak`, and the one invoice-backed period (23 May to 23 June
+    /// 2026) contains no holiday. A wrong holiday calendar moves a demand figure the bill is built
+    /// from, and it is otherwise invisible -- it just produces a slightly different number.
+    #[test]
+    fn a_holidays_hours_are_outside_the_demand_window() {
+        // Canada Day 2026 is a Wednesday, so nothing but the holiday rule can put it off-peak.
+        let canada_day = date(2026, 7, 1);
+        assert_eq!(canada_day.weekday(), Weekday::Wednesday);
+        assert!(
+            holidays::holidays(2026)
+                .iter()
+                .any(|h| h.date == canada_day),
+            "Canada Day is on the OEB list"
+        );
+
+        // Noon on the holiday draws hardest; 09:00 the next morning is the largest hour that the
+        // demand window can see.
+        let start = local_hour(canada_day, 12);
+        let mut values = vec![(10, 90, 90)];
+        values.extend([(10, 10, 10); 20]);
+        values.push((10, 40, 40));
+        let readings = readings_from(start, &values);
+        let row = &period_values_at(&readings)[0];
+
+        assert_eq!(
+            row.max_kw.unwrap().value,
+            90,
+            "the unrestricted peak sees the holiday hour"
+        );
+        assert_eq!(row.max_kw.unwrap().tou, Tou::OffPeak);
+
+        let restricted = row.max_kw_nop.unwrap();
+        assert_eq!(
+            restricted.value, 40,
+            "the holiday's hours are outside the demand window"
+        );
+        assert_eq!(restricted.at, local_hour(canada_day.tomorrow().unwrap(), 9));
+        assert_ne!(restricted.tou, Tou::OffPeak);
     }
 
     /// Totals and counts ignore holes, so an incomplete period reads as incomplete.

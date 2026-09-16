@@ -854,6 +854,9 @@ pub fn site_load_report() -> String {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::session::{
+        SEGMENT_DURATION, Segment, common::RSegment, peak::EstimateSet, test_support::session,
+    };
 
     fn ordered(names: &[&str]) -> Vec<String> {
         let paths: Vec<PathBuf> = names.iter().map(PathBuf::from).collect();
@@ -861,6 +864,98 @@ mod test {
             .into_iter()
             .map(|p| p.display().to_string())
             .collect()
+    }
+
+    /// The three narrative branches the goldens do not reach.
+    ///
+    /// Each is one sentence chosen by one condition, so a golden per branch would be a golden
+    /// nobody reads. The report-shape claim in `report_rendering_tests` names these as pinned here
+    /// rather than there.
+    #[test]
+    fn the_narrative_branches_each_say_what_their_condition_means() {
+        let interval = Interval::from_start_end(
+            "2026-06-15T20:00:00Z".parse().unwrap(),
+            "2026-06-15T21:00:00Z".parse().unwrap(),
+        );
+        let path = "/data/Session_Report_June_1_2026-June_30_2026.csv";
+        let excluded = |n: usize| -> Vec<RSession> {
+            (0..n)
+                .map(|i| {
+                    session(
+                        path,
+                        i + 2,
+                        &format!("X{i}"),
+                        "2026-06-15T20:10:00Z",
+                        10,
+                        1.0,
+                    )
+                })
+                .collect()
+        };
+        // `EstimateSet` is not `Clone`, so each is built where it is wanted. Every figure is zero:
+        // these cases are about which sentences the renderer chooses, not about the arithmetic.
+        let zeros = || EstimateSet {
+            energy_based_kw: 0.0,
+            energy_based_kva: 0.0,
+            count_based_kw: 0.0,
+            count_based_kva: 0.0,
+        };
+        let report = |segments: usize, excluded_sessions: Vec<RSession>| {
+            let segs: Vec<RSegment> = (0..segments)
+                .map(|i| {
+                    let start = interval.start + SEGMENT_DURATION * i as u32;
+                    Rc::new(Segment {
+                        interval: Interval::new(start, SEGMENT_DURATION),
+                        sessions: Vec::new(),
+                    })
+                })
+                .collect();
+            let first = segs[0].clone();
+            let seg_estimates: Vec<(RSegment, EstimateSet)> =
+                segs.into_iter().map(|seg| (seg, zeros())).collect();
+            IntervalEstimates {
+                sources: vec![PathBuf::from(path)],
+                interval: Interval::new(interval.start, SEGMENT_DURATION * segments as u32),
+                seg_estimates,
+                energy_based_seg_estimate: (first.clone(), zeros()),
+                count_based_seg_estimate: (first, zeros()),
+                session_anomalies: Vec::new(),
+                excluded_sessions,
+                excluded_report_anomalies: Vec::new(),
+                logs: Vec::new(),
+            }
+            .to_markdown("kW", Estimate::EnergyBasedKw)
+        };
+
+        // No session reached any segment: the figures are not zero, and the report says why.
+        let deserted = report(4, Vec::new());
+        assert!(
+            deserted.contains("No session intersected the interval of interest"),
+            "{deserted}"
+        );
+        assert!(deserted.contains("standing block"), "{deserted}");
+
+        // One excluded session is singular; two are plural. The sentence reads either way.
+        let one = report(4, excluded(1));
+        assert!(
+            one.contains("One session in the source report was excluded"),
+            "{one}"
+        );
+        let two = report(4, excluded(2));
+        assert!(
+            two.contains("2 sessions in the source report were excluded"),
+            "{two}"
+        );
+
+        // A 15-minute interval is one segment, and the tables still line up.
+        let single = report(1, Vec::new());
+        for line in single.lines() {
+            assert!(
+                line.chars().count() <= 90,
+                "{} columns: {line}",
+                line.chars().count()
+            );
+        }
     }
 
     /// A row number means nothing without the file it counts in, and a billing period straddles

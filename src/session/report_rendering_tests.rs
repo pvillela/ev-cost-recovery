@@ -11,9 +11,19 @@
 //! outside the crate means going through `api::peak_power`, which chooses the interval off a
 //! meter export rather than taking the one these cases pin.
 //!
-//! The cases between them cover every shape the renderer has: a report whose four segments differ
-//! from each other, so the Estimates section has a maximal quarter to name and the Segments table
-//! has something to show; and one carrying session anomalies and an excluded-sessions section.
+//! The two cases here cover the shapes that need a fixture to read: a report whose four segments
+//! differ from each other, so the Estimates section has a maximal quarter to name and the Segments
+//! table has something to show; and one carrying session anomalies and an excluded-sessions
+//! section.
+//!
+//! **Not every shape.** Four are pinned by unit tests instead, because each is one branch rather
+//! than a whole document, and a golden per branch is a golden nobody reads:
+//!
+//! - the deserted-interval paragraph and the singular "One session … was" branch, in
+//!   `report::test`;
+//! - a 15-minute single-segment interval, likewise;
+//! - two source files, which changes how the Anomalies and Excluded sessions tables are laid out
+//!   -- `report::test::rows_from_two_files_are_tabled_under_the_name_of_each`.
 //!
 //! What the golden files *are*, as opposed to what produces them, is checked from `tests/` — see
 //! `tests/session/report_rendering.rs`, which reads them as text and needs no renderer.
