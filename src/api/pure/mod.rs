@@ -30,7 +30,8 @@ pub(crate) mod test_support;
 // sub-module re-exports.
 
 pub use coverage::{
-    CoverageError, SessionReportCoverage, check_reports_cover, check_reports_cover_period,
+    CoverageError, CoveredSpan, SessionReportCoverage, check_reports_cover,
+    check_reports_cover_period,
 };
 pub use energy::{Energy, EnergyCost, EnergyError, HydroBill, Sessions, energy, energy_cost};
 pub use peak_power::{

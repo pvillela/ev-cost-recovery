@@ -34,7 +34,7 @@
 
 // `session` arrives as a module rather than as its conversion function: that function is named the
 // same as one declared here, and a prefix says which is meant without inventing an alias.
-use super::pure::{self, CostRecoverySurplusError, EnergyError, PeakPowerError};
+use super::pure::{self, CostRecoverySurplusError, CoveredSpan, EnergyError, PeakPowerError};
 use crate::{
     api::error::ReadError,
     charges_report::charges_report,
@@ -419,7 +419,12 @@ pub fn reconcile_evolute_reimbursement(
     })?;
     // Before anything is opened: a set of names that does not reach across the month is told so
     // rather than after every session in them has been parsed.
-    pure::check_reports_cover(charges.month, charges.month.last_of_month(), session_csvs)?;
+    pure::check_reports_cover(
+        CoveredSpan::CalendarMonth,
+        charges.month,
+        charges.month.last_of_month(),
+        session_csvs,
+    )?;
     let sessions = read_sessions(session_csvs)?;
 
     Ok(pure::reconcile_evolute_reimbursement(
@@ -988,10 +993,16 @@ mod test {
         assert!(
             matches!(
                 err,
-                ApiError::Coverage(CoverageError::PeriodNotCovered { .. })
+                ApiError::Coverage(CoverageError::PeriodNotCovered {
+                    span: CoveredSpan::BillingPeriod,
+                    ..
+                })
             ),
             "{err}"
         );
+        // The wording, not just the variant. This route is about the bill's own period, and the
+        // reimbursement route below reaches the same variant over a calendar month.
+        assert!(err.to_string().contains("the billing period"), "{err}");
     }
 
     /// The surplus reads every source the library has, and the bill is what names the period for

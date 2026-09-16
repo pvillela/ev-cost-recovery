@@ -437,7 +437,7 @@ mod test {
     use super::*;
     use crate::{
         api::pure::{
-            check_reports_cover,
+            CoveredSpan, check_reports_cover,
             test_support::{as_report, close},
         },
         session::test_support::session,
@@ -744,7 +744,7 @@ mod test {
         ];
         for path in june_files {
             assert!(
-                check_reports_cover(june(1), june(30), &[path]).is_ok(),
+                check_reports_cover(CoveredSpan::CalendarMonth, june(1), june(30), &[path]).is_ok(),
                 "{}",
                 path.display()
             );
@@ -753,12 +753,25 @@ mod test {
         // Two halves of the month, neither enough alone.
         let first_half = Path::new("data/Session_Report_June_1_2026-June_15_2026.csv");
         let second_half = Path::new("data/Session_Report_June_16_2026-June_30_2026.csv");
-        assert!(check_reports_cover(june(1), june(30), &[first_half]).is_err());
-        assert!(check_reports_cover(june(1), june(30), &[first_half, second_half]).is_ok());
+        assert!(
+            check_reports_cover(CoveredSpan::CalendarMonth, june(1), june(30), &[first_half])
+                .is_err()
+        );
+        assert!(
+            check_reports_cover(
+                CoveredSpan::CalendarMonth,
+                june(1),
+                june(30),
+                &[first_half, second_half]
+            )
+            .is_ok()
+        );
 
         // The slip the old check existed for: a file for the wrong month entirely.
         let may = Path::new("data/Session_Report_May_1_2026-May_31_2026.csv");
-        assert!(check_reports_cover(june(1), june(30), &[may]).is_err());
+        assert!(
+            check_reports_cover(CoveredSpan::CalendarMonth, june(1), june(30), &[may]).is_err()
+        );
     }
 
     /// The report gains a Charges Report section naming the file. The GUI splits the report on its

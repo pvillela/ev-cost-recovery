@@ -437,13 +437,21 @@ the tick should come off.
 > ` `
 > &nbsp;&nbsp;`<file name>` covers `<date>` to `<date>`
 
+or, on the Reimbursement tab:
+
+> the session reports do not cover the month `<date>` to `<date>`:
+
 One indented line per report given, so the gap can be seen against what was handed in.
 
-**Where** Cost recovery.
+**Where** Cost recovery, Reimbursement.
 
-A billing period runs from the 24th of one month to the 23rd of the next, so it always straddles two
-of Evolute's monthly reports. This says the two reports given do not span it between them — almost
-always the wrong months.
+The two spans are different calendars, and the message names which one it means. A billing period
+runs from midnight starting the 24th of one month to midnight starting the 24th of the next, so it
+always straddles two of Evolute's monthly reports. The reimbursement reconciliation is over a
+calendar month instead, taken from the Charges Report's own file name.
+
+Either way, this says the reports given do not span the dates between them — almost always the wrong
+months.
 
 The figures are refused rather than worked out from part of the period: a partial answer reads as a
 small EV contribution rather than as a missing file.
