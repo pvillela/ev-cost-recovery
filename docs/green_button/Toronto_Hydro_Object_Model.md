@@ -18,7 +18,7 @@ usage_points = parse_feed("TH_Electric_Usage_23-11-2024_to_24-06-2026.XML")
 # usage_points: list[greenbutton_objects.resources.UsagePoint]
 ```
 
-To reproduce every value quoted in this document, run `uv run explore_model.py`
+To reproduce every value quoted in this document, run `uv run docs/archive/green_button/python/explore_model.py`
 (the script parses the file with the library **and** performs raw-XML diagnostics
 for the DST / `LocalTimeParameters` facts the object model does not expose directly).
 
@@ -31,6 +31,19 @@ resource in its `<content>`, and carries Atom `<link>` elements (`rel="self"`,
 `rel="up"`, `rel="related"`) that encode the relationships between resources.
 Resources are **not** nested in the XML — the object hierarchy is reconstructed from
 the `<link>` hrefs and the resource-id tokens embedded in them.
+
+**Which links the reader follows.** Three joins, each from a `rel="related"` href to the
+`rel="self"` href of the entry it names:
+
+| From | To | What it settles |
+|---|---|---|
+| `MeterReading` | `ReadingType` | The series' unit of measure and its `powerOfTenMultiplier` |
+| `IntervalBlock` | `MeterReading` | Which of the three series a block's readings belong to |
+| `UsagePoint` | — | Not followed; nothing this software computes is per-usage-point |
+
+An `IntervalBlock` whose `related` links name no `MeterReading` in the feed is an error rather
+than a block to guess at: it carries readings with no unit. `src/green_button/espi.rs` is where the
+three joins are made.
 
 The entries appear in this order. Note that the three series are **interleaved, not
 grouped**: each `MeterReading` is immediately followed by its own 579 `IntervalBlock`

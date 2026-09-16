@@ -257,7 +257,17 @@ Converted workbooks are, of course, written to the file system. In addition, rep
 
 ### Saving reports
 
-In each tab, pressing the **Save** button saves the displayed report.
+Three tabs carry a **Save…** button beside a **Copy** button, under the report they show. The
+Convert tab has neither: it writes a workbook rather than a report.
+
+| Tab | Offered as |
+|---|---|
+| Cost recovery | `EV_Cost_Recovery_Surplus_<period ending>.report.md` |
+| Peak power detail | `EV_Peak_Power_Detail_<period ending>.report.md` |
+| Evolute reimbursement | `Evolute_Reimbursement_<YYYY-MM>.report.md` |
+
+The name is a suggestion the file dialog opens with; you can save under any name you like. What is
+written is byte-for-byte what the corresponding command-line tool prints.
 
 ### Logs
 

@@ -2,7 +2,7 @@
 
 Changes to the crate due to newly confirmed information after gaining access to the Evolute portal.
 
-**Status: done.** Every change below is on branch `evolute-portal-align`. What was built differs from what
+**Status: done, and merged.** Every change below is on `main`. What was built differs from what
 was first written here in a few places; each difference is noted where it arises, and
 [As built](#as-built) summarises the outcome.
 
@@ -35,7 +35,9 @@ Implications:
 - The session `adj_*` fields are no longer necessary and all logic should be based on the
   corresponding fields without adjustment. **The session ones only:** `adj_conn_start_of` and
   `adj_conn_end_of` in `src/session/common.rs`. Toronto Hydro's `adj_*` figures in
-  `src/hydro_bill/` are its adjusted demand — loss factor and days/30 proration — and are untouched.
+  `src/hydro_bill/` are its own two adjustments, and are untouched: the loss factor raises
+  kilowatt-hours, and the days-over-30 proration raises kW and kVA. They apply to different
+  quantities and neither is the other.
 - TIME_GRID_STEP will have little if any utility.
 - References to TIME_GRID_STEP in most (perhaps all) documentation should be removed.
 - Bracketing of values is no longer appropriate. The Bracket type should be removed.
@@ -176,8 +178,8 @@ minute-precision reports in `data/evolute` no longer read: almost every row miss
 which is those files being pre-portal rather than a regression. `data/baseline/README.md` records
 the figures and how the `-seconds` copies were made.
 
-**Phase 3 — names and scope.** Both parsers with typed errors, `&[&Path]` through six API entry
-points and six CLIs, and the GUI's optional second slot. `report_month` and `check_same_month` are
+**Phase 3 — names and scope.** Both parsers with typed errors, `&[&Path]` through every API entry
+point that takes session reports and the CLIs beside them, and the GUI's optional second slot. `report_month` and `check_same_month` are
 gone: the reconciliation takes its month from the charges report and checks the session reports
 cover it, which is a question a user can always satisfy — a month-aligned session report is one they
 may never have.

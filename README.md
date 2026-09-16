@@ -115,7 +115,7 @@ When converting a Green Button export:
 
 #### Outputs
 
-Converted files are written to the same folder as the input files. Each converted files has the same name as its input file, but with the ".xlsx" file type.
+Converted files are written to the same folder as the input files. Each converted file has the same name as its input file, but with the ".xlsx" file type.
 
 ## Error reporting and logging
 
@@ -217,11 +217,13 @@ Evolute's Session Report provides crucial data for the calculations performed by
 
 #### Challenge 5: Non-linearity
 
-The actual maximum power draw of an EV connected to the Evolute system is approximately 6.7 kW and 6.8 kVA, but it can actually vary somewhat depending on how many cars are concurrently charging. The impact is not highly significant but the software includes an electrotechnical model that estimates the power draw more accurately.
+The maximum power draw of one EV connected to the Evolute system is 6.589 kW and 6.656 kVA at the vehicle, which comes to 6.797 kW and 7.218 kVA measured at the transformer primary — see [docs/session/site-load-report-marcus.txt](docs/session/site-load-report-marcus.txt). The figure at the primary varies with how many cars are charging concurrently. The impact is not highly significant but the software includes an electrotechnical model that estimates the power draw more accurately.
 
 ### Module structure
 
-The software is structured as top-level library modules, each of which may have sub-modules.
+The software is structured as top-level library modules, each of which may have sub-modules. The
+two marked *private* are not part of the public surface; they are listed because a reader of the
+tree meets them.
 
 | Top-level module | Purpose                                                      |
 | ---------------- | ------------------------------------------------------------ |
@@ -233,9 +235,10 @@ The software is structured as top-level library modules, each of which may have 
 | `charges_report` | Functionality to read the Evolute monthly CSV Charges Report. |
 | `csv`            | Common CSV reading logic.                                    |
 | `error`          | Error types used by multiple other modules.                  |
-| `golden`         | Defines a consistent mechanism for integration tests to check their outputs against their golden files. |
+| `golden` (private, test-only) | A consistent mechanism for **unit** tests to check their output against a golden file. Integration tests use `fixtures_dir_in` in `tests/common` instead, and nothing under `tests/` reaches this. |
 | `log`            | Common functionality to produce read logs.                   |
-| `markdown`       | Common functionality to produce markdown reports.            |
+| `markdown` (private) | Common functionality to produce markdown reports.        |
+| `number` (private) | What a number written for a person looks like: the rule both document readers apply before stripping thousands separators. |
 
 ### Building the GUI app and command line tools
 
