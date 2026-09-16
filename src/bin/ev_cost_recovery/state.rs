@@ -1214,19 +1214,28 @@ pub fn report_sections(text: &str) -> Vec<Section> {
 mod test {
     use super::*;
 
-    /// The real inputs, which the repository carries. `None` when they are not all present, so the
-    /// suite still runs on a checkout without the data.
-    fn real_inputs() -> Option<(PathBuf, PathBuf, PathBuf, PathBuf)> {
+    /// The four real inputs the tests below run the app against.
+    ///
+    /// Panics naming the file when one is absent, rather than returning `None` for the caller to
+    /// skip on. The harness has no skip outcome, so a test that returns early reports `ok` and its
+    /// message is swallowed unless someone passes `--nocapture`: a check nobody is running looks
+    /// exactly like one that passed. The tests that call this are `#[ignore]`d for that reason, so
+    /// the panic is only ever met by someone who asked for them by name.
+    fn real_inputs() -> (PathBuf, PathBuf, PathBuf, PathBuf) {
         let paths = (
             PathBuf::from("data/hydro_bills/TH_5728140000_2026_06_29.pdf"),
-            PathBuf::from("data/TH_Electric_Usage_23-11-2024_to_24-06-2026.XML"),
-            PathBuf::from("data/Session_Report_May_1_2026-May_31_2026-mock.csv"),
-            PathBuf::from("data/Session_Report_June_1_2026-June_30_2026.csv"),
+            PathBuf::from("data/green_button/TH_Electric_Usage_23-11-2024_to_24-06-2026.XML"),
+            PathBuf::from("data/evolute/Session_Report_May_1_2026-May_31_2026-mock.csv"),
+            PathBuf::from("data/evolute/Session_Report_June_1_2026-June_30_2026.csv"),
         );
-        let all = [&paths.0, &paths.1, &paths.2, &paths.3]
-            .iter()
-            .all(|p| p.exists());
-        all.then_some(paths)
+        for path in [&paths.0, &paths.1, &paths.2, &paths.3] {
+            assert!(
+                path.exists(),
+                "{} is not in this checkout; these inputs are real customer documents",
+                path.display()
+            );
+        }
+        paths
     }
 
     /// A schedule, as the form holds one once it has been filled in.
@@ -1240,8 +1249,8 @@ mod test {
     }
 
     /// A state with the four real files chosen and one schedule filled in.
-    fn ready() -> Option<SurplusState> {
-        let (bill, meter, csv1, csv2) = real_inputs()?;
+    fn ready() -> SurplusState {
+        let (bill, meter, csv1, csv2) = real_inputs();
         let mut state = SurplusState {
             rates_at_start: form(civil::date(2026, 5, 1), "0.1100", "0.0900", "0.0700"),
             ..Default::default()
@@ -1250,7 +1259,7 @@ mod test {
         state.select(Input::Meter, meter);
         state.select(Input::Sessions1, csv1);
         state.select(Input::Sessions2, csv2);
-        Some(state)
+        state
     }
 
     /// The contract the whole app rests on: what it shows and saves is the library's own rendering.
@@ -1260,10 +1269,9 @@ mod test {
     /// is someone assembling the report here instead — a heading added, a figure reformatted — which
     /// is the way the two would come to differ.
     #[test]
+    #[ignore = "runs the app against the real inputs under data/"]
     fn the_app_produces_the_same_report_as_the_command_line() {
-        let Some(mut state) = ready() else {
-            return;
-        };
+        let mut state = ready();
         state.run();
         assert!(state.error.is_none(), "{:?}", state.error);
         let outcome = state.outcome.as_ref().expect("the real inputs run");
@@ -1274,10 +1282,9 @@ mod test {
     /// A run fills the detail tab from the same computation, so the intervals it shows are the ones
     /// the surplus was priced on rather than a second reading of the same files.
     #[test]
+    #[ignore = "runs the app against the real inputs under data/"]
     fn a_run_leaves_the_three_priced_intervals_behind() {
-        let Some(mut state) = ready() else {
-            return;
-        };
+        let mut state = ready();
         state.run();
         let outcome = state.outcome.as_ref().expect("the real inputs run");
         let units: Vec<_> = outcome
@@ -1380,10 +1387,9 @@ mod test {
 
     /// Figures describe the inputs that produced them, so changing an input drops them.
     #[test]
+    #[ignore = "runs the app against the real inputs under data/"]
     fn changing_an_input_discards_the_figures_it_produced() {
-        let Some(mut state) = ready() else {
-            return;
-        };
+        let mut state = ready();
         state.run();
         assert!(state.outcome.is_some());
 

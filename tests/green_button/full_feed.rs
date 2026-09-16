@@ -1,9 +1,12 @@
 //! Slow-tier checks against the real 18 MB export.
 //!
+//! **Needs a file no checkout carries.** The export is a real customer document, so it is not in
+//! the repository. Put it at `data/green_button/TH_Electric_Usage_23-11-2024_to_24-06-2026.XML`
+//! before running this; without it the test panics saying so.
+//!
 //! Ignored by default: parsing 41,688 readings on every `cargo test` is how people stop running
-//! tests. CI runs the ignored set on every commit, and this test reports a skip where the export is
-//! not on disk, so it is meaningful on a machine that has the file and harmless on one that does
-//! not. By hand:
+//! tests. Run it by name, which is also what makes the panic above the right answer rather than a
+//! nuisance -- nobody meets it without having asked for this test:
 //!
 //! ```text
 //! cargo test --test integration -- green_button::full_feed --ignored --nocapture
@@ -23,22 +26,19 @@ fn feed_path() -> PathBuf {
 #[test]
 #[ignore = "parses the full 18 MB export"]
 fn the_real_export_parses_to_three_complete_hourly_series() {
-    // The export is not in the repository; this runs in the ignored pass, which CI runs on every
-    // commit. It checks the join over the real data wherever the file is on disk, and reports a
-    // skip where it is not, so the ignored pass is green on a fresh checkout and meaningful on a
-    // machine that has the export.
+    // Absence and malformation are different failures and are reported differently. A parse
+    // regression over the real export is what this test is for, and telling someone their file is
+    // missing when it is present and unreadable would send them to look for it.
     let path = feed_path();
-    if !path.exists() {
-        eprintln!(
-            "skipping: {} — put the export there to run this",
-            path.display()
-        );
-        return;
-    }
+    assert!(
+        path.exists(),
+        "{} is not in the repository: put the export there before running this",
+        path.display()
+    );
     // `read_gb_feed` names the file in both of its errors, so nothing is prefixed here.
     let feed = read_gb_feed(&path).unwrap_or_else(|e| panic!("{e}"));
 
-    // 579 days x 24 hours, per docs/Toronto_Hydro_Object_Model.md.
+    // 579 days x 24 hours, per docs/green_button/Toronto_Hydro_Object_Model.md.
     for (name, series) in [("kWh", &feed.kwh), ("kW", &feed.kw), ("kVA", &feed.kva)] {
         assert_eq!(series.values.len(), 13_896, "{name} reading count");
         assert!(

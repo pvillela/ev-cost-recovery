@@ -41,8 +41,8 @@ Usage:
     gb_peak_values --help
 
 Example:
-    gb_peak_values data/TH_Electric_Usage_23-11-2024_to_24-06-2026.XML
-    -> data/TH_Electric_Usage_23-11-2024_to_24-06-2026.xlsx
+    gb_peak_values data/green_button/TH_Electric_Usage_23-11-2024_to_24-06-2026.XML
+    -> data/green_button/TH_Electric_Usage_23-11-2024_to_24-06-2026.xlsx
 
 The feed must carry hourly readings for all three of kWh, kW and kVA. Anything else is an error
 naming what was missing, rather than a workbook with a hole in it.
@@ -167,10 +167,10 @@ mod test {
     fn the_output_sits_beside_the_input_with_an_xlsx_extension() {
         assert_eq!(
             output_path(Path::new(
-                "data/TH_Electric_Usage_23-11-2024_to_24-06-2026.XML"
+                "data/green_button/TH_Electric_Usage_23-11-2024_to_24-06-2026.XML"
             ))
             .unwrap(),
-            PathBuf::from("data/TH_Electric_Usage_23-11-2024_to_24-06-2026.xlsx")
+            PathBuf::from("data/green_button/TH_Electric_Usage_23-11-2024_to_24-06-2026.xlsx")
         );
     }
 

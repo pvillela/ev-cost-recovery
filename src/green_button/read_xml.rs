@@ -275,12 +275,18 @@ mod test {
 
     /// The figures carry the file they came from. An anomaly counted in a period is a fact about an
     /// export, and this is the only thing in the result that says which one.
+    /// `#[ignore]`d rather than skipped from inside: the export is not in every checkout, and a
+    /// test that returns early reports `ok`, so a check nobody runs is indistinguishable from one
+    /// that passed.
     #[test]
+    #[ignore = "reads the real export under data/green_button"]
     fn the_period_carries_the_export_it_was_read_from() {
-        let xml = Path::new("data/TH_Electric_Usage_23-11-2024_to_24-06-2026.XML");
-        if !xml.exists() {
-            return; // The export is not in every checkout.
-        }
+        let xml = Path::new("data/green_button/TH_Electric_Usage_23-11-2024_to_24-06-2026.XML");
+        assert!(
+            xml.exists(),
+            "{} is not in this checkout; the export is a real customer document",
+            xml.display()
+        );
         let values = read_gb_for_billing_period(xml, date(2026, 6, 23), BILL_END_DAY)
             .expect("the export covers the June 2026 period");
         assert_eq!(values.source.as_deref(), Some(xml));

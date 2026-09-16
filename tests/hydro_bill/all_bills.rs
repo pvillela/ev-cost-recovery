@@ -1,9 +1,12 @@
 //! Slow-tier check against every real bill in `data/hydro_bills`.
 //!
-//! Ignored by default: the bills are not in the repository, and reading two dozen 3 MB PDFs is not
-//! something to put on every `cargo test`. CI runs the ignored set on every commit and this test
-//! reports a skip where the PDFs are absent, so it is meaningful on a machine that has them and
-//! harmless on one that does not. By hand:
+//! **Needs files no checkout carries.** The bills are real invoices, so they are not in the
+//! repository. Put the Toronto Hydro PDFs in `data/hydro_bills` before running this; without them
+//! the test panics saying so.
+//!
+//! Ignored by default: reading two dozen 3 MB PDFs is not something to put on every `cargo test`.
+//! Run it by name, which is also what makes the panic above the right answer rather than a
+//! nuisance -- nobody meets it without having asked for this test:
 //!
 //! ```text
 //! cargo test --test integration -- hydro_bill::all_bills --ignored --nocapture
@@ -39,17 +42,14 @@ fn bills_dir() -> PathBuf {
 #[test]
 #[ignore = "reads every bill PDF in data/hydro_bills"]
 fn every_bill_parses_and_its_figures_agree_with_each_other() {
-    // The sample bills are deliberately not in the repository — they are real invoices. This test
-    // therefore runs in the ignored pass, which CI runs on every commit: it checks the parse end to
-    // end wherever the PDFs are on disk and reports a skip where they are not. The alternative is
-    // either a red CI on a fresh checkout or a parse nobody exercises.
-    let Ok(entries) = fs::read_dir(bills_dir()) else {
-        eprintln!(
-            "skipping: no sample bills in {} — put the Toronto Hydro PDFs there to run this",
+    // A missing directory and an unreadable one are different failures. `read_dir` names the
+    // directory in its own error, and the remedy is what it cannot know.
+    let entries = fs::read_dir(bills_dir()).unwrap_or_else(|e| {
+        panic!(
+            "{e}\nPut the Toronto Hydro bill PDFs in {} before running this.",
             bills_dir().display()
-        );
-        return;
-    };
+        )
+    });
     let mut paths: Vec<PathBuf> = entries
         .map(|entry| entry.expect("readable directory entry").path())
         .filter(|p| p.extension().is_some_and(|e| e.eq_ignore_ascii_case("pdf")))
