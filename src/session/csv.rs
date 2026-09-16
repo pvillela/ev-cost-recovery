@@ -287,13 +287,27 @@ fn parse_duration(
     else {
         return Err(bad());
     };
-    let h: u64 = h.trim().parse().map_err(|_| bad())?;
-    let m: u64 = m.trim().parse().map_err(|_| bad())?;
-    let sec: u64 = sec.trim().parse().map_err(|_| bad())?;
+    // Refused explicitly: `u64::from_str` accepts a leading `+`, so `+5:07:53` would otherwise
+    // parse as five hours -- and the doc above says the sign is rejected.
+    let digits = |part: &str| -> Result<u64, CsvReadError> {
+        let part = part.trim();
+        match part.starts_with(['+', '-']) {
+            true => Err(bad()),
+            false => part.parse().map_err(|_| bad()),
+        }
+    };
+    let (h, m, sec) = (digits(h)?, digits(m)?, digits(sec)?);
     if !(0..60).contains(&m) || !(0..60).contains(&sec) {
         return Err(bad());
     }
-    Ok(Duration::from_secs(h * 3600 + m * 60 + sec))
+    // Checked: hours are unbounded by design, so a cell stating enough of them overflows the
+    // multiplication. That is a malformed cell, not a panic in release and a wrap in debug.
+    let seconds = h
+        .checked_mul(3600)
+        .and_then(|hs| hs.checked_add(m * 60))
+        .and_then(|hms| hms.checked_add(sec))
+        .ok_or_else(bad)?;
+    Ok(Duration::from_secs(seconds))
 }
 
 /// `Energy_Use` as a figure the estimating logic can use.
@@ -527,6 +541,17 @@ mod test {
         );
         assert!(parse_duration("5:70:00", &src, 1, "d").is_err());
         assert!(parse_duration("5:07", &src, 1, "d").is_err());
+
+        // A sign is refused, as the doc says. `u64::from_str` accepts a leading `+`, so without
+        // the explicit check `+5:07:53` parses as five hours.
+        for signed in ["+5:07:53", "-5:07:53", "5:+07:53", "5:07:+53"] {
+            assert!(parse_duration(signed, &src, 1, "d").is_err(), "{signed}");
+        }
+
+        // Hours are unbounded by design, so enough of them overflow the multiplication. That is a
+        // malformed cell rather than a wrap or a panic.
+        let huge = format!("{}:00:00", u64::MAX);
+        assert!(parse_duration(&huge, &src, 1, "d").is_err(), "{huge}");
 
         // A rejected cell names the file, the row, the column and the value it could not read.
         let err = parse_duration("5:07", &src, 42, "Conn_Duration")

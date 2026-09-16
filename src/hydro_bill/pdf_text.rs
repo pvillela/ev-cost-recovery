@@ -197,49 +197,40 @@ pub fn read_pages(path: &Path) -> Result<Vec<Vec<Line>>, PdfTextError> {
 /// The page number is not known here, so the failure comes back as a bare cause and
 /// [`read_pages`] attaches the page and the file.
 fn page_fragments(doc: &Document, page: ObjectId) -> Result<Vec<Fragment>, PdfTextCause> {
-    let mut encodings: BTreeMap<Vec<u8>, ToUnicode> = BTreeMap::new();
-    for (name, font) in doc
+    // The page's fonts, unresolved. Their CMaps are read on first use rather than here, because a
+    // page may list a font it never shows anything in -- and resolving every one up front refuses
+    // a whole bill over a font that contributes no text to it.
+    let fonts = doc
         .get_page_fonts(page)
-        .map_err(|e| PdfTextCause::Page(e.to_string()))?
-    {
-        let named = || String::from_utf8_lossy(&name).into_owned();
-        let stream = font
-            .get_deref(b"ToUnicode", doc)
-            .and_then(Object::as_stream)
-            .map_err(|e| PdfTextCause::NoCMap {
-                font: named(),
-                cause: e.to_string(),
-            })?;
-        let cmap = stream
-            .get_plain_content()
-            .map_err(|e| PdfTextCause::BadCMap {
-                font: named(),
-                cause: e.to_string(),
-            })?;
-        let cmap = String::from_utf8_lossy(&cmap);
-        let cmap = ToUnicode::parse(&cmap).map_err(|e| PdfTextCause::BadCMap {
-            font: named(),
-            cause: e.to_string(),
-        })?;
-        encodings.insert(name, cmap);
-    }
+        .map_err(|e| PdfTextCause::Page(e.to_string()))?;
+    let mut encodings: BTreeMap<Vec<u8>, ToUnicode> = BTreeMap::new();
+
     let content = doc
         .get_and_decode_page_content(page)
         .map_err(|e| PdfTextCause::Page(e.to_string()))?;
 
     let mut fragments = Vec::new();
     let mut ctm = IDENTITY;
-    let mut ctm_stack: Vec<[f64; 6]> = Vec::new();
+    let mut ctm_stack: Vec<([f64; 6], Option<Vec<u8>>)> = Vec::new();
     // The text matrix and the text line matrix, which `Td`, `TD` and `T*` advance relative to.
     let mut tm = IDENTITY;
     let mut tlm = IDENTITY;
     let mut leading = 0.0;
-    let mut encoding: Option<&ToUnicode> = None;
+    // The selected font's name rather than its CMap: the CMaps are resolved into `encodings` as
+    // they are first needed, and holding a borrow of that map would stop it being added to.
+    let mut font: Option<Vec<u8>> = None;
 
     for Operation { operator, operands } in &content.operations {
         match operator.as_str() {
-            "q" => ctm_stack.push(ctm),
-            "Q" => ctm = ctm_stack.pop().unwrap_or(IDENTITY),
+            // PDF's graphics state includes the text font, so `q` and `Q` save and restore it
+            // beside the CTM. Restoring the matrix alone leaves a run after `Q` decoded with
+            // whatever font was selected inside the block.
+            "q" => ctm_stack.push((ctm, font.clone())),
+            "Q" => {
+                let (saved_ctm, saved_font) = ctm_stack.pop().unwrap_or((IDENTITY, None));
+                ctm = saved_ctm;
+                font = saved_font;
+            }
             "cm" => {
                 if let Some(m) = matrix(operands) {
                     ctm = multiply(&m, &ctm);
@@ -254,14 +245,35 @@ fn page_fragments(doc: &Document, page: ObjectId) -> Result<Vec<Fragment>, PdfTe
                 // a malformed operator rather than a font this cannot decode, and the runs after
                 // it are still shown in the font already selected.
                 if let Some(name) = operands.first().and_then(|o| o.as_name().ok()) {
-                    encoding =
-                        Some(
-                            encodings
-                                .get(name)
-                                .ok_or_else(|| PdfTextCause::UndeclaredFont {
-                                    font: String::from_utf8_lossy(name).into_owned(),
-                                })?,
-                        );
+                    if !encodings.contains_key(name) {
+                        let named = || String::from_utf8_lossy(name).into_owned();
+                        let declared = fonts
+                            .get(name)
+                            .ok_or_else(|| PdfTextCause::UndeclaredFont { font: named() })?;
+                        let stream = declared
+                            .get_deref(b"ToUnicode", doc)
+                            .and_then(Object::as_stream)
+                            .map_err(|e| PdfTextCause::NoCMap {
+                                font: named(),
+                                cause: e.to_string(),
+                            })?;
+                        let cmap =
+                            stream
+                                .get_plain_content()
+                                .map_err(|e| PdfTextCause::BadCMap {
+                                    font: named(),
+                                    cause: e.to_string(),
+                                })?;
+                        let cmap =
+                            ToUnicode::parse(&String::from_utf8_lossy(&cmap)).map_err(|e| {
+                                PdfTextCause::BadCMap {
+                                    font: named(),
+                                    cause: e.to_string(),
+                                }
+                            })?;
+                        encodings.insert(name.to_vec(), cmap);
+                    }
+                    font = Some(name.to_vec());
                 }
             }
             "TL" => leading = number(operands.first()),
@@ -290,12 +302,14 @@ fn page_fragments(doc: &Document, page: ObjectId) -> Result<Vec<Fragment>, PdfTe
                     tlm = multiply(&[1.0, 0.0, 0.0, 1.0, 0.0, -leading], &tlm);
                     tm = tlm;
                 }
+                let encoding = font.as_ref().and_then(|name| encodings.get(name));
                 let text = decode(operands.last(), encoding);
                 push(&mut fragments, &tm, &ctm, text);
             }
             // An array of strings interleaved with kerning offsets. The offsets nudge glyphs
             // within the run; the run as a whole still starts where the text matrix says.
             "TJ" => {
+                let encoding = font.as_ref().and_then(|name| encodings.get(name));
                 let text = operands
                     .first()
                     .and_then(|o| o.as_array().ok())
@@ -352,8 +366,15 @@ impl ToUnicode {
     /// shows up as visible damage in whatever line it lands on rather than as a quietly shortened
     /// label.
     fn decode(&self, bytes: &[u8]) -> String {
-        bytes
-            .chunks_exact(self.code_len)
+        let chunks = bytes.chunks_exact(self.code_len);
+        // A trailing part-code is damage too, and `chunks_exact` drops it. Dropping it is the one
+        // thing the doc above rules out: a string whose length is not a whole number of codes
+        // would come back quietly shortened, which is what a reader cannot see.
+        let remainder = match chunks.remainder().is_empty() {
+            true => "",
+            false => "\u{FFFD}",
+        };
+        let decoded: String = chunks
             .map(|code| {
                 let code = code.iter().fold(0u32, |acc, b| (acc << 8) | u32::from(*b));
                 match self.text.get(&code) {
@@ -361,7 +382,8 @@ impl ToUnicode {
                     None => "\u{FFFD}",
                 }
             })
-            .collect()
+            .collect();
+        decoded + remainder
     }
 
     /// Reads the `bfchar` and `bfrange` mappings out of a CMap.
@@ -584,6 +606,30 @@ mod test {
             y,
             text: text.to_string(),
         }
+    }
+
+    /// Damage a font this does not understand causes is shown, not dropped.
+    ///
+    /// Three ways a shown string can fail to decode, and all three leave a U+FFFD where the
+    /// character would be: an uncovered code, a trailing part-code, and both at once. The trailing
+    /// part-code is the one `chunks_exact` silently discards, which would shorten a label rather
+    /// than mark it -- the opposite of what the doc comment promises.
+    #[test]
+    fn an_undecodable_byte_shows_as_damage_rather_than_vanishing() {
+        let cmap = ToUnicode {
+            code_len: 2,
+            text: HashMap::from([(0x0024, "A".to_owned())]),
+        };
+
+        assert_eq!(cmap.decode(&[0x00, 0x24]), "A");
+        // A whole code the CMap does not cover.
+        assert_eq!(cmap.decode(&[0x00, 0x25]), "\u{FFFD}");
+        // One good code and a trailing byte that cannot make one.
+        assert_eq!(cmap.decode(&[0x00, 0x24, 0x00]), "A\u{FFFD}");
+        // An uncovered code and a trailing byte: two marks, not one.
+        assert_eq!(cmap.decode(&[0x00, 0x25, 0x00]), "\u{FFFD}\u{FFFD}");
+        // Nothing at all decodes to nothing, rather than to a mark.
+        assert_eq!(cmap.decode(&[]), "");
     }
 
     #[test]

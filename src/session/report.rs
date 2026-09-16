@@ -41,6 +41,7 @@ use std::{
     cmp::Ordering,
     collections::BTreeMap,
     path::{Path, PathBuf},
+    rc::Rc,
 };
 
 fn local(ts: Timestamp) -> Zoned {
@@ -548,11 +549,23 @@ impl IntervalEstimates {
                     zoned_minute(s.conn_start),
                     zoned_span_end(s.conn_start, s.conn_end),
                     in_interval(s, &self.interval),
+                    // The session's own anomalies and the report-level ones it carries. Without
+                    // the second, two rows sharing an id where one is inconsistent show
+                    // `DuplicateId` on the kept row and nothing on this one, with nothing saying
+                    // the two are about each other.
+                    //
                     // An excluded session is in no segment, but the report holds the session
                     // itself here, so its figure needs no lookup.
                     s.anomalies
                         .iter()
-                        .map(|k| anomaly_cell(*k, s.avg_kw()))
+                        .copied()
+                        .chain(
+                            self.excluded_report_anomalies
+                                .iter()
+                                .filter(|a| Rc::ptr_eq(&a.session, s))
+                                .map(|a| a.kind),
+                        )
+                        .map(|k| anomaly_cell(k, s.avg_kw()))
                         .collect::<Vec<_>>()
                         .join(", "),
                 ]

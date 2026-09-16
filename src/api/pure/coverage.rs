@@ -42,6 +42,16 @@ pub enum CoverageError {
         cause: SessionReportNameError,
     },
 
+    /// No session reports were given at all.
+    ///
+    /// Distinct from [`Self::PeriodNotCovered`], which lists what each report covers: with no
+    /// reports there is nothing to list, and that message ends in a colon with nothing after it.
+    NoReports {
+        span: CoveredSpan,
+        first: Date,
+        last: Date,
+    },
+
     /// The session reports given do not cover the whole span between them.
     ///
     /// Almost always the wrong months handed in. The alternative is an estimate that reads as a
@@ -96,6 +106,11 @@ impl fmt::Display for CoverageError {
             // cause that already carries one. `path` stays on the variant for a caller that wants
             // to act on which file failed rather than print it.
             Self::UndatedSessionReport { cause, .. } => cause.fmt(f),
+            Self::NoReports { span, first, last } => write!(
+                f,
+                "no session reports were given, so the {} {first} to {last} is not covered at all",
+                span.as_str()
+            ),
             Self::PeriodNotCovered {
                 span,
                 period_start,
@@ -174,6 +189,13 @@ pub fn check_reports_cover(
     last: Date,
     report_paths: &[&Path],
 ) -> Result<Vec<SessionReportCoverage>, CoverageError> {
+    // Refused before anything else. An empty slice reaches `reports_cover` and fails there, so the
+    // message that comes back is a gap with nothing listed under it -- a sentence ending in a
+    // colon. Every entry point accepts the empty slice, so this is where it is caught.
+    if report_paths.is_empty() {
+        return Err(CoverageError::NoReports { span, first, last });
+    }
+
     let coverage = report_paths
         .iter()
         .map(|path| {
@@ -210,6 +232,25 @@ pub fn check_reports_cover(
 mod test {
     use super::*;
     use jiff::civil::date;
+
+    /// An empty list of reports is refused, and says so.
+    ///
+    /// Every entry point accepts `&[]`. Without this the message is the coverage one with nothing
+    /// listed under it -- `the session reports do not cover the billing period 2026-05-24 to
+    /// 2026-06-23:` and then the end of the output.
+    #[test]
+    fn no_reports_at_all_is_refused_in_its_own_words() {
+        let err = check_reports_cover_period(date(2026, 6, 23), &[])
+            .expect_err("no reports cover nothing");
+        assert!(matches!(err, CoverageError::NoReports { .. }), "{err:?}");
+
+        let message = err.to_string();
+        assert!(
+            message.contains("no session reports were given"),
+            "{message}"
+        );
+        assert!(!message.ends_with(':'), "{message}");
+    }
 
     /// A refusal names the calendar its dates came from.
     ///

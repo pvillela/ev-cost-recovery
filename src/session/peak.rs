@@ -44,6 +44,14 @@ pub struct IntervalEstimates {
     /// states which ones *appear* to touch the interval and lists every one of them anyway,
     /// leaving the judgement to a reader who can go back to the source rows.
     pub excluded_sessions: Vec<RSession>,
+    /// Report-level anomalies carried by a session in [`Self::excluded_sessions`].
+    ///
+    /// These cannot go in [`Self::session_anomalies`]: that list is scoped by `intersects`, which
+    /// panics on the inverted span an excluded session may hold. Without them an excluded session
+    /// shows only what put it in this list, so of two rows sharing an id where one is inconsistent,
+    /// the kept row is flagged `DuplicateId` and the excluded one is not — with nothing to say the
+    /// two are about each other.
+    pub excluded_report_anomalies: Vec<Anomaly>,
     /// The run logs of the files the sessions were read from, unwritten.
     ///
     /// Carried for the same reason [`Self::sources`] is: so the report is self-describing, and so
@@ -173,6 +181,16 @@ pub(crate) fn estimates_from_sessions(
         // still reported: a caller judging an estimate needs to know what was left out. See
         // docs/session/README.md, "Anomalies".
         excluded_sessions: sessions.excluded.clone(),
+        excluded_report_anomalies: sessions
+            .anomalies
+            .iter()
+            .filter(|a| {
+                a.session
+                    .anomalies
+                    .contains(&AnomalyKind::InconsistentDuration)
+            })
+            .cloned()
+            .collect(),
         logs: sessions.logs.clone(),
     }
 }
@@ -579,6 +597,71 @@ mod test {
                 "{load:?}"
             );
         }
+    }
+
+    /// An excluded session shows the report-level anomalies it carries, not only what excluded it.
+    ///
+    /// `session_anomalies` cannot hold these: that list is scoped by `intersects`, which panics on
+    /// the inverted span an excluded session may have. So of two rows sharing an id where one is
+    /// inconsistent, the kept one was flagged `DuplicateId` and the excluded one showed only
+    /// `InconsistentDuration`, with nothing saying the two were about each other.
+    #[test]
+    fn an_excluded_session_keeps_its_duplicate_id() {
+        // Two rows with one id. The second's end precedes its start, so it is excluded; both are
+        // duplicates of each other.
+        let kept = session(
+            "SHARED",
+            "2026-06-15T20:00:00Z",
+            "2026-06-15T20:30:00Z",
+            3.0,
+        );
+        let inverted = Rc::new(Session {
+            path: Rc::new(PathBuf::from("Session_Report_Test.csv")),
+            row: 3,
+            id: "SHARED".to_owned(),
+            conn_start: ts("2026-06-15T20:10:00Z"),
+            conn_end: ts("2026-06-15T20:09:00Z"),
+            charge_time: Duration::ZERO,
+            energy_use: 0.0,
+            anomalies: vec![AnomalyKind::InconsistentDuration],
+        });
+
+        let sessions = Sessions {
+            sources: vec![PathBuf::from("Session_Report_Test.csv")],
+            sessions: vec![kept.clone()],
+            spikes: Vec::new(),
+            excluded: vec![inverted.clone()],
+            anomalies: vec![
+                Anomaly {
+                    session: kept.clone(),
+                    kind: AnomalyKind::DuplicateId,
+                },
+                Anomaly {
+                    session: inverted.clone(),
+                    kind: AnomalyKind::DuplicateId,
+                },
+            ],
+            logs: Vec::new(),
+        };
+
+        let report = estimates_from_sessions(hour(), sessions.sources.clone(), &sessions);
+
+        // The kept row's duplicate flag is where it always was.
+        assert!(
+            report
+                .session_anomalies
+                .iter()
+                .any(|a| a.kind == AnomalyKind::DuplicateId && Rc::ptr_eq(&a.session, &kept)),
+            "the kept row lost its flag"
+        );
+        // The excluded row's is carried separately, and names the same session.
+        assert!(
+            report
+                .excluded_report_anomalies
+                .iter()
+                .any(|a| a.kind == AnomalyKind::DuplicateId && Rc::ptr_eq(&a.session, &inverted)),
+            "the excluded row has no duplicate flag"
+        );
     }
 
     /// Ties go to the earliest segment, and a maximum is never lost to a lower later one.

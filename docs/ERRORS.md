@@ -390,11 +390,14 @@ Everything after the file name is the CSV library's own wording. The file is dam
 > `<date>` cannot end a billing period that closes on day `<number>` of the month; the closing date
 > and the calendar disagree
 
-**Where** Cost recovery.
+**Where** No route through the app reaches it.
 
 The date taken from the bill is not the day of the month this building's bills close on. As with
 [does not name a billing period](#does-not-name-a-billing-period), a bill on another plan or from
-another utility produces it.
+another utility would produce it — but every API call that reads the meter export for a period
+checks the same condition first, through `billing_period_dates`, and refuses there. So a user meets
+[does not name a billing period](#does-not-name-a-billing-period) instead, and this entry stands
+only in case a later caller reaches the reader directly.
 
 `src/green_button/read_xml.rs`: `GbReadError::Display`
 

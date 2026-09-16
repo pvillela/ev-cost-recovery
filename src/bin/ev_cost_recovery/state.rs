@@ -1170,9 +1170,23 @@ pub fn report_sections(text: &str) -> Vec<Section> {
     // title carrying any character outside ASCII — an em dash, an accented letter — would never
     // match its own underline, and the section would be swallowed into the one before it with
     // nothing said about it.
+    let is_rule = |line: &str| {
+        let mut chars = line.chars();
+        match chars.next() {
+            Some(first @ ('=' | '-')) => chars.all(|c| c == first),
+            _ => false,
+        }
+    };
     let level = |i: usize| -> Option<u8> {
         let (title, rule) = (lines.get(i)?, lines.get(i + 1)?);
-        if title.trim().is_empty() || rule.chars().count() != title.chars().count() {
+        // A rule is not a title, however well it matches the line under it. Without this, the
+        // second of two consecutive rules of the same length reads as a title of its own, and its
+        // body is `lines[start + 2..end]` with `end` one *below* `start + 2` -- which panics on a
+        // backwards slice. The library never emits that shape, but this takes any `&str`.
+        if title.trim().is_empty() || is_rule(title) {
+            return None;
+        }
+        if rule.chars().count() != title.chars().count() {
             return None;
         }
         // The first character is taken before `all` is asked, which every character of an empty
@@ -2043,6 +2057,24 @@ mod test {
         assert!(sections[0].subsections.is_empty());
         assert_eq!(sections[1].title, "Second");
         assert_eq!(sections[1].body, "body two");
+    }
+
+    /// A rule is never taken as a title, whatever sits under it.
+    ///
+    /// `pub fn` over any `&str`, and two consecutive rules of the same length make the second one
+    /// look like a title whose body runs backwards -- `lines[start + 2..end]` with `end` below
+    /// `start + 2`, which panics. The library never emits that shape; this takes whatever it is
+    /// given.
+    #[test]
+    fn two_rules_in_a_row_do_not_make_the_second_one_a_title() {
+        let sections = report_sections("abc\n===\n===\nbody\n");
+        assert_eq!(sections.len(), 1);
+        assert_eq!(sections[0].title, "abc");
+        assert_eq!(sections[0].body, "===\nbody");
+
+        // The same for dashes, and for a rule with nothing above it at all.
+        assert_eq!(report_sections("---\n---\n").len(), 0);
+        assert_eq!(report_sections("===\n===\n===\n").len(), 0);
     }
 
     /// A `-` title under an `=` title is nested in it, and the `=` title keeps only what sits above
