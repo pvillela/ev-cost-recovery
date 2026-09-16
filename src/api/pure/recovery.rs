@@ -970,7 +970,10 @@ mod test {
     fn a_schedule_that_will_not_read_names_the_part_that_failed() {
         use CostRecoveryRatesError as E;
 
-        let cases: [(&str, &str, fn(&E) -> bool); 7] = [
+        /// The argument, a phrase its message must carry, and the variant it must be.
+        type Case = (&'static str, &'static str, fn(&E) -> bool);
+
+        let cases: [Case; 7] = [
             ("bad", "as a rate schedule", |e| {
                 matches!(e, E::NotASchedule { .. })
             }),

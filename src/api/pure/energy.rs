@@ -55,11 +55,18 @@ pub struct EnergyCost {
     /// EV energy used by TOU, multiplied by loss factor adjustment.
     pub adjusted_kwh: TouKwh,
 
-    /// Toronto Hydro blended nominal on-peak rate.
+    /// Toronto Hydro's blended on-peak rate, divided out of the bill: the band's cost line over
+    /// the adjusted consumption it was levied on.
+    ///
+    /// "Blended" because a period straddling a rate change carries the band's line twice, at the
+    /// old rate and the new. Not a published tariff rate — this is what was actually charged per
+    /// kilowatt-hour, whatever the schedule said.
     pub th_on_peak_rate: f64,
-    /// Toronto Hydro blended nominal mid-peak rate.
+    /// Toronto Hydro's blended mid-peak rate, divided out of the bill. See
+    /// [`Self::th_on_peak_rate`].
     pub th_mid_peak_rate: f64,
-    /// Toronto Hydro blended nominal off-peak rate.
+    /// Toronto Hydro's blended off-peak rate, divided out of the bill. See
+    /// [`Self::th_on_peak_rate`].
     pub th_off_peak_rate: f64,
 
     /// Toronto Hydro blended Wholesale Market Service Charge rate.
@@ -84,7 +91,12 @@ pub struct EnergyCost {
     /// Ontario Electricity Rebate attributable to EV sessions.
     pub ontario_electricity_rebate: f64,
 
-    /// Total energy cost attributable to EV sessions, net of HST and OER.
+    /// Total energy cost attributable to EV sessions, including HST and net of the Ontario
+    /// Electricity Rebate: `charges + hst - ontario_electricity_rebate`.
+    ///
+    /// Spelled out because the two flanking fields pull in opposite directions, and "net of HST"
+    /// alone reads as though both were subtracted. The two are proportions of the bill's own
+    /// charges: HST is added to them, the rebate taken off.
     pub energy_cost: f64,
 
     /// What the figures were drawn from, and what was odd about it.

@@ -414,9 +414,7 @@ fn add_comments(sheet: &mut Worksheet) {
             "conn_end_utc - conn_start_utc: the span every estimate places this session on. \
              Computed from the UTC columns so that no time zone enters the arithmetic. It is the \
              reported start to the reported end, taken as written -- Evolute states both to the \
-             second. The sheet used to carry a padded pair of columns beside these, because the \
-             times were stated only to the minute and the true start and end were known only to \
-             fall somewhere inside the minute named.",
+             second.",
         ),
         (
             Source::AvgKw,

@@ -683,7 +683,7 @@ impl fmt::Display for AnomalyKind {
             }
             Self::InconsistentDuration => {
                 "reported start, end and duration contradict each other by more than a second, \
-                 which is the rounding the source does, or report an end before the start; the \
+                 which is the rounding the source does, or the end is before the start; the \
                  session is excluded from every estimate"
             }
             Self::ExcessiveAvgKw => {

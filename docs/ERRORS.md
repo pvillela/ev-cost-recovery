@@ -339,7 +339,8 @@ Everything after the file name is the operating system's wording, such as `Permi
 error 13)`. The report is still on screen and can be saved again somewhere else; nothing has been
 lost. Choose a folder you can write to, or free some space.
 
-`src/bin/ev_cost_recovery/surplus.rs`: `export_row`, `detail.rs:107`, `reimbursement.rs:272`,
+`src/bin/ev_cost_recovery/surplus.rs`: `export_row`, `detail.rs`: `export_row`,
+`reimbursement.rs`: `export_row`,
 `src/error.rs`: `ConversionError::Display`
 
 ### Session Report — missing required column
@@ -510,7 +511,7 @@ says so.
 ### `InconsistentDuration`
 
 > reported start, end and duration contradict each other by more than a second, which is the
-> rounding the source does, or report an end before the start; the session is excluded from every
+> rounding the source does, or the end is before the start; the session is excluded from every
 > estimate
 
 The record's own three fields do not agree, or its end precedes its start.
@@ -519,9 +520,7 @@ allowed for the rounding the source does; further out than that, or inverted at 
 duration nor the span the session would be placed on can be relied on — so it is left out of every
 figure.
 
-An inversion is refused however small it is, tolerance or no tolerance: the estimating logic panics
-on an inverted span rather than answering for one, so a one-second inversion is not a record to read
-the arithmetic on.
+An inversion is refused however small it is, tolerance or no tolerance.
 
 `src/session/common.rs`: `AnomalyKind::Display`
 
@@ -616,7 +615,7 @@ Report's run log.
 A breaker billed for part of the month rather than all of it. Under one reading of Evolute's two
 date columns this is an ordinary mid-month join or leave; under another it should not happen. It is
 reported because the two readings have not been told apart — see
-[docs/Questions_for_Evolute.md](archive/Questions_for_Evolute.md).
+[docs/archive/Questions_for_Evolute.md](archive/Questions_for_Evolute.md).
 
 Rows billed for dates *outside* the month are a different matter and refuse the file; see
 [Charges Report — rows billed for dates outside the month](#charges-report--rows-billed-for-dates-outside-the-month).
