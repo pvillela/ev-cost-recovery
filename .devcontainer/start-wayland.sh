@@ -54,13 +54,16 @@ fi
 # The compositor. `setsid` puts it in its own process group so it is not signalled when
 # postStartCommand finishes.
 #
-# The two WLR_ variables belong to sway alone, which is why they are set on this line rather than
-# in devcontainer.json with the variables the app reads: headless gives it a virtual output in
-# place of a DRM device, and declaring no libinput devices stops it waiting for a seat that is
-# never going to be granted in a container.
+# The WLR_ variables belong to sway alone, which is why they are set on this line rather than in
+# devcontainer.json with the variables the app reads. Headless gives it a virtual output in place
+# of a DRM device; declaring no libinput devices stops it waiting for a seat that is never going
+# to be granted in a container; and pixman is the software renderer. Without that last one,
+# wlroots looks for a GPU, logs `drmGetDevices2 failed` twice, and then falls back to pixman
+# anyway -- two lines that read as the reason for any failure that follows, and never are.
 if ! pgrep -x sway >/dev/null; then
     rm -f "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY" "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY.lock" "$SWAYSOCK"
-    WLR_BACKENDS=headless WLR_LIBINPUT_NO_DEVICES=1 setsid sway >>"$LOG" 2>&1 &
+    WLR_BACKENDS=headless WLR_LIBINPUT_NO_DEVICES=1 WLR_RENDERER=pixman \
+        setsid sway >>"$LOG" 2>&1 &
 fi
 if ! wait_for "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY"; then
     echo "start-wayland.sh: $WAYLAND_DISPLAY did not come up; see $LOG" >&2

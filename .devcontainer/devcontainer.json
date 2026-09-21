@@ -27,7 +27,11 @@
   "containerEnv": {
     // The headless Wayland session start-wayland.sh brings up. Nothing is shown on the host; the
     // app is observed through screenshots (`grim`) and driven through `wtype`.
-    "WAYLAND_DISPLAY": "wayland-0",
+    // Stated to match what sway binds, not chosen: libwayland names the first free socket from
+    // `wayland-1` upward, and start-wayland.sh removes any stale socket of this name before starting
+    // sway, so this is the name sway takes every time. The script waits for this exact socket and fails
+    // if it does not appear, so a sway that ever picks another name says so at startup.
+    "WAYLAND_DISPLAY": "wayland-1",
     "XDG_SESSION_TYPE": "wayland",
     // Where the Wayland socket, sway's IPC socket and the session bus are all bound. Vulkan
     // refuses to initialise without this, so it is required rather than tidiness.

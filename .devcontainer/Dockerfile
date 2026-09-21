@@ -54,9 +54,8 @@ RUN export DEBIAN_FRONTEND=noninteractive \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# The compositor's configuration and the colour scheme the portal reports. Both are read by
-# processes running as `vscode`, and both are image layers, so they survive a plain container
-# restart as well as a rebuild.
+# The compositor's configuration. It is read by sway running as `vscode`, and it is an image
+# layer, so it survives a plain container restart as well as a rebuild.
 #
 # `~/.config` already exists and already belongs to the user, so the one subdirectory below it is
 # all that has to be made. It stays root-owned: sway only reads its configuration, and 0755 is
@@ -66,4 +65,3 @@ RUN export DEBIAN_FRONTEND=noninteractive \
 # future, which is not this file's to decide.
 RUN mkdir -p /home/vscode/.config/sway
 COPY --chown=vscode:vscode sway-config /home/vscode/.config/sway/config
-COPY --chown=vscode:vscode kdeglobals /home/vscode/.config/kdeglobals
