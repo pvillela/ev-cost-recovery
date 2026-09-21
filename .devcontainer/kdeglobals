@@ -1,0 +1,13 @@
+# .devcontainer/kdeglobals -- installed at ~/.config/kdeglobals by the Dockerfile.
+#
+# The light/dark preference xdg-desktop-portal-kde reports on the `org.freedesktop.appearance`
+# interface. winit reads it there and egui follows it, so this decides which of the two themes in
+# `src/bin/ev_cost_recovery/theme.rs` a screenshot shows -- and those two are deliberately not
+# mirror images of each other.
+#
+# Stated rather than left out, so the theme in a screenshot is a decision and not whatever the
+# portal falls back to when it finds no configuration at all. It names the scheme the desktop the
+# app is checked against is running.
+
+[General]
+ColorScheme=BreezeLight

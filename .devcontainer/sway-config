@@ -1,0 +1,24 @@
+# .devcontainer/sway-config -- installed at ~/.config/sway/config by the Dockerfile.
+#
+# A compositor with no screen, no seat and no keybindings. This file replaces sway's distributed
+# default outright, so everything the headless session needs has to be stated here; nothing is
+# inherited.
+
+# One virtual screen. Comfortably larger than the app's 900x700 window at its 1.30 zoom -- about
+# 1170x910 points -- so the window is never clipped and never as large as the output it sits on.
+output HEADLESS-1 resolution 1920x1200
+
+# Every window keeps the size it asked for. sway tiles by default, which would stretch the app to
+# fill the output and lay it out at a width it never has on a desktop. That is the one difference
+# of the lot that would change what the app itself draws rather than what surrounds it, since egui
+# reflows to the window it is given.
+for_window [app_id=".*"] floating enable
+
+# No frame. A frame belongs to the compositor, so any sway drew would differ from the desktop's
+# without saying anything about the app. With none, a screenshot is the app and nothing else.
+default_border none
+
+# winit binds to whichever display server it can reach, and an X11 path is exactly the difference
+# this container exists to remove. Without Xwayland, a failure to reach Wayland is an error that
+# names itself instead of a quiet success over a protocol the desktop is not using.
+xwayland disable

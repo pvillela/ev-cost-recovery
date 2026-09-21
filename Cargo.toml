@@ -21,24 +21,21 @@ lopdf = { version = "0.44.0", default-features = false }
 # IntervalBlock resolves to its ReadingType only through a MeterReading entry that may appear
 # anywhere in the feed.
 roxmltree = "0.21.1"
+# The file dialogs. `rfd` asks for the platform's own on every target: the XDG desktop portal on
+# Linux, where the desktop puts up its dialog in its own process, and the native dialog elsewhere.
+# One dependency line therefore serves every target, and the Linux binary links no desktop toolkit
+# at all -- neither GTK nor Qt appears in `ldd`, and building needs no development package.
+#
+# The portal is a service rather than a library, so the machine running the app has to be running
+# one; every desktop environment does. Where none is, the dialog does not open and the rest of the
+# app still runs. `OpenFile` gained `current_folder` in xdg-desktop-portal 1.17, so a service older
+# than that opens in its own default folder rather than the one the app names -- Ubuntu 22.04
+# ships 1.14, and 26.04 ships 1.21.
+rfd = "0.17.2"
 # Stores row heights and column widths as f64 written straight through, which is what lets this
 # reproduce the reference workbook exactly. rust_xlsxwriter models both as whole pixels and cannot
 # represent the template's 13.8pt rows or 1.39-wide spacers.
 umya-spreadsheet = "3.0.1"
-
-# The file dialogs. Everywhere but Linux the default backend is the native one and there is
-# nothing to choose.
-[target."cfg(not(target_os = \"linux\"))".dependencies]
-rfd = "0.17.2"
-
-# On Linux the default backend is the XDG desktop portal, which cannot open a dialog in a chosen
-# folder: `OpenFile` gained a `current_folder` option only in xdg-desktop-portal 1.17, and on
-# anything older -- Ubuntu 22.04 ships 1.14, as this project's devcontainer and its release runner
-# both do -- the folder is dropped before any dialog sees it. Talking to GTK directly settles it
-# for every release, at the cost of `libgtk-3-dev` to build and `libgtk-3-0` to run. Both are
-# already present wherever a GTK desktop is, which is where this app runs.
-[target."cfg(target_os = \"linux\")".dependencies]
-rfd = { version = "0.17.2", default-features = false, features = ["gtk3"] }
 
 [build-dependencies]
 # Verifies that the generated third-party notices match the dependency graph they were made from.

@@ -54,11 +54,16 @@ silent.
 
 If you want to execute from the source code, clone the repo and run `cargo run --bin ev_cost_recovery`.
 
-**Linux notes:** The app opens files through `rfd`, configured in `Cargo.toml` to use GTK directly on Linux rather than the desktop portal `rfd` would reach for by default. The dialogs are therefore ordinary GTK
-windows in the app's own process: nothing has to be arranged, and no session bus has to be running.
-Building on Linux needs `libgtk-3-dev` and `pkg-config`; running needs the GTK 3 runtime, which
-any GTK desktop already has (`libgtk-3-0` on Ubuntu 22.04, renamed `libgtk-3-0t64` by the 64-bit
-`time_t` transition in 24.04 and later).
+**Linux notes:** The app opens files through `rfd`, which on Linux asks the XDG desktop portal. The
+desktop puts up its own dialog, in its own process — the Qt one on Plasma, the GTK one on GNOME —
+so the app looks native on either without linking a toolkit. Nothing but glibc is needed to build
+it, and `ldd` on the result names neither GTK nor Qt.
+
+What the machine does need at run time is a portal service and a session bus. Every desktop
+environment provides both; a bare window manager assembled from a netinstall may not, and there
+the dialog does not open while the rest of the app still runs. A portal older than 1.17 — Ubuntu
+22.04 ships 1.14, 26.04 ships 1.21 — opens the dialog in its own default folder instead of the one
+the app names.
 
 ## Software inputs and outputs
 
