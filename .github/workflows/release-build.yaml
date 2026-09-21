@@ -64,7 +64,18 @@ jobs:
       # Ahead of the build so a failure stops the release before any artifact is uploaded.
       # `--all-targets`: the release and test builds do not compile the same code, which is exactly
       # how a broken example or test target once reached a tag.
+      #
+      # Windows only. ci.yml fires on this same push -- its `on: push:` carries no branch or tag
+      # filter -- and runs the same suite on the same image, so a Linux run here would be the
+      # second of two identical ones. Windows has no such cover: ci.yml has a single job and it is
+      # not this one, so this is the only Windows run there will ever be, and the only thing
+      # standing between a Windows-only failure and a published binary.
+      #
+      # What that gives up: a Linux failure no longer stops the release on its own. The two
+      # workflows run in parallel and neither waits on the other, so a red ci.yml and a published
+      # release can sit side by side. Read the CI run before trusting a release.
       - name: Run tests
+        if: runner.os != 'Linux'
         run: cargo test --all-targets --verbose
       - uses: taiki-e/install-action@v2
         with:
