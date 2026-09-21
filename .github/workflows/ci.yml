@@ -28,10 +28,23 @@ jobs:
         run: cargo clippy --all-targets --all-features -- -D warnings
       - name: Test every target and feature
         run: cargo test --all-targets --all-features
-      # The ignored set is not run here. Both `#[ignore]`d tests read real customer documents that
-      # are not in the repository, so on a runner they can only report their own absence — and the
-      # harness has no skip outcome, so the only ways to do that are a failure or a pass that says
-      # nothing. They are run by hand, by name, on a machine that has the data.
+      # The documentation checks, which are `#[ignore]`d so that the release workflow's `cargo
+      # test` cannot reach `docs/`. Asking for them here is what makes them run, and this is the
+      # only place that does.
+      #
+      # `#[ignore]` marks two populations, and only one of them belongs on a runner. The other
+      # reads real customer documents under `data/` that are not in the repository, so there it
+      # could only report its own absence — and the harness has no skip outcome, so the only ways
+      # to do that are a failure or a pass that says nothing. Those are run by hand, on a machine
+      # that has the data.
+      #
+      # Hence the second line names its test: `--ignored` alone would run the whole `integration`
+      # target's ignored set, data-dependent half included. The first line needs no name, because
+      # every test in `docs_errors` is a documentation check.
+      - name: Check the documents against the code
+        run: |
+          cargo test --test docs_errors -- --ignored
+          cargo test --test integration -- --ignored the_documented_site_load_table_matches_the_golden
       # The cheapest rename detector the crate has: a broken intra-doc link is a `warning`, not an
       # error, so without these flags `cargo doc` would stay green while a type lost its only path.
       #

@@ -17,7 +17,11 @@
 //! test over fragments of it would fail on innocent rewording; what keeps those entries honest is
 //! the procedure in `docs/maintenance-manual.md`.
 //!
-//! cargo test --test docs_errors
+//! Both tests open `docs/ERRORS.md`, and a release build must not touch `docs/`, so both are
+//! `#[ignore]`d. `cargo test` skips them with no flag involved; `ci.yml` asks for them by name on
+//! every push, which is where the document is actually held to the code.
+//!
+//! cargo test --test docs_errors -- --ignored
 
 use ev_cost_recovery::{green_button::Anomaly, session::AnomalyKind};
 
@@ -115,6 +119,7 @@ fn unwrapped(text: &str) -> String {
 }
 
 #[test]
+#[ignore = "reads docs/ERRORS.md"]
 fn every_session_anomaly_has_an_entry_in_the_errors_document() {
     let doc = errors_doc();
     for (kind, token) in session_tokens() {
@@ -134,6 +139,7 @@ fn every_session_anomaly_has_an_entry_in_the_errors_document() {
 }
 
 #[test]
+#[ignore = "reads docs/ERRORS.md"]
 fn every_meter_anomaly_has_an_entry_in_the_errors_document() {
     let doc = errors_doc();
     for (kind, token) in meter_tokens() {

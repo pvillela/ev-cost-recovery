@@ -72,23 +72,27 @@ pub(crate) fn check(relative: &str, rendered: &str) {
         )
     });
 
-    // Named rather than left to be found in a diff where every line differs and none of them
-    // visibly. `.gitattributes` pins `tests/fixtures/**` to LF for exactly this, so a golden
-    // holding CRLF
-    // is a checkout that rewrote it.
-    if expected != rendered && expected.replace("\r\n", "\n") == rendered {
-        panic!(
-            "{}: the only difference is line endings -- the golden holds CRLF and the renderer \
-             emits LF. Re-check-out with `git rm --cached -r . && git reset --hard`.",
-            golden.display()
-        );
-    }
-
     assert_eq!(
-        expected,
-        rendered,
+        normalize_eol(&expected),
+        normalize_eol(rendered),
         "{} differs from what was rendered. Read the diff, and if the change is intended \
          regenerate with {UPDATE}=1.",
         golden.display()
     );
+}
+
+/// Every line terminator written as `\n`, so that CR, LF and CRLF all compare equal.
+///
+/// A golden is read from a working tree and compared against a string the renderer built in
+/// memory. Only the first of those passes through a checkout, and git converts line endings there
+/// according to each machine's `core.autocrlf` — so on Windows the file holds CRLF while the
+/// renderer emits LF, and every line of a correct golden differs. Normalising both sides settles
+/// it wherever the crate is built, without asking `.gitattributes` to pin anything.
+///
+/// A terminator that is *absent* on one side is still a difference: this collapses the forms of a
+/// line ending, it does not discard them. A golden missing its final newline still fails, which is
+/// a rendering change worth seeing.
+fn normalize_eol(text: &str) -> String {
+    // CRLF before a bare CR: the other order turns every `\r\n` into a blank line.
+    text.replace("\r\n", "\n").replace('\r', "\n")
 }

@@ -1,29 +1,30 @@
-# Every fixture, golden and input alike. The goldens are compared byte for byte and the renderers
-# emit `\n` on every platform; without this a checkout on Windows — where git ships with
-# `core.autocrlf=true`, as GitHub's runners do — rewrites them to CRLF and every line differs. The
-# inputs are pinned for the matching reason: what a conversion produces must not depend on the
-# platform the repository was checked out on.
+# Line endings are git's business, not this file's. Nothing here converts a file on checkout, so a
+# working tree holds whatever the platform's own configuration produces — CRLF on a stock Windows
+# install, LF elsewhere. The golden comparisons are indifferent to which: they treat CR, LF and
+# CRLF as one line terminator, so a file and the string a renderer built compare equal whichever
+# form the checkout wrote. `src/golden.rs` and `tests/common` each hold that comparison.
 #
-# Stated over the whole directory rather than per extension, because naming extensions is what
-# failed. `*.report.md` and `tests/fixtures/*.csv` covered every fixture when they were written;
-# then `.report.txt` and `.golden.txt` goldens were added and never listed, and the CSVs moved down
-# a level into `sessions/`, where a single `*` no longer reaches them — it does not cross a `/`.
-# Neither omission had to touch this file in order to compile, and neither shows on Linux, so the
-# gap surfaced only on the Windows leg of a release build.
-tests/fixtures/** text eol=lf
+# What is left below are the files that are not text at all, and the files whose exact bytes are
+# the subject rather than the carrier.
 
-# Except the workbook, which is a zip: line-ending conversion would corrupt it. Git's own heuristic
-# already treats it as binary, but the rule above is explicit, so this has to be too.
-tests/fixtures/**/*.xlsx binary
+# Zip containers and a PDF: any conversion corrupts them outright. Git's own heuristic reaches the
+# same conclusion, and saying so removes the question. Named by extension with no directory,
+# because workbooks live under `docs/` and under `tests/fixtures/` both.
+*.xlsx binary
+*.pdf binary
 
-# And except the Green Button feeds, which are stored with the CRLF Toronto Hydro serves them with.
-# `-text` is "convert nothing, in either direction", which is not the same as `eol=lf`: these are
-# specimens cut from a real export, and normalising them would make the fixtures differ from the
-# bytes the reader actually meets in the field. It fixes the Windows checkout just as well — the
-# reason CRLF is a problem elsewhere is that it appears on one platform and not the other, and a
-# file git never converts is identical everywhere.
-tests/fixtures/**/*.XML -text
+# The app icon and the interface faces: the icon is embedded into the Windows executables by
+# build.rs, and both fonts into the GUI binary by `include_bytes!`. `**` rather than `*`, because
+# the fonts sit a directory below the icon and a single `*` does not cross a `/`.
+assets/** binary
 
-# The app icon: embedded into the Windows executables by build.rs and into the GUI binary by
-# `include_bytes!`. Marked binary so that no checkout can rewrite a byte of it.
-assets/* binary
+# The Green Button feeds, held at the CRLF Toronto Hydro serves them with. `-text` is "convert
+# nothing, in either direction": these are specimens cut from a real export, and normalising them
+# would make the fixtures differ from the bytes the reader meets in the field.
+#
+# Nothing asserts this. The parser does not care what terminates a line, so a feed falling outside
+# the pattern would be normalised on the next `git add` from a machine with `core.autocrlf` set,
+# and no test anywhere would fail. That silence is why the pattern names no directory and spells
+# the extension as a character class: a feed is covered wherever it is put and however its
+# extension is capitalised, rather than only where the four that exist today happen to sit.
+*.[xX][mM][lL] -text

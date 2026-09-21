@@ -36,6 +36,7 @@
 //! showed up in a dump that recorded only values and number formats.
 
 use super::{fixture, fixtures_dir};
+use crate::common::normalize_eol;
 use ev_cost_recovery::{
     green_button::{read_gb_feed, write_gb_workbook},
     hydro_bill::BILL_END_DAY,
@@ -90,7 +91,10 @@ fn each_fixture_matches_its_golden() {
             continue;
         }
         fs::remove_dir_all(&dir).ok();
-        let expected = fs::read_to_string(&golden).unwrap_or_default();
+        // Normalised on both sides, and before the diff as well as before the comparison: a `\r`
+        // reported as a difference is one no reader can see.
+        let expected = normalize_eol(&fs::read_to_string(&golden).unwrap_or_default());
+        let actual = normalize_eol(&actual);
         if actual != expected {
             failures.push(name);
             eprintln!("--- {name} differs ---");
