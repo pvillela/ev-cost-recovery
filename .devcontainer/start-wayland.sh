@@ -24,15 +24,27 @@ chmod 700 "$XDG_RUNTIME_DIR"
 # devcontainer.json, where every shell in the container can see it.
 BUS_SOCKET=${DBUS_SESSION_BUS_ADDRESS#unix:path=}
 
-# Waits up to ten seconds for a path to appear. Each daemon below is started in the background and
-# is not yet listening when the shell returns from launching it.
+# Waits up to ten seconds for a command to succeed. Each daemon below is started in the background,
+# and is neither listening nor answering yet when the shell returns from launching it.
 wait_for() {
     for _ in $(seq 1 100); do
-        [ -e "$1" ] && return 0
+        "$@" >/dev/null 2>&1 && return 0
         sleep 0.1
     done
     return 1
 }
+
+# Reports a failure where it can still be read afterwards, then stops. What postStartCommand prints
+# is shown once, on the console that started the container, and cannot be read from inside it.
+fail() {
+    echo "start-wayland.sh: $1" | tee -a "$LOG" >&2
+    exit 1
+}
+
+# `set -e` stops the script at the first failing command and says nothing about it; this names the
+# line instead. Everything after a stop is skipped, the keyboard below included, while the daemons
+# already started keep running -- so a session can look complete and not be.
+trap 'fail "stopped at line $LINENO, status $?; see $LOG"' ERR
 
 # The session bus. The portal is not a library the app links against but a service reached over
 # this bus and activated from it on the first call, so with no bus there is no file dialog at all.
@@ -46,10 +58,7 @@ if ! pgrep -x dbus-daemon >/dev/null; then
     setsid dbus-daemon --session --nofork --nopidfile \
         --address="$DBUS_SESSION_BUS_ADDRESS" >>"$LOG" 2>&1 &
 fi
-if ! wait_for "$BUS_SOCKET"; then
-    echo "start-wayland.sh: the session bus did not come up; see $LOG" >&2
-    exit 1
-fi
+wait_for test -e "$BUS_SOCKET" || fail "the session bus did not come up; see $LOG"
 
 # The compositor. `setsid` puts it in its own process group so it is not signalled when
 # postStartCommand finishes.
@@ -65,10 +74,8 @@ if ! pgrep -x sway >/dev/null; then
     WLR_BACKENDS=headless WLR_LIBINPUT_NO_DEVICES=1 WLR_RENDERER=pixman \
         setsid sway >>"$LOG" 2>&1 &
 fi
-if ! wait_for "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY"; then
-    echo "start-wayland.sh: $WAYLAND_DISPLAY did not come up; see $LOG" >&2
-    exit 1
-fi
+wait_for test -e "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY" ||
+    fail "$WAYLAND_DISPLAY did not come up; see $LOG"
 
 # A D-Bus-activated service inherits the environment of the bus daemon, not of whoever called it.
 # The portal would otherwise start with no display at all and answer a file dialog it has nowhere
@@ -77,13 +84,11 @@ dbus-update-activation-environment \
     WAYLAND_DISPLAY XDG_RUNTIME_DIR XDG_CURRENT_DESKTOP XDG_SESSION_TYPE
 
 # The Wayland socket exists from the moment the compositor binds it, which is before it has an
-# output to place a window on. Asking it for the output is the first question whose answer means a
-# client would have got somewhere -- and it is worth asking, because a session that is listening
-# but has no screen accepts an app and shows nothing, which reads as an application bug.
-if ! swaymsg -t get_outputs >/dev/null 2>&1; then
-    echo "start-wayland.sh: sway is not answering on $SWAYSOCK; see $LOG" >&2
-    exit 1
-fi
+# output to place a window on, and before its IPC socket answers. Asking it for the output is the
+# first question whose answer means a client would have got somewhere -- and it is worth waiting
+# for, because a session that is listening but has no screen accepts an app and shows nothing,
+# which reads as an application bug.
+wait_for swaymsg -t get_outputs || fail "sway is not answering on $SWAYSOCK; see $LOG"
 
 # A keyboard that exists for the whole session. Without one the seat has no devices at all -- there
 # is no hardware here -- and an app that starts on a seat with no keyboard never binds one. Each
