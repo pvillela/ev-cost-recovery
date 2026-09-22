@@ -13,10 +13,11 @@ use std::{fs, path::Path};
 
 /// A file dialog that opens where the user last was, rather than wherever the system would put it.
 pub fn dialog(working: &WorkingDir) -> rfd::FileDialog {
-    // `set_directory` and nothing besides. It holds on Linux only because `Cargo.toml` picks
-    // rfd's GTK backend there; reached through the XDG desktop portal the folder is discarded on
-    // every version before 1.17. Do not pass the folder a second time as a file name to
-    // compensate: GTK reads a file name as a file to select, and a folder is not one.
+    // `set_directory` and nothing besides. On Linux rfd hands it to the XDG desktop portal as
+    // `current_folder`, which the portal honours from 1.17 on; an older one opens in its own
+    // default folder instead (see the `rfd` entry in `Cargo.toml`). Before anything has been
+    // picked -- the first dialog of every run -- no folder is passed and the desktop's own choice
+    // stands, since the app keeps nothing between runs.
     let dialog = rfd::FileDialog::new();
     match working.get() {
         Some(dir) => dialog.set_directory(dir),
