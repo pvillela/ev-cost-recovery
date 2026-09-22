@@ -12,7 +12,12 @@ set -e
 # Every daemon logs here rather than to the caller's stdout. A backgrounded child inherits
 # postStartCommand's pipe, and holding that pipe open makes the devcontainer's startup step appear
 # to hang long after this script has exited.
+#
+# Emptied first, so what it holds is this start's account and no other. /tmp can outlive a
+# container start, and this script's own failure lines carry no timestamp: a stale one left from
+# an earlier start would read as the reason for this one.
 LOG=/tmp/wayland-startup.log
+: >"$LOG"
 
 # Required, not cosmetic. The Wayland socket, sway's IPC socket and the session bus are all bound
 # inside it, and Vulkan initialisation fails outright with "XDG_RUNTIME_DIR not set in the
