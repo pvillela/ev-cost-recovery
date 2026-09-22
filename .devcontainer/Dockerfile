@@ -53,15 +53,3 @@ RUN export DEBIAN_FRONTEND=noninteractive \
         xdg-desktop-portal xdg-desktop-portal-kde \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
-
-# The compositor's configuration. It is read by sway running as `vscode`, and it is an image
-# layer, so it survives a plain container restart as well as a rebuild.
-#
-# `~/.config` already exists and already belongs to the user, so the one subdirectory below it is
-# all that has to be made. It stays root-owned: sway only reads its configuration, and 0755 is
-# enough to traverse and read, so handing the directory over would widen what the container user
-# may do to it for nothing in return. Nothing else under `~/.config` is touched either -- a
-# recursive `chown` there would have a scope set by whatever the base image ships, present and
-# future, which is not this file's to decide.
-RUN mkdir -p /home/vscode/.config/sway
-COPY --chown=vscode:vscode sway-config /home/vscode/.config/sway/config

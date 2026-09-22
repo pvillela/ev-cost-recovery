@@ -1,4 +1,4 @@
-# .devcontainer/sway-config -- installed at ~/.config/sway/config by the Dockerfile.
+# .devcontainer/sway-config -- passed to sway with `-c` by start-wayland.sh.
 #
 # A compositor with no screen, no seat and no keybindings. This file replaces sway's distributed
 # default outright, so everything the headless session needs has to be stated here; nothing is
@@ -22,3 +22,24 @@ default_border none
 # this container exists to remove. Without Xwayland, a failure to reach Wayland is an error that
 # names itself instead of a quiet success over a protocol the desktop is not using.
 xwayland disable
+
+# A keyboard that exists for the whole session. Without one the seat has no devices at all -- there
+# is no hardware here -- and an app that starts on a seat with no keyboard never binds one. Each
+# `wtype` call then creates a virtual keyboard, types, and destroys it within milliseconds, before
+# the app has a keyboard to receive the keys on, so every keystroke vanishes without an error.
+#
+# `wtype -s` holds its keyboard open while it sleeps, and sleeping is all this one does. It sleeps a
+# day at a time in a loop because the argument is a millisecond count with a ceiling, and a
+# container can outlive any single sleep. The loop runs only while `wtype` succeeds: once the
+# compositor is gone every call fails at once, and a loop that ignored that would spin. A `wtype`
+# already asleep when sway stops does not notice until it wakes, so a sway restarted by hand leaves
+# an idle loop behind for up to a day; stopping the container ends everything.
+#
+# Started by sway rather than by start-wayland.sh, so it lives exactly as long as the compositor
+# whose seat it sits on, and in the compositor's own session -- not in the session of a startup
+# script whose processes the container's tooling is free to stop once it returns. It is running
+# before any app can connect, which is the point of it.
+#
+# The pointer has no equivalent: `wlrctl` cannot hold a device open, so nothing here can click. Tab
+# moves between the app's controls and Space presses the one with focus.
+exec sh -c 'while wtype -s 86400000; do :; done'

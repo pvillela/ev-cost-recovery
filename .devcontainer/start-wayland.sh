@@ -69,10 +69,13 @@ wait_for test -e "$BUS_SOCKET" || fail "the session bus did not come up; see $LO
 # to be granted in a container; and pixman is the software renderer. Without that last one,
 # wlroots looks for a GPU, logs `drmGetDevices2 failed` twice, and then falls back to pixman
 # anyway -- two lines that read as the reason for any failure that follows, and never are.
+#
+# The configuration is read from the repository, beside this script, rather than from a copy in the
+# image: an edit to it then takes effect at the next container start, with no rebuild to forget.
 if ! pgrep -x sway >/dev/null; then
     rm -f "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY" "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY.lock" "$SWAYSOCK"
     WLR_BACKENDS=headless WLR_LIBINPUT_NO_DEVICES=1 WLR_RENDERER=pixman \
-        setsid sway >>"$LOG" 2>&1 &
+        setsid sway -c "$(dirname "$(readlink -f "$0")")/sway-config" >>"$LOG" 2>&1 &
 fi
 wait_for test -e "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY" ||
     fail "$WAYLAND_DISPLAY did not come up; see $LOG"
@@ -90,18 +93,8 @@ dbus-update-activation-environment \
 # which reads as an application bug.
 wait_for swaymsg -t get_outputs || fail "sway is not answering on $SWAYSOCK; see $LOG"
 
-# A keyboard that exists for the whole session. Without one the seat has no devices at all -- there
-# is no hardware here -- and an app that starts on a seat with no keyboard never binds one. Each
-# `wtype` call then creates a virtual keyboard, types, and destroys it within milliseconds, before
-# the app has a keyboard to receive the keys on, so every keystroke vanishes without an error.
-#
-# `wtype -s` holds its keyboard open while it sleeps, and sleeping is all this one does. It sleeps a
-# day at a time in a loop because the argument is a millisecond count with a ceiling, and a
-# container can outlive any single sleep. Started after sway is answering, so it has a seat to join,
-# and before any app, which is the point of it.
-#
-# The pointer has no equivalent: `wlrctl` cannot hold a device open, so nothing here can click. Tab
-# moves between the app's controls and Space presses the one with focus.
-if ! pgrep -f 'wtype -s 86400000' >/dev/null; then
-    setsid bash -c 'while :; do wtype -s 86400000; done' >>"$LOG" 2>&1 &
-fi
+# The keyboard sway starts from its configuration (see sway-config). An app launched on a seat with
+# no keyboard never binds one and ignores every key, so a seat that ends up without it is a failure
+# here, where it can be named, rather than later, where it looks like the app.
+wait_for sh -c 'swaymsg -t get_inputs | grep -q "\"type\": \"keyboard\""' ||
+    fail "sway started no keyboard on its seat; see $LOG"
