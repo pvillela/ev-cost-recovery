@@ -84,3 +84,19 @@ if ! swaymsg -t get_outputs >/dev/null 2>&1; then
     echo "start-wayland.sh: sway is not answering on $SWAYSOCK; see $LOG" >&2
     exit 1
 fi
+
+# A keyboard that exists for the whole session. Without one the seat has no devices at all -- there
+# is no hardware here -- and an app that starts on a seat with no keyboard never binds one. Each
+# `wtype` call then creates a virtual keyboard, types, and destroys it within milliseconds, before
+# the app has a keyboard to receive the keys on, so every keystroke vanishes without an error.
+#
+# `wtype -s` holds its keyboard open while it sleeps, and sleeping is all this one does. It sleeps a
+# day at a time in a loop because the argument is a millisecond count with a ceiling, and a
+# container can outlive any single sleep. Started after sway is answering, so it has a seat to join,
+# and before any app, which is the point of it.
+#
+# The pointer has no equivalent: `wlrctl` cannot hold a device open, so nothing here can click. Tab
+# moves between the app's controls and Space presses the one with focus.
+if ! pgrep -f 'wtype -s 86400000' >/dev/null; then
+    setsid bash -c 'while :; do wtype -s 86400000; done' >>"$LOG" 2>&1 &
+fi
