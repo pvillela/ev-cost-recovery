@@ -1,7 +1,7 @@
 //! The window: the tab bar and which tab is drawn.
 
 use crate::{
-    about, convert, detail, reimbursement,
+    about, convert, detail, reimbursement, scroll,
     state::{AppState, Tab},
     surplus,
     theme::{self, Bold as _},
@@ -157,5 +157,9 @@ impl eframe::App for App {
 
         // After the panels, so it is drawn over whichever tab is open.
         about::window(root_ui.ctx(), &mut self.about_open);
+    }
+
+    fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+        scroll::accelerate(raw_input, ctx.pixels_per_point());
     }
 }
