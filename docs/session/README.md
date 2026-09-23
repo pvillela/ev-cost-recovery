@@ -42,25 +42,15 @@ Given a time interval of interest **`I`** as described above, the estimation of 
 
   - Compute the segment's `agg_count` by summing the per-session count contributions, and its aggregate kWh by summing the per-session energy contributions. The aggregate kW `agg_kw` is that aggregate kWh over the segment's length in hours.
 
-  - The two aggregates divide the same overlap by different things — the segment's own length for the count, the session's for the energy — so neither can be read off the other. `Active_Charge_Time` takes no part in either; it bears only on `avg_kw`, which is a statement about a record and an input to no estimate.
+  *Note: The two aggregates divide the same overlap by different things — the segment's own length for the count, the session's for the energy — so neither can be read off the other. `Active_Charge_Time` takes no part in either; it bears only on `avg_kw`, which is a statement about a record and an input to no estimate.*
 
-  - From these two key values, compute the following ones:
+- Identify the one or two *maximal* segments, i.e., segments that have the highest `agg_kw` and `agg_count`, respectively.
+- From the maximal `agg_kw` and `agg_count` values, compute the "all-in power" values using the built-in [electrotechnical model](site-model-marcus.md), as follows:
+  - Energy-based kW and kVA -- The model takes the `agg_kw` value and computes the resulting "all-in" kW and kVA values, which include the load from the transformer.
+  - Count-based kW and kVA -- A charger's nominal current is the breaker's amperage rating derated to 80% for continuous duty; multiplied by the standard voltage, that gives the nominal kVA of one charger, and multiplied by the typical power factor for a charger, its nominal kW. The model scales these by the `agg_count` and adds in the load from the transformer, as for the energy-based values.
+  
+  *Note: The kW and kVA values directly obtained from the sessions' `agg_kw` and `agg_count` only reflect what is measured at the charging stations. Those numbers are a useful approximation but do **not** provide the total power draw of the entire EV charging infrastructure. The calculations based on the electrotechnical model include the non-linear impact of the transformer.*
 
-    - **`energy_based_kw`**: `agg_kw`.
-
-    - **`energy_based_kva`**: `agg_kw` divided by a power factor that reflects the combination of typical EV chargers and the Evolute infrastructure (~0.98). *(Approximate. The software does not divide by a power factor at all — kVA is a quadrature sum, and ~0.98 is a good figure only near full occupancy. See [kW and kVA calculations](#kw-and-kva-calculations).)*
-
-    - **`count_based_kw`**: `agg_count` multiplied by the average per-EV kW rating of the Evolute infrastructure (~6.7 kW). *(Approximate. The per-EV figure is an average, not a constant; it falls as the site fills. See [kW and kVA calculations](#kw-and-kva-calculations).)*
-
-    - **`count_based_kva`**: `count_based_kw` divided by a power factor that reflects the combination of typical EV chargers and the Evolute infrastructure (~0.98). *(Approximate, for the same reason as `energy_based_kva`.)*
-
-
-- Identify the one or two *maximal* segments, i.e., segments that have the highest:
-
-  - **`energy_based_kw`**: `agg_kw`.
-
-  - **`count_based_kw`**: `agg_count` multiplied by the average per-EV kW rating of the Evolute infrastructure (~6.7 kW). *(Approximate; see [kW and kVA calculations](#kw-and-kva-calculations).)*
-- The identified maximal segments are typically one and the same, but may be distinct in some situations.
 - Report on the maximal segment(s).
 
 - The software detects data anomalies in the reported session data. Anomalies associated with every session that **intersects `I`** are reported alongside the estimates, as well as anomalies that caused sessions to be excluded from the analysis. Other sessions elsewhere in the session data are not included in the report.
@@ -88,10 +78,8 @@ The interval of interest must be a whole number of `SEGMENT_DURATION`s — 15 mi
 
 #### kW and kVA calculations
 
-The two formulas above — a per-EV kW rating and a division by a power factor — are a fair
-description of the *shape* of the estimates, and a defensible approximation of their values. They
-are not what the software computes. Both figures come out of a small electrical model of the site,
-described in [Site Model — Level 2 EV Chargers on a Marcus AMTH75A1 75 kVA 600–208 V Transformer](site-model-marcus.md), and implemented in `src/session/site_model.rs`. It is worth knowing where the model and the shorthand part company.
+The kW and kVA values directly obtained from the sessions' `agg_kw` and `agg_count` only reflect what is measured at the charging stations. Those numbers are a useful approximation but do **not** provide the total power draw of the entire EV charging infrastructure. The calculations based on the electrotechnical model include the non-linear impact of the transformer.
+The model is described in [Site Model — Level 2 EV Chargers on a Marcus AMTH75A1 75 kVA 600–208 V Transformer](site-model-marcus.md) and implemented in `src/session/site_model.rs`.
 
 ##### The per-EV kW figure is an average, not a constant
 
@@ -123,7 +111,7 @@ then the whole of the load.
 
 ##### Past what the panels hold, the model uses full-panel average kW and kVA values
 
-The electrical model describes one panel on one transformer, and the site as built is one such panel of
+The electrical model describes one panel on one transformer, and the site as built is one such panel capable of
 supporting 10 concurrent charging sessions. The constant `PANEL_COUNT` should be updated when additional panels are installed. Nonetheless, if the constant is not updated, the software will continue to provide reasonable estimates using the full-panel average kW and kVA values for charging sessions above the panels' capacity.
 
 Because the Session Report does not contain panel information, even when there are multiple panels and the constant is up-to-date, the software packs sessions into as few panels as will hold them: panels fill to ten, one at a time, one panel takes the remainder, and the rest stand idle — still drawing their own standing block, because a transformer's core loss and magnetising current
