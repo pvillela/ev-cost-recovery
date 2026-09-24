@@ -1,18 +1,24 @@
 //! The Reimbursement tab: one month's session report and what Evolute paid, the variance out.
 //!
 //! Standalone. It reads no bill and no meter export, and shares nothing with the other two tabs but
-//! the folder the file dialogs open in — the question is whether Evolute paid what our rates earned
-//! over a calendar month, not whether those rates cover Toronto Hydro's bill over a billing period.
+//! the folder the file dialogs open in and the rates workbook — the question is whether Evolute
+//! paid what our rates earned over a calendar month, not whether those rates cover Toronto Hydro's
+//! bill over a billing period.
 
 use crate::{
-    state::{ReimbursementState, WorkingDir, report_sections},
+    state::{RatesWorkbook, ReimbursementState, WorkingDir, report_sections},
     theme::{self, Bold as _},
     widgets,
 };
 use eframe::egui;
 use ev_cost_recovery::api::ReimbursementReconciliation;
 
-pub fn ui(ui: &mut egui::Ui, state: &mut ReimbursementState, working: &mut WorkingDir) {
+pub fn ui(
+    ui: &mut egui::Ui,
+    state: &mut ReimbursementState,
+    working: &mut WorkingDir,
+    rates: &mut RatesWorkbook,
+) {
     widgets::heading(ui, "Evolute reimbursement reconciliation");
     widgets::note(
         ui,
@@ -25,14 +31,22 @@ pub fn ui(ui: &mut egui::Ui, state: &mut ReimbursementState, working: &mut Worki
 
     inputs(ui, state, working);
     ui.add_space(14.0);
-    rates(ui, state);
+    widgets::rates_workbook_picker(ui, rates, working, "reimbursement", LABEL_WIDTH);
+    widgets::note(
+        ui,
+        "The month is priced at the rates in effect on the 1st, and the rates may not change \
+         within it.",
+    );
 
     ui.add_space(14.0);
     if ui
-        .add_enabled(state.can_run(), egui::Button::new("Reconcile the month"))
+        .add_enabled(
+            state.can_run(rates),
+            egui::Button::new("Reconcile the month"),
+        )
         .clicked()
     {
-        state.run();
+        state.run(rates);
     }
 
     if let Some(message) = &state.error {
@@ -154,20 +168,6 @@ fn inputs(ui: &mut egui::Ui, state: &mut ReimbursementState, working: &mut Worki
         "The one figure entered manually, because it is not in either document: it is what was \
          seen to arrive, from a bank statement or a remittance advice.",
     );
-}
-
-fn rates(ui: &mut egui::Ui, state: &mut ReimbursementState) {
-    ui.label(egui::RichText::new("Cost-recovery rates").bold());
-    widgets::note(
-        ui,
-        "The rates in effect over the month, in dollars per kilowatt-hour. One schedule only: our \
-         rates change on the first of a month, so a month has one set of them.",
-    );
-    ui.add_space(6.0);
-
-    if widgets::schedule(ui, &mut state.rates, "reimbursement") {
-        state.edited();
-    }
 }
 
 // --------------------------------------------------------------------------------------------

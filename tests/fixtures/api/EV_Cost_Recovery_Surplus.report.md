@@ -21,6 +21,7 @@ EV Cost Recovery
 ================
 
 Period: 2026-05-24 - 2026-06-23  (31 days)
+Rates workbook: EV_Cost_Recovery_Rates.xlsx
 
 | Item                          | Amount |
 |:------------------------------|-------:|

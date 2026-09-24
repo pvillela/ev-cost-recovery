@@ -138,9 +138,12 @@ impl eframe::App for App {
                 .id_salt(self.state.tab)
                 .auto_shrink([false, false])
                 .show(ui, |ui| match self.state.tab {
-                    Tab::Surplus => {
-                        surplus::ui(ui, &mut self.state.surplus, &mut self.state.working_dir)
-                    }
+                    Tab::Surplus => surplus::ui(
+                        ui,
+                        &mut self.state.surplus,
+                        &mut self.state.working_dir,
+                        &mut self.state.rates_workbook,
+                    ),
                     Tab::Detail => {
                         detail::ui(ui, &mut self.state.surplus, &mut self.state.working_dir)
                     }
@@ -148,12 +151,16 @@ impl eframe::App for App {
                         ui,
                         &mut self.state.reimbursement,
                         &mut self.state.working_dir,
+                        &mut self.state.rates_workbook,
                     ),
                     Tab::Convert => {
                         convert::ui(ui, &mut self.state.convert, &mut self.state.working_dir)
                     }
                 });
         });
+
+        // A workbook chosen on either tab this frame drops the figures on both.
+        self.state.settle_rates_workbook();
 
         // After the panels, so it is drawn over whichever tab is open.
         about::window(root_ui.ctx(), &mut self.about_open);

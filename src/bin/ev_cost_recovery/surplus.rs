@@ -1,14 +1,19 @@
-//! The Cost recovery tab: four files and a rate schedule in, the surplus report out.
+//! The Cost recovery tab: four files and the rates workbook in, the surplus report out.
 
 use crate::{
-    state::{Input, SurplusState, WorkingDir, report_sections},
+    state::{Input, RatesWorkbook, SurplusState, WorkingDir, report_sections},
     theme::{self, Bold as _},
     widgets,
 };
 use eframe::egui;
 use ev_cost_recovery::api::CostRecoverySurplus;
 
-pub fn ui(ui: &mut egui::Ui, state: &mut SurplusState, working: &mut WorkingDir) {
+pub fn ui(
+    ui: &mut egui::Ui,
+    state: &mut SurplusState,
+    working: &mut WorkingDir,
+    rates: &mut RatesWorkbook,
+) {
     widgets::heading(ui, "EV cost recovery surplus");
     widgets::note(
         ui,
@@ -19,14 +24,17 @@ pub fn ui(ui: &mut egui::Ui, state: &mut SurplusState, working: &mut WorkingDir)
 
     inputs(ui, state, working);
     ui.add_space(14.0);
-    rates(ui, state);
+    widgets::rates_workbook_picker(ui, rates, working, "surplus", 0.0);
 
     ui.add_space(14.0);
     if ui
-        .add_enabled(state.can_run(), egui::Button::new("Work out the surplus"))
+        .add_enabled(
+            state.can_run(rates),
+            egui::Button::new("Work out the surplus"),
+        )
         .clicked()
     {
-        state.run();
+        state.run(rates);
     }
 
     if let Some(message) = &state.error {
@@ -118,34 +126,6 @@ fn inputs(ui: &mut egui::Ui, state: &mut SurplusState, working: &mut WorkingDir)
          whole of it. Choosing a different bill empties the second slot, and the first as well \
          unless the report in it reaches into the new period.",
     );
-}
-
-fn rates(ui: &mut egui::Ui, state: &mut SurplusState) {
-    ui.label(egui::RichText::new("Cost-recovery rates").bold());
-    widgets::note(ui, "In dollars per kilowatt-hour.");
-    ui.add_space(6.0);
-
-    if widgets::schedule(ui, &mut state.rates_at_start, "start") {
-        state.rates_edited();
-    }
-
-    ui.add_space(6.0);
-    let mut changed = state.rates_changed;
-    if ui
-        .checkbox(&mut changed, "The rates changed during the period")
-        .changed()
-    {
-        state.set_rates_changed(changed);
-    }
-
-    if state.rates_changed {
-        ui.add_space(6.0);
-        // The energy is split at local midnight on the second schedule's effective date, so that
-        // date has to fall inside the period. The library says so if it does not.
-        if widgets::schedule(ui, &mut state.rates_at_end, "end") {
-            state.rates_edited();
-        }
-    }
 }
 
 // --------------------------------------------------------------------------------------------

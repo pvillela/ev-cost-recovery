@@ -41,6 +41,7 @@ use crate::{
     error::ConversionError,
     green_button::{GbReadError, read_gb_feed, read_gb_for_billing_period, write_gb_workbook},
     hydro_bill::{BILL_END_DAY, hydro_bill_from_pdf},
+    rates_workbook::read_rates_workbook,
     session::{self, Sessions, csv_sessions},
 };
 use jiff::civil::Date;
@@ -52,8 +53,7 @@ pub use crate::{
     api::{
         ApiError,
         pure::{
-            CostRecovery, CostRecoveryRates, CostRecoveryRatesError, CostRecoverySurplus,
-            DeliveryCost, Energy, EnergyCost, PowerEstimates, RateBand,
+            CostRecovery, CostRecoverySurplus, DeliveryCost, Energy, EnergyCost, PowerEstimates,
             ReimbursementReconciliation,
         },
     },
@@ -252,24 +252,21 @@ pub fn energy_cost(bill_pdf: &Path, session_csvs: &[&Path]) -> Result<EnergyCost
     })
 }
 
-/// Returns the cost recovery allocated to a billing period, at the EV cost-recovery rates given.
+/// Returns the cost recovery allocated to a billing period, at the EV cost-recovery rates in the
+/// rates workbook.
 ///
-/// Reads the session reports and hands them to
-/// [`pure::cost_recovery`](fn@super::pure::cost_recovery), which states how the figures are arrived
-/// at. No bill and no meter export: the rates here are ours rather than Toronto Hydro's, so nothing
-/// on the bill bears on the answer.
+/// Reads the rates workbook and the session reports and hands them to
+/// [`pure::cost_recovery`](fn@super::pure::cost_recovery), which states which rates price the
+/// period and how the figures are arrived at. No bill and no meter export: the rates here are ours
+/// rather than Toronto Hydro's, so nothing on the bill bears on the answer.
 ///
 /// # Arguments
 /// - `billing_period_ending` - the billing period, named by the date it closes on. Must be
 ///   [`BILL_END_DAY`] of its month.
 /// - `session_csvs` - the Evolute session reports covering the billing period.
-/// - `recovery_rates_at_start` - the rates in effect on the period's first day.
-/// - `recovery_rates_at_end` - the rates the period changed to, or `None` if it did not.
+/// - `rates_xlsx` - the rates workbook.
 ///
-/// The rates are values rather than a path. Nothing in this crate writes them down, so there is no
-/// file for this to read them from and no file a rate failure could be about.
-///
-/// They must cover the billing period completely between them, which is checked from their file
+/// The session reports must cover the billing period completely between them, which is checked from their file
 /// names before anything is read; how many there are is not a rule. That check matters as much
 /// here as to
 /// [`energy`]: the recovery is a sum over whatever it is given, so a month's report missing from
@@ -282,37 +279,36 @@ pub fn energy_cost(bill_pdf: &Path, session_csvs: &[&Path]) -> Result<EnergyCost
 /// # Errors
 ///
 /// See [`ApiError`]. Nothing is read until the file names have been checked against the period, and
-/// the rates are checked against it before the reports are opened for the same reason.
+/// the rates workbook is read before the reports.
 pub fn cost_recovery(
     billing_period_ending: Date,
     session_csvs: &[&Path],
-    recovery_rates_at_start: CostRecoveryRates,
-    recovery_rates_at_end: Option<CostRecoveryRates>,
+    rates_xlsx: &Path,
 ) -> Result<CostRecovery, ApiError> {
     pure::check_reports_cover_period(billing_period_ending, session_csvs)?;
+    let rates = read_rates(rates_xlsx)?;
     let sessions = read_sessions(session_csvs)?;
     Ok(pure::cost_recovery(
         billing_period_ending,
         &sessions,
-        recovery_rates_at_start,
-        recovery_rates_at_end,
+        &rates,
     )?)
 }
 
 /// Returns the EV cost-recovery surplus for a billing period: what the rates recover, less what the
 /// chargers' share of the bill cost.
 ///
-/// Reads the bill, the meter export and the session reports — every source the library has —
-/// and hands them to [`pure::cost_recovery_surplus`](fn@super::pure::cost_recovery_surplus), which
-/// states how the figures are arrived at. The result carries all three parts whole, so the
-/// subtraction can be checked against the reports it came from.
+/// Reads the bill, the meter export, the rates workbook and the session reports — every source the
+/// library has — and hands them to
+/// [`pure::cost_recovery_surplus`](fn@super::pure::cost_recovery_surplus), which states how the
+/// figures are arrived at. The result carries all three parts whole, so the subtraction can be
+/// checked against the reports it came from.
 ///
 /// # Arguments
 /// - `bill_pdf` - the Toronto Hydro bill PDF for the period.
 /// - `gb_xml` - source Green Button XML file covering the billing period.
 /// - `session_csvs` - the Evolute session reports covering the billing period.
-/// - `recovery_rates_at_start` - the rates in effect on the period's first day.
-/// - `recovery_rates_at_end` - the rates the period changed to, or `None` if it did not.
+/// - `rates_xlsx` - the rates workbook.
 ///
 /// There is no `billing_period_ending` argument. The bill states which period it covers, and it is
 /// read first so that every other source is fetched for that period. A date passed alongside could
@@ -334,8 +330,7 @@ pub fn cost_recovery_surplus(
     bill_pdf: &Path,
     gb_xml: &Path,
     session_csvs: &[&Path],
-    recovery_rates_at_start: CostRecoveryRates,
-    recovery_rates_at_end: Option<CostRecoveryRates>,
+    rates_xlsx: &Path,
 ) -> Result<CostRecoverySurplus, ApiError> {
     // First, because it is what says which period this is about, as it is for the two costs.
     let bill = hydro_bill_from_pdf(bill_pdf).map_err(|cause| ReadError::Bill {
@@ -346,29 +341,27 @@ pub fn cost_recovery_surplus(
 
     pure::check_reports_cover_period(billing_period_ending, session_csvs)?;
 
+    // Ahead of the meter export: a workbook is a few rows, and a mistake in it is worth reporting
+    // before a year of meter readings is parsed.
+    let rates = read_rates(rates_xlsx)?;
     let gb_period_values = read_gb_for_billing_period(gb_xml, billing_period_ending, BILL_END_DAY)
         .map_err(|cause| gb_read_error(gb_xml, cause))?;
     let sessions = read_sessions(session_csvs)?;
 
-    pure::cost_recovery_surplus(
-        &bill,
-        gb_period_values,
-        &sessions,
-        recovery_rates_at_start,
-        recovery_rates_at_end,
-    )
-    .map_err(|cause| ApiError::CostRecoverySurplus {
-        source: surplus_source(&cause, bill_pdf, gb_xml),
-        cause,
+    pure::cost_recovery_surplus(&bill, gb_period_values, &sessions, &rates).map_err(|cause| {
+        ApiError::CostRecoverySurplus {
+            source: surplus_source(&cause, bill_pdf, gb_xml),
+            cause,
+        }
     })
 }
 
 /// Reconciles what Evolute reimbursed for a calendar month against what the cost-recovery rates
 /// come to over the same month.
 ///
-/// Reads both of Evolute's documents for the month and hands their figures to
-/// [`pure::reconcile_evolute_reimbursement`](fn@super::pure::reconcile_evolute_reimbursement),
-/// which states how the comparison is arrived at.
+/// Reads both of Evolute's documents for the month and the rates workbook, and hands their figures
+/// to [`pure::reconcile_evolute_reimbursement`](fn@super::pure::reconcile_evolute_reimbursement),
+/// which states which rates price the month and how the comparison is arrived at.
 ///
 /// Independent of the surplus the rest of this module computes, and not a part of it. That asks
 /// whether our rates cover Toronto Hydro's bill over a billing period running from the 24th; this
@@ -385,8 +378,7 @@ pub fn cost_recovery_surplus(
 ///   read, and it has to be: the money is seen to land in a bank statement or a remittance advice,
 ///   neither of which is a document this crate opens. Taking it off the Charges Report instead
 ///   would make it agree with that report by construction and the remittance check worthless.
-/// - `cost_recovery_rates` - the rates in effect over the month, as values rather than a path, for
-///   the reason [`cost_recovery`] takes them that way: nothing in this crate writes them down.
+/// - `rates_xlsx` - the rates workbook.
 ///
 /// The month is the Charges Report's, read off its own name, and the session reports are checked to
 /// cover it before anything is reconciled. Reconciling one month's charges against sessions that do
@@ -409,7 +401,7 @@ pub fn reconcile_evolute_reimbursement(
     session_csvs: &[&Path],
     charges_csv: &Path,
     reimbursed: f64,
-    cost_recovery_rates: CostRecoveryRates,
+    rates_xlsx: &Path,
 ) -> Result<ReimbursementReconciliation, ApiError> {
     let charges = charges_report(charges_csv).map_err(|cause| ReadError::ChargesReport {
         path: charges_csv.to_path_buf(),
@@ -423,6 +415,7 @@ pub fn reconcile_evolute_reimbursement(
         charges.month.last_of_month(),
         session_csvs,
     )?;
+    let rates = read_rates(rates_xlsx)?;
     let sessions = read_sessions(session_csvs)?;
 
     Ok(pure::reconcile_evolute_reimbursement(
@@ -431,7 +424,7 @@ pub fn reconcile_evolute_reimbursement(
         charges.total_kwh,
         charges.total_amount,
         reimbursed,
-        cost_recovery_rates,
+        &rates,
     )?
     .with_charges_report(charges))
 }
@@ -543,8 +536,9 @@ pub fn gb_xml_to_xlsx(
 /// Names the file a [`CostRecoverySurplusError`] is about.
 ///
 /// Delegates to the two functions that already answer this for the costing errors, since a surplus
-/// fails in exactly their ways plus the recovery's. A recovery failure names no file: the rates are
-/// the caller's own values, and the period came from the bill only after it was read successfully.
+/// fails in exactly their ways plus the recovery's. A recovery failure is given no file here: a
+/// rates failure names its workbook itself, and the period came from the bill only after it was
+/// read successfully.
 fn surplus_source(
     cause: &CostRecoverySurplusError,
     bill_pdf: &Path,
@@ -636,6 +630,14 @@ fn gb_read_error(xml_path: &Path, cause: GbReadError) -> ReadError {
     }
 }
 
+/// The rates workbook's schedule, with every effective date checked.
+fn read_rates(path: &Path) -> Result<pure::RateSchedule, ReadError> {
+    read_rates_workbook(path).map_err(|cause| ReadError::RatesWorkbook {
+        path: path.to_path_buf(),
+        cause: Box::new(cause),
+    })
+}
+
 /// The named reports as one [`Sessions`].
 ///
 /// Merged rather than flattened, and merged as reports rather than as lists of sessions. What each
@@ -662,7 +664,11 @@ fn read_sessions(paths: &[&Path]) -> Result<Sessions, ReadError> {
 mod test {
     use super::*;
     use crate::{
-        api::error::CoverageError, api::pure::CostRecoveryError, hydro_bill::billing_period_dates,
+        api::{
+            error::CoverageError,
+            pure::{CostRecoveryError, RateScheduleError, RateScheduleErrorKind},
+        },
+        hydro_bill::billing_period_dates,
         time::Tou,
     };
     use jiff::civil::date;
@@ -715,23 +721,36 @@ mod test {
         );
 
         let missing_charges = Path::new("/nonexistent/no_such_charges.csv");
-        let charges = reconcile_evolute_reimbursement(
-            &[missing_csv],
-            missing_charges,
-            0.0,
-            CostRecoveryRates {
-                effective_date: date(2026, 5, 1),
-                on_peak: 0.11,
-                mid_peak: 0.09,
-                off_peak: 0.07,
-            },
-        )
-        .unwrap_err()
-        .to_string();
+        let missing_rates = Path::new("/nonexistent/no_such_rates.xlsx");
+        let charges =
+            reconcile_evolute_reimbursement(&[missing_csv], missing_charges, 0.0, missing_rates)
+                .unwrap_err()
+                .to_string();
         assert_eq!(
             charges.matches("no_such_charges.csv").count(),
             1,
             "charges report: {charges}"
+        );
+
+        // The rates workbook is read once the report names have passed, and before the reports.
+        let rates = cost_recovery(
+            date(2026, 6, 23),
+            &[
+                Path::new("Session_Report_May_1_2026-May_31_2026.csv"),
+                Path::new("Session_Report_June_1_2026-June_30_2026.csv"),
+            ],
+            missing_rates,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(rates, ApiError::Read(ReadError::RatesWorkbook { .. })),
+            "{rates}"
+        );
+        let rates = rates.to_string();
+        assert_eq!(
+            rates.matches("no_such_rates.xlsx").count(),
+            1,
+            "rates workbook: {rates}"
         );
     }
 
@@ -972,20 +991,13 @@ mod test {
     /// check has to catch a month missing from the call before either file is opened.
     #[test]
     fn cost_recovery_refuses_reports_that_do_not_cover_the_period() {
-        let rates = CostRecoveryRates {
-            effective_date: date(2026, 5, 1),
-            on_peak: 0.11,
-            mid_peak: 0.09,
-            off_peak: 0.07,
-        };
         let err = cost_recovery(
             date(2026, 6, 23),
             &[
                 Path::new("Session_Report_April_1_2026-April_30_2026.csv"),
                 Path::new("Session_Report_June_1_2026-June_30_2026.csv"),
             ],
-            rates,
-            None,
+            Path::new("nothing.xlsx"),
         )
         .expect_err("April and June do not cover a period starting 24 May");
         assert!(
@@ -1008,12 +1020,6 @@ mod test {
     /// failure reported.
     #[test]
     fn the_surplus_reads_the_bill_first_too() {
-        let rates = CostRecoveryRates {
-            effective_date: date(2026, 5, 1),
-            on_peak: 0.11,
-            mid_peak: 0.09,
-            off_peak: 0.07,
-        };
         let err = cost_recovery_surplus(
             Path::new("nothing.pdf"),
             Path::new("nothing.XML"),
@@ -1023,8 +1029,7 @@ mod test {
                 Path::new("Session_Report_April_1_2026-April_30_2026.csv"),
                 Path::new("Session_Report_June_1_2026-June_30_2026.csv"),
             ],
-            rates,
-            None,
+            Path::new("nothing.xlsx"),
         )
         .expect_err("there is no such bill");
         assert!(
@@ -1034,9 +1039,9 @@ mod test {
         assert!(err.to_string().contains("nothing.pdf"), "{err}");
     }
 
-    /// A surplus fails in the two costing operations' ways plus the recovery's, and names a file
-    /// only where they would. The rates are the caller's own values, so a recovery failure names
-    /// none.
+    /// A surplus fails in the two costing operations' ways plus the recovery's, and is given a file
+    /// only where they would. A rates failure names its workbook in its own message, so it is given
+    /// none here.
     #[test]
     fn a_surplus_failure_names_a_file_only_where_a_cost_would() {
         let bill = Path::new("June.pdf");
@@ -1055,13 +1060,20 @@ mod test {
         });
         assert_eq!(surplus_source(&no_rate, bill, xml).as_deref(), Some(bill));
 
-        // The rates came from the caller and the period from a bill already read, so no file is at
-        // fault.
-        let rates = CostRecoverySurplusError::Recovery(CostRecoveryError::RatesNotYetInEffect {
-            period_start: date(2026, 5, 24),
-            effective_date: date(2026, 6, 1),
-        });
+        // The rates failure carries its workbook, and adding it again would print it twice.
+        let rates = CostRecoverySurplusError::Recovery(CostRecoveryError::Rates(Box::new(
+            RateScheduleError {
+                workbook: Some(PathBuf::from("Rates.xlsx")),
+                sheet: "rates".to_owned(),
+                kind: RateScheduleErrorKind::NotYetInEffect {
+                    date: date(2026, 5, 24),
+                    first: date(2026, 6, 1),
+                },
+            },
+        )));
         assert_eq!(surplus_source(&rates, bill, xml), None);
+        let named = ApiError::from(rates).to_string();
+        assert_eq!(named.matches("Rates.xlsx").count(), 1, "{named}");
     }
 
     /// The energy cost takes no period either, so the bill is read before the report check, as it

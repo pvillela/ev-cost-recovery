@@ -4,11 +4,10 @@
 //! `egui` in its public surface, and this is the only app that draws any.
 
 use crate::{
-    state::{RatesForm, Section, WorkingDir},
+    state::{RatesWorkbook, Section, WorkingDir},
     theme::{self, Bold as _},
 };
 use eframe::egui;
-use egui_extras::DatePickerButton;
 use std::{fs, path::Path};
 
 /// A file dialog that opens where the user last was, rather than wherever the system would put it.
@@ -108,53 +107,43 @@ pub fn monospace_lines(ui: &mut egui::Ui, text: &str) {
     ui.add(egui::Label::new(egui::RichText::new(text).monospace()).wrap());
 }
 
-/// One schedule of cost-recovery rates: an effective date and the three bands. Returns whether any
-/// of them was edited this frame.
+/// The rates workbook's picker, the same on both tabs that price with it.
 ///
-/// `salt` distinguishes one schedule's widgets from another's on the same screen, which the surplus
-/// tab needs for the rates a period changed to.
-pub fn schedule(ui: &mut egui::Ui, form: &mut RatesForm, salt: &str) -> bool {
-    let mut edited = false;
-    egui::Grid::new(format!("rates_{salt}"))
+/// `salt` keeps the grid's id apart from the other grids on the tab. `label_width` lines the label
+/// column up with the tab's own grids.
+pub fn rates_workbook_picker(
+    ui: &mut egui::Ui,
+    rates: &mut RatesWorkbook,
+    working: &mut WorkingDir,
+    salt: &str,
+    label_width: f32,
+) {
+    egui::Grid::new(format!("rates_workbook_{salt}"))
         .spacing([12.0, 8.0])
-        .num_columns(2)
+        .min_col_width(label_width)
+        .num_columns(3)
         .show(ui, |ui| {
-            ui.label("Effective from");
-            let mut date = form.effective_date;
-            if ui
-                .add(DatePickerButton::new(&mut date).id_salt(&format!("effective_{salt}")))
-                .changed()
-                || date != form.effective_date
-            {
-                form.effective_date = date;
-                edited = true;
-            }
-            ui.end_row();
-
-            ui.label("Rates");
-            ui.horizontal(|ui| {
-                for (label, field) in [
-                    ("On-peak", &mut form.on_peak),
-                    ("Mid-peak", &mut form.mid_peak),
-                    ("Off-peak", &mut form.off_peak),
-                ] {
-                    ui.label(label);
-                    if ui
-                        .add(
-                            egui::TextEdit::singleline(field)
-                                .desired_width(72.0)
-                                .hint_text("0.0000"),
-                        )
-                        .changed()
-                    {
-                        edited = true;
-                    }
+            ui.label("Rates workbook");
+            if ui.button("Choose…").clicked() {
+                let (description, extensions) = RatesWorkbook::filter();
+                if let Some(path) = dialog(working)
+                    .add_filter(description, extensions)
+                    .pick_file()
+                {
+                    working.remember(&path);
+                    rates.choose(path);
                 }
-                ui.weak("$/kWh");
-            });
+            }
+            picked_file(ui, rates.get(), "None chosen");
             ui.end_row();
         });
-    edited
+    note(
+        ui,
+        "The EV cost-recovery rates, in dollars per kilowatt-hour, from the workbook's \"rates\" \
+         sheet. It is read each time the figures are worked out, so a change saved in the \
+         spreadsheet is picked up. The same workbook serves the Cost recovery and Evolute \
+         reimbursement tabs: choosing it on one chooses it on both.",
+    );
 }
 
 /// One amount in a headline table.

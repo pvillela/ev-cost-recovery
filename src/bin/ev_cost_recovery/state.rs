@@ -1,23 +1,25 @@
 //! The app's state, and every decision about it, with no egui in sight.
 //!
 //! The widget code above this is meant to be thin enough to check by eye; everything that could be
-//! *wrong* rather than merely ugly — whether a file is the right sort of file, whether a rate is a
-//! number, whether the run may go ahead at all, what a saved report is called — is decided here and
-//! tested here.
+//! *wrong* rather than merely ugly — whether a file is the right sort of file, whether an amount is
+//! a number, whether the run may go ahead at all, what a saved report is called — is decided here
+//! and tested here.
 
 use ev_cost_recovery::{
     api::{
-        CostRecoveryRates, CostRecoverySurplus, GbWriteReport, OnExistingWorkbook,
-        ReimbursementReconciliation, cost_recovery_surplus, gb_xml_to_xlsx,
-        pure::check_reports_cover_period, reconcile_evolute_reimbursement, session_csv_to_xlsx,
+        CostRecoverySurplus, GbWriteReport, OnExistingWorkbook, ReimbursementReconciliation,
+        cost_recovery_surplus, gb_xml_to_xlsx, pure::check_reports_cover_period,
+        reconcile_evolute_reimbursement, session_csv_to_xlsx,
     },
     hydro_bill::{billing_period_dates, hydro_bill_from_pdf},
     log::SourceLog,
     session::{parse_session_report_name, report_coverage},
-    time::time_zone,
 };
 use jiff::civil;
-use std::path::{Path, PathBuf};
+use std::{
+    mem,
+    path::{Path, PathBuf},
+};
 
 /// Which document is on screen.
 ///
@@ -26,7 +28,7 @@ use std::path::{Path, PathBuf};
 ///
 /// [`Tab::Reimbursement`] answers a different question against a different counterparty over a
 /// different calendar, and shares nothing with the other two but the folder the file dialogs open
-/// in. It is a tab rather than a second program because it is the same month's charging seen from
+/// in and the rates workbook. It is a tab rather than a second program because it is the same month's charging seen from
 /// the other side, and whoever asks one question asks the other in the same sitting.
 ///
 /// [`Tab::Convert`] answers no question at all. It turns a source file into a workbook to be read
@@ -50,6 +52,7 @@ pub struct AppState {
     pub reimbursement: ReimbursementState,
     pub convert: ConvertState,
     pub working_dir: WorkingDir,
+    pub rates_workbook: RatesWorkbook,
 }
 
 impl AppState {
@@ -57,6 +60,50 @@ impl AppState {
     /// than opening on an empty page that says to go back.
     pub fn detail_ready(&self) -> bool {
         self.surplus.outcome.is_some()
+    }
+
+    /// Drops the results on both tabs that use the rates workbook, if a different one has been
+    /// chosen since this was last called.
+    ///
+    /// Both, not just the tab the choice was made on: the workbook is shared, and figures on the
+    /// other tab were priced from the one it replaced.
+    pub fn settle_rates_workbook(&mut self) {
+        if mem::take(&mut self.rates_workbook.chosen) {
+            self.surplus.clear_results();
+            self.reimbursement.clear_results();
+        }
+    }
+}
+
+/// The rates workbook, one for the whole app: choosing it on either tab chooses it on both.
+///
+/// Read when a run starts, and at no other time, so a workbook edited in the spreadsheet after it
+/// was chosen is read as it stands at the run. Like [`WorkingDir`], it lasts as long as the app
+/// does and no longer.
+#[derive(Default)]
+pub struct RatesWorkbook {
+    path: Option<PathBuf>,
+    /// Set by a choice, and cleared by [`AppState::settle_rates_workbook`] once both tabs have
+    /// dropped the results the previous workbook priced.
+    chosen: bool,
+}
+
+impl RatesWorkbook {
+    /// The workbook chosen, or `None` before one has been.
+    pub fn get(&self) -> Option<&Path> {
+        self.path.as_deref()
+    }
+
+    /// Takes the workbook for both tabs.
+    pub fn choose(&mut self, path: PathBuf) {
+        self.path = Some(path);
+        self.chosen = true;
+    }
+
+    /// What the file dialog filters on: the description, then the extensions, in both cases for
+    /// the reason [`Input::filter`] gives.
+    pub fn filter() -> (&'static str, &'static [&'static str]) {
+        ("Rates workbook", &["xlsx", "XLSX"])
     }
 }
 
@@ -159,76 +206,11 @@ impl Input {
     }
 }
 
-/// One cost-recovery schedule as the form holds it: an effective date and three rates still in the
-/// text entered manually.
-///
-/// The rates are text rather than `f64` because a field being edited passes through states that are
-/// not numbers — `0.`, `-`, empty — and a numeric widget either rejects or rewrites them under the
-/// cursor. They are parsed when the run is asked for, which is also when a bad one can be reported
-/// against the field it came from.
-pub struct RatesForm {
-    pub effective_date: civil::Date,
-    pub on_peak: String,
-    pub mid_peak: String,
-    pub off_peak: String,
-}
-
-impl Default for RatesForm {
-    fn default() -> Self {
-        Self {
-            // The first of the current month: a schedule ordinarily takes effect on one, and a
-            // date the user must change is better than a date that looks deliberate.
-            effective_date: today().first_of_month(),
-            on_peak: String::new(),
-            mid_peak: String::new(),
-            off_peak: String::new(),
-        }
-    }
-}
-
-impl RatesForm {
-    /// The three bands, in the order they are drawn and named.
-    fn bands(&self) -> [(&'static str, &String); 3] {
-        [
-            ("on-peak", &self.on_peak),
-            ("mid-peak", &self.mid_peak),
-            ("off-peak", &self.off_peak),
-        ]
-    }
-
-    /// The schedule this form describes.
-    ///
-    /// # Errors
-    ///
-    /// The first band that is not a number, or not a rate a band can be priced at, named. A rate
-    /// is refused rather than defaulted: a blank field read as zero would price that band's energy
-    /// at nothing and still produce a report.
-    pub fn parse(&self) -> Result<CostRecoveryRates, String> {
-        let mut rates = [0.0; 3];
-        for (i, (band, text)) in self.bands().into_iter().enumerate() {
-            let text = text.trim();
-            if text.is_empty() {
-                return Err(format!("the {band} rate is blank"));
-            }
-            let rate: f64 = text
-                .parse()
-                .map_err(|e| format!("cannot read \"{text}\" as the {band} rate: {e}"))?;
-            rates[i] = checked_figure(rate, &format!("{band} rate"), text)?;
-        }
-        Ok(CostRecoveryRates {
-            effective_date: self.effective_date,
-            on_peak: rates[0],
-            mid_peak: rates[1],
-            off_peak: rates[2],
-        })
-    }
-}
-
-/// A figure the user typed, refused unless a rate or a sum of money could take it.
+/// A figure the user typed, refused unless a sum of money could take it.
 ///
 /// `"nan"`, `"inf"` and `"-inf"` all parse as `f64`, so parsing alone lets them through: NaN then
-/// spreads into every total it touches and the report still renders, while a negative band rate
-/// prices that band's energy at less than nothing. The field is named here because a message from
+/// spreads into every total it touches and the report still renders, while a negative amount
+/// reverses the sign of the variance it enters. The field is named here because a message from
 /// deeper in cannot name it.
 fn checked_figure(value: f64, what: &str, text: &str) -> Result<f64, String> {
     if !value.is_finite() {
@@ -240,11 +222,6 @@ fn checked_figure(value: f64, what: &str, text: &str) -> Result<f64, String> {
         return Err(format!("the {what} cannot be negative: \"{text}\""));
     }
     Ok(value)
-}
-
-/// Today, in the zone the rest of the app works in.
-fn today() -> civil::Date {
-    jiff::Zoned::now().with_time_zone(time_zone()).date()
 }
 
 // --------------------------------------------------------------------------------------------
@@ -276,11 +253,6 @@ pub struct SurplusState {
     /// reported against the bill's own picker, since with no period there is nothing the session
     /// pickers can be asked for.
     pub bill_period_ending: Option<civil::Date>,
-    pub rates_at_start: RatesForm,
-    /// Whether a second schedule took effect during the period. The command line encodes this by
-    /// how many arguments were given, which a form should not.
-    pub rates_changed: bool,
-    pub rates_at_end: RatesForm,
     pub outcome: Option<SurplusOutcome>,
     pub error: Option<String>,
     /// Why a report could not be saved, if a save was tried and failed.
@@ -631,19 +603,20 @@ impl SurplusState {
             .map(|(_, note)| note.as_str())
     }
 
-    /// Whether the run may go ahead: the bill, the meter export, at least one session report, and
-    /// none of them refused.
+    /// Whether the run may go ahead: the bill, the meter export, at least one session report, none
+    /// of them refused, and a rates workbook.
     ///
     /// **The second session report is optional.** A billing period runs from the 24th to the 23rd,
     /// so it usually takes two monthly exports, but one file covering the whole period is as good
     /// as two. Whether the reports actually reach across the period is
     /// `api::pure::check_reports_cover_period`'s question, asked when the run starts — which also
     /// catches two files that leave a gap, as a count never could.
-    pub fn can_run(&self) -> bool {
+    pub fn can_run(&self, rates: &RatesWorkbook) -> bool {
         self.bill.is_some()
             && self.meter.is_some()
             && self.sessions1.is_some()
             && self.input_notes.is_empty()
+            && rates.get().is_some()
     }
 
     /// The session reports chosen, in slot order, skipping an empty second slot.
@@ -655,53 +628,20 @@ impl SurplusState {
             .collect()
     }
 
-    /// Marks that a rate or the effective date was edited. The figures on screen describe the rates
-    /// that produced them, so they go rather than sit under rates that have since changed.
-    pub fn rates_edited(&mut self) {
+    /// Works out the surplus at the rates in `rates`, filling in either the outcome or the error.
+    pub fn run(&mut self, rates: &RatesWorkbook) {
         self.clear_results();
-    }
-
-    pub fn set_rates_changed(&mut self, changed: bool) {
-        self.rates_changed = changed;
-        self.clear_results();
-    }
-
-    /// The two schedules to run with.
-    ///
-    /// # Errors
-    ///
-    /// The first band that is not a number, named, and said to be the second schedule's when it is.
-    fn schedules(&self) -> Result<(CostRecoveryRates, Option<CostRecoveryRates>), String> {
-        let start = self.rates_at_start.parse()?;
-        if !self.rates_changed {
-            return Ok((start, None));
-        }
-        let end = self
-            .rates_at_end
-            .parse()
-            .map_err(|e| format!("second schedule: {e}"))?;
-        Ok((start, Some(end)))
-    }
-
-    /// Works out the surplus, filling in either the outcome or the error.
-    pub fn run(&mut self) {
-        self.clear_results();
-        let (Some(bill), Some(meter)) = (self.bill.clone(), self.meter.clone()) else {
+        let (Some(bill), Some(meter), Some(rates)) =
+            (self.bill.clone(), self.meter.clone(), rates.get())
+        else {
             return;
         };
         let session_csvs = self.session_paths();
         if session_csvs.is_empty() {
             return;
         }
-        let (start, end) = match self.schedules() {
-            Ok(pair) => pair,
-            Err(e) => {
-                self.error = Some(e);
-                return;
-            }
-        };
 
-        match cost_recovery_surplus(&bill, &meter, &session_csvs, start, end) {
+        match cost_recovery_surplus(&bill, &meter, &session_csvs, rates) {
             Ok(surplus) => {
                 // The meter export has notes of its own, kept apart from the session side because
                 // the two are checked against different things. Its log covers the billing period
@@ -789,25 +729,24 @@ pub struct ReimbursementOutcome {
 
 /// The Reimbursement tab's form and what it produced.
 ///
-/// Two of Evolute's documents for the one month, and one figure entered manually. One session
-/// report rather than two, because a reimbursement settles a calendar month and one Evolute report
-/// is one calendar month. One schedule of rates rather than two, because our schedules change on the
-/// first of a month, so a month is priced at one set of rates or it is not a month we can
-/// reconcile.
+/// Two of Evolute's documents for the one month, and one figure entered manually. The rates come
+/// from the rates workbook, which the app holds for both tabs.
 #[derive(Default)]
 pub struct ReimbursementState {
     pub sessions: Option<PathBuf>,
     /// Evolute's Charges Report for the same month, which is where both of Evolute's own figures
     /// come from. In production it sits in the same folder as the session report.
     pub charges: Option<PathBuf>,
-    /// What Evolute actually paid, still in the text entered manually, for the reason the rates
-    /// are text: a field being edited passes through states that are not numbers.
+    /// What Evolute actually paid, in the text entered manually.
     ///
-    /// The one figure still entered by hand. It is what was seen to arrive -- from a bank statement
-    /// or a remittance advice -- and taking it off the Charges Report instead would make it agree
-    /// with that report whatever Evolute had actually sent.
+    /// Text rather than `f64` because a field being edited passes through states that are not
+    /// numbers — `0.`, `-`, empty — and a numeric widget either rejects or rewrites them under the
+    /// cursor. It is parsed when the run is asked for, which is also when a bad one can be reported.
+    ///
+    /// The one figure entered by hand. It is what was seen to arrive -- from a bank statement or a
+    /// remittance advice -- and taking it off the Charges Report instead would make it agree with
+    /// that report whatever Evolute had actually sent.
     pub reimbursed: String,
-    pub rates: RatesForm,
     pub outcome: Option<ReimbursementOutcome>,
     pub error: Option<String>,
     /// Why a report could not be saved, if a save was tried and failed. See
@@ -852,13 +791,17 @@ impl ReimbursementState {
         self.clear_results();
     }
 
-    /// Whether the run may go ahead: both documents chosen, and the session report not refused.
-    pub fn can_run(&self) -> bool {
-        self.sessions.is_some() && self.charges.is_some() && self.input_note.is_none()
+    /// Whether the run may go ahead: both documents chosen, the session report not refused, and a
+    /// rates workbook.
+    pub fn can_run(&self, rates: &RatesWorkbook) -> bool {
+        self.sessions.is_some()
+            && self.charges.is_some()
+            && self.input_note.is_none()
+            && rates.get().is_some()
     }
 
-    /// Marks that a rate, the effective date or the amount was edited. The figures on screen
-    /// describe what produced them, so they go rather than sit under inputs that have since moved.
+    /// Marks that the amount was edited. The figures on screen describe what produced them, so they
+    /// go rather than sit under inputs that have since moved.
     pub fn edited(&mut self) {
         self.clear_results();
     }
@@ -886,21 +829,16 @@ impl ReimbursementState {
         Self::number(&self.reimbursed, "reimbursement amount")
     }
 
-    /// Reconciles the month, filling in either the outcome or the error.
-    pub fn run(&mut self) {
+    /// Reconciles the month at the rates in `rates`, filling in either the outcome or the error.
+    pub fn run(&mut self, rates: &RatesWorkbook) {
         self.clear_results();
-        let (Some(csv), Some(charges)) = (self.sessions.clone(), self.charges.clone()) else {
+        let (Some(csv), Some(charges), Some(rates)) =
+            (self.sessions.clone(), self.charges.clone(), rates.get())
+        else {
             return;
         };
         let reimbursed = match self.amount() {
             Ok(amount) => amount,
-            Err(e) => {
-                self.error = Some(e);
-                return;
-            }
-        };
-        let rates = match self.rates.parse() {
-            Ok(rates) => rates,
             Err(e) => {
                 self.error = Some(e);
                 return;
@@ -1242,21 +1180,22 @@ pub fn report_sections(text: &str) -> Vec<Section> {
 mod test {
     use super::*;
 
-    /// The four real inputs the tests below run the app against.
+    /// The five real inputs the tests below run the app against.
     ///
     /// Panics naming the file when one is absent, rather than returning `None` for the caller to
     /// skip on. The harness has no skip outcome, so a test that returns early reports `ok` and its
     /// message is swallowed unless someone passes `--nocapture`: a check nobody is running looks
     /// exactly like one that passed. The tests that call this are `#[ignore]`d for that reason, so
     /// the panic is only ever met by someone who asked for them by name.
-    fn real_inputs() -> (PathBuf, PathBuf, PathBuf, PathBuf) {
+    fn real_inputs() -> (PathBuf, PathBuf, PathBuf, PathBuf, PathBuf) {
         let paths = (
             PathBuf::from("data/hydro_bills/TH_5728140000_2026_06_29.pdf"),
             PathBuf::from("data/green_button/TH_Electric_Usage_23-11-2024_to_24-06-2026.XML"),
             PathBuf::from("data/evolute/Session_Report_May_1_2026-May_31_2026-mock.csv"),
             PathBuf::from("data/evolute/Session_Report_June_1_2026-June_30_2026.csv"),
+            PathBuf::from("data/EV_Cost_Recovery_Rates.xlsx"),
         );
-        for path in [&paths.0, &paths.1, &paths.2, &paths.3] {
+        for path in [&paths.0, &paths.1, &paths.2, &paths.3, &paths.4] {
             assert!(
                 path.exists(),
                 "{} is not in this checkout; these inputs are real customer documents",
@@ -1268,25 +1207,86 @@ mod test {
 
     /// The four inputs `checked_figure` refuses, and the one it accepts.
     ///
-    /// Its own doc names them; nothing asserted them. These are the messages a user meets when a
-    /// rate will not read, and they are the app's alone -- the library never sees the text of a
+    /// Its own doc names them; nothing asserted them. These are the messages a user meets when an
+    /// amount will not read, and they are the app's alone -- the library never sees the text of a
     /// form field.
     #[test]
-    fn a_figure_that_is_not_a_number_a_rate_could_be_is_refused() {
+    fn a_figure_that_is_not_a_number_an_amount_could_be_is_refused() {
         for (value, text, expected) in [
             (f64::NAN, "nan", "not a finite number"),
             (f64::INFINITY, "inf", "not a finite number"),
             (f64::NEG_INFINITY, "-inf", "not a finite number"),
             (-0.07, "-0.07", "cannot be negative"),
         ] {
-            let err = checked_figure(value, "off-peak rate", text).expect_err(text);
+            let err = checked_figure(value, "reimbursement amount", text).expect_err(text);
             assert!(err.contains(expected), "{text}: {err}");
-            assert!(err.contains("off-peak rate"), "{text}: {err}");
+            assert!(err.contains("reimbursement amount"), "{text}: {err}");
         }
 
-        // Zero is a figure. A band priced at nothing is odd, not malformed.
-        assert_eq!(checked_figure(0.0, "off-peak rate", "0"), Ok(0.0));
-        assert_eq!(checked_figure(0.11, "on-peak rate", "0.11"), Ok(0.11));
+        // Zero is a figure: Evolute paid nothing.
+        assert_eq!(checked_figure(0.0, "reimbursement amount", "0"), Ok(0.0));
+        assert_eq!(
+            checked_figure(118.09, "reimbursement amount", "118.09"),
+            Ok(118.09)
+        );
+    }
+
+    /// A rates workbook chosen, as both tabs need one before they can run. Never opened: the tests
+    /// that use it stop short of a run.
+    fn rates() -> RatesWorkbook {
+        let mut rates = RatesWorkbook::default();
+        rates.choose(PathBuf::from("/data/EV_Cost_Recovery_Rates.xlsx"));
+        rates
+    }
+
+    /// Neither tab runs without a rates workbook, whatever else it has.
+    #[test]
+    fn neither_tab_runs_without_a_rates_workbook() {
+        let none = RatesWorkbook::default();
+
+        let mut surplus = with_bill_period();
+        surplus.select(
+            Input::Sessions1,
+            PathBuf::from("/data/Session_Report_May_1_2026-June_30_2026.csv"),
+        );
+        assert!(surplus.can_run(&rates()));
+        assert!(!surplus.can_run(&none));
+
+        let mut reimbursement = ReimbursementState::default();
+        reimbursement.select(PathBuf::from(
+            "/data/Session_Report_June_1_2026-June_30_2026.csv",
+        ));
+        reimbursement.select_charges(PathBuf::from("/data/XX-XX_Charges_June 2026-June 2026.csv"));
+        assert!(reimbursement.can_run(&rates()));
+        assert!(!reimbursement.can_run(&none));
+    }
+
+    /// One choice serves both tabs, and drops the figures on both: each was priced from the
+    /// workbook it replaces.
+    #[test]
+    fn choosing_a_rates_workbook_drops_the_figures_on_both_tabs() {
+        let mut app = AppState::default();
+        app.surplus.error = Some("stale".to_owned());
+        app.reimbursement.error = Some("stale".to_owned());
+
+        // Nothing chosen, nothing dropped.
+        app.settle_rates_workbook();
+        assert!(app.surplus.error.is_some());
+
+        app.rates_workbook
+            .choose(PathBuf::from("/data/EV_Cost_Recovery_Rates.xlsx"));
+        app.settle_rates_workbook();
+        assert!(app.surplus.error.is_none());
+        assert!(app.reimbursement.error.is_none());
+        assert_eq!(
+            app.rates_workbook.get(),
+            Some(Path::new("/data/EV_Cost_Recovery_Rates.xlsx"))
+        );
+
+        // Settled once per choice: a later run's figures are not dropped by the same choice.
+        app.surplus.error = Some("a later run".to_owned());
+        app.settle_rates_workbook();
+        assert!(app.surplus.error.is_some());
     }
 
     /// `WorkingDir::remember` keeps the folder of the file it is given, and ignores a bare name.
@@ -1328,28 +1328,17 @@ mod test {
         assert!(slot.confirm_replace.is_none(), "{:?}", slot.confirm_replace);
     }
 
-    /// A schedule, as the form holds one once it has been filled in.
-    fn form(effective: civil::Date, on: &str, mid: &str, off: &str) -> RatesForm {
-        RatesForm {
-            effective_date: effective,
-            on_peak: on.to_owned(),
-            mid_peak: mid.to_owned(),
-            off_peak: off.to_owned(),
-        }
-    }
-
-    /// A state with the four real files chosen and one schedule filled in.
-    fn ready() -> SurplusState {
-        let (bill, meter, csv1, csv2) = real_inputs();
-        let mut state = SurplusState {
-            rates_at_start: form(civil::date(2026, 5, 1), "0.1100", "0.0900", "0.0700"),
-            ..Default::default()
-        };
+    /// A state with the four real files chosen, and the real rates workbook.
+    fn ready() -> (SurplusState, RatesWorkbook) {
+        let (bill, meter, csv1, csv2, workbook) = real_inputs();
+        let mut state = SurplusState::default();
         state.select(Input::Bill, bill);
         state.select(Input::Meter, meter);
         state.select(Input::Sessions1, csv1);
         state.select(Input::Sessions2, csv2);
-        state
+        let mut rates = RatesWorkbook::default();
+        rates.choose(workbook);
+        (state, rates)
     }
 
     /// The contract the whole app rests on: what it shows and saves is the library's own rendering.
@@ -1361,8 +1350,8 @@ mod test {
     #[test]
     #[ignore = "runs the app against the real inputs under data/"]
     fn the_app_produces_the_same_report_as_the_command_line() {
-        let mut state = ready();
-        state.run();
+        let (mut state, rates) = ready();
+        state.run(&rates);
         assert!(state.error.is_none(), "{:?}", state.error);
         let outcome = state.outcome.as_ref().expect("the real inputs run");
         assert_eq!(outcome.text, outcome.surplus.to_string());
@@ -1374,8 +1363,8 @@ mod test {
     #[test]
     #[ignore = "runs the app against the real inputs under data/"]
     fn a_run_leaves_the_three_priced_intervals_behind() {
-        let mut state = ready();
-        state.run();
+        let (mut state, rates) = ready();
+        state.run(&rates);
         let outcome = state.outcome.as_ref().expect("the real inputs run");
         let units: Vec<_> = outcome
             .surplus
@@ -1395,7 +1384,7 @@ mod test {
         state.select(Input::Sessions1, PathBuf::from("/data/sessions.csv"));
         assert!(state.note_for(Input::Sessions1).is_some());
         assert!(
-            !state.can_run(),
+            !state.can_run(&rates()),
             "a refused file must not let the run start"
         );
 
@@ -1428,70 +1417,22 @@ mod test {
             state.picker_closed(Input::Sessions1),
             Some("The bill above could not be read")
         );
-        assert!(!state.can_run());
-    }
-
-    /// The second schedule is sent only when it is asked for. The command line says this by how
-    /// many arguments were given; here it is a checkbox, and an unticked one must not smuggle a
-    /// half-filled form into the run.
-    #[test]
-    fn the_second_rate_schedule_is_sent_only_when_it_is_asked_for() {
-        let mut state = SurplusState {
-            rates_at_start: form(civil::date(2026, 5, 1), "0.11", "0.09", "0.07"),
-            ..Default::default()
-        };
-
-        let (_, end) = state.schedules().expect("one schedule is filled in");
-        assert!(end.is_none());
-
-        state.set_rates_changed(true);
-        state
-            .schedules()
-            .expect_err("the second schedule is blank and must be refused, not defaulted");
-
-        state.rates_at_end = form(civil::date(2026, 6, 1), "0.12", "0.10", "0.08");
-        let (_, end) = state.schedules().expect("both schedules are filled in");
-        assert_eq!(
-            end.expect("asked for").effective_date,
-            civil::date(2026, 6, 1)
-        );
-    }
-
-    /// A rate that is not a number names the band it belongs to, so the user knows which of the
-    /// three fields to look at.
-    #[test]
-    fn a_rate_that_is_not_a_number_names_the_band_it_belongs_to() {
-        let entered = form(civil::date(2026, 5, 1), "0.11", "eleven cents", "0.07");
-        let e = entered.parse().expect_err("\"eleven cents\" is not a rate");
-        assert!(e.contains("mid-peak"), "{e}");
-
-        // Blank is refused too. Read as zero it would price that band's energy at nothing and still
-        // produce a report.
-        let blank = RatesForm {
-            mid_peak: String::new(),
-            ..entered
-        };
-        let e = blank.parse().expect_err("a blank rate is not a rate");
-        assert!(e.contains("mid-peak"), "{e}");
+        assert!(!state.can_run(&rates()));
     }
 
     /// Figures describe the inputs that produced them, so changing an input drops them.
     #[test]
     #[ignore = "runs the app against the real inputs under data/"]
     fn changing_an_input_discards_the_figures_it_produced() {
-        let mut state = ready();
-        state.run();
-        assert!(state.outcome.is_some());
+        let (mut state, rates) = ready();
+        state.run(&rates);
+        assert!(state.outcome.is_some(), "{:?}", state.error);
 
         state.select(
             Input::Sessions2,
             PathBuf::from("data/Session_Report_July_1_2026-July_31_2026-mock.csv"),
         );
         assert!(state.outcome.is_none(), "stale figures survived a new file");
-
-        state.run();
-        state.rates_edited();
-        assert!(state.outcome.is_none(), "stale figures survived a new rate");
     }
 
     /// Nothing runs until the bill, the meter export and one session report are in hand. The
@@ -1502,7 +1443,7 @@ mod test {
     #[test]
     fn the_run_needs_one_session_report_not_two() {
         let mut state = with_bill_period();
-        assert!(!state.can_run(), "no session report yet");
+        assert!(!state.can_run(&rates()), "no session report yet");
 
         // May alone leaves 1 to 23 June uncovered, so the run will refuse it -- but the form is
         // filled in, and saying so is the run's job rather than the picker's.
@@ -1510,7 +1451,10 @@ mod test {
             Input::Sessions1,
             PathBuf::from(sample_name(Input::Sessions1)),
         );
-        assert!(state.can_run(), "the second session report is optional");
+        assert!(
+            state.can_run(&rates()),
+            "the second session report is optional"
+        );
 
         // And adding the report that closes the gap does not take the offer away.
         state.select(
@@ -1519,7 +1463,7 @@ mod test {
         );
         assert!(state.note_for(Input::Sessions2).is_none());
         assert!(
-            state.can_run(),
+            state.can_run(&rates()),
             "May and June cover the period between them"
         );
     }
@@ -1574,7 +1518,10 @@ mod test {
             Input::Sessions1,
             PathBuf::from("/data/Session_Report_June_1_2026-June_30_2026.csv"),
         );
-        assert!(state.can_run(), "one report, and the run may say the rest");
+        assert!(
+            state.can_run(&rates()),
+            "one report, and the run may say the rest"
+        );
 
         state.select(
             Input::Sessions2,
@@ -1592,7 +1539,7 @@ mod test {
         );
         assert!(state.note_for(Input::Sessions2).is_none());
         assert!(
-            !state.can_run(),
+            !state.can_run(&rates()),
             "a refused file must not let the run start"
         );
 
@@ -1623,7 +1570,7 @@ mod test {
         state.clear(Input::Sessions2);
         assert!(state.picked(Input::Sessions2).is_none());
         assert!(state.note_for(Input::Sessions2).is_none());
-        assert!(state.can_run(), "the run is offered again");
+        assert!(state.can_run(&rates()), "the run is offered again");
     }
 
     /// The refusal is a relation between the two slots, so it has to be re-asked when either of
@@ -1744,7 +1691,7 @@ mod test {
             PathBuf::from("/data/Session_Report_April_1_2026-June_5_2026.csv"),
         );
         assert!(state.note_for(Input::Sessions2).is_none());
-        assert!(state.can_run());
+        assert!(state.can_run(&rates()));
 
         state.select(
             Input::Sessions1,
@@ -1759,13 +1706,13 @@ mod test {
             )
         );
         assert!(
-            !state.can_run(),
+            !state.can_run(&rates()),
             "a refused file must not let the run start"
         );
 
         state.clear(Input::Sessions2);
         assert!(state.note_for(Input::Sessions2).is_none());
-        assert!(state.can_run(), "the run is offered again");
+        assert!(state.can_run(&rates()), "the run is offered again");
     }
 
     /// A report from another period is refused where it was chosen, at either slot, and says which
@@ -1785,7 +1732,7 @@ mod test {
         state.select(Input::Sessions1, PathBuf::from(august));
         assert_eq!(state.note_for(Input::Sessions1), Some(outside));
         assert!(
-            !state.can_run(),
+            !state.can_run(&rates()),
             "a refused file must not let the run start"
         );
 
@@ -1815,7 +1762,7 @@ mod test {
             PathBuf::from("/data/Session_Report_June_1_2026-June_30_2026.csv"),
         );
         assert!(
-            state.can_run(),
+            state.can_run(&rates()),
             "one report short of the period is a form still being filled in, not an error"
         );
 
@@ -1838,7 +1785,7 @@ mod test {
             note.contains("Session_Report_May_1_2026-May_25_2026.csv"),
             "{note}"
         );
-        assert!(!state.can_run());
+        assert!(!state.can_run(&rates()));
 
         // The whole of May closes the gap, and the note goes with it.
         state.select(
@@ -1846,7 +1793,7 @@ mod test {
             PathBuf::from(sample_name(Input::Sessions1)),
         );
         assert!(state.note_for(Input::Sessions2).is_none());
-        assert!(state.can_run());
+        assert!(state.can_run(&rates()));
     }
 
     /// A new bill is a new period, so the pair chosen for the old one does not carry over: the
@@ -1958,7 +1905,7 @@ mod test {
         ] {
             state.select(PathBuf::from(name));
             assert!(state.input_note.is_none(), "{name}: {:?}", state.input_note);
-            assert!(state.can_run(), "{name}");
+            assert!(state.can_run(&rates()), "{name}");
         }
 
         // A name that does not read at all is still refused, in the parser's own words.
@@ -1971,7 +1918,7 @@ mod test {
             "{:?}",
             state.input_note
         );
-        assert!(!state.can_run(), "a refused report does not run");
+        assert!(!state.can_run(&rates()), "a refused report does not run");
     }
 
     /// A blank figure is refused rather than read as zero. Zero is a real answer -- Evolute paid
@@ -2004,16 +1951,16 @@ mod test {
     #[test]
     fn both_documents_are_needed_before_a_month_can_be_reconciled() {
         let mut state = ReimbursementState::default();
-        assert!(!state.can_run(), "nothing chosen");
+        assert!(!state.can_run(&rates()), "nothing chosen");
 
         state.select(PathBuf::from(
             "/data/Session_Report_June_1_2026-June_30_2026.csv",
         ));
         assert!(state.input_note.is_none(), "{:?}", state.input_note);
-        assert!(!state.can_run(), "no Charges Report yet");
+        assert!(!state.can_run(&rates()), "no Charges Report yet");
 
         state.select_charges(PathBuf::from("/data/XX-XX_Charges_June 2026-June 2026.csv"));
-        assert!(state.can_run(), "both chosen");
+        assert!(state.can_run(&rates()), "both chosen");
     }
 
     /// Choosing either document drops whatever the last run produced, as editing a rate does.

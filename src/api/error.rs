@@ -35,12 +35,13 @@ use crate::error::ConversionError;
 /// travelled here with it once, stayed behind — the two workbook writers do raise that.
 ///
 /// `path` is held for a caller that wants to act on which file failed rather than print it, and is
-/// deliberately not written into the message. All four causes are structured types, and each cause
+/// deliberately not written into the message. All five causes are structured types, and each cause
 /// that concerns a file names it from a `path` field of its own —
 /// [`GbReadError`](crate::green_button::GbReadError),
 /// the private `session::csv::SessionCsvError`,
-/// [`ChargesReportError`](crate::charges_report::ChargesReportError) and
-/// [`BillError`](crate::hydro_bill::BillError). Writing it here as well produced
+/// [`ChargesReportError`](crate::charges_report::ChargesReportError),
+/// [`BillError`](crate::hydro_bill::BillError) and the private
+/// `rates_workbook::RatesWorkbookError`. Writing it here as well produced
 /// `data/x.XML: data/x.XML: ...`.
 #[derive(Debug)]
 pub enum ReadError {
@@ -75,6 +76,12 @@ pub enum ReadError {
         path: PathBuf,
         cause: Box<dyn Error>,
     },
+
+    /// The rates workbook could not be read, or its effective dates break a rule of the workbook.
+    RatesWorkbook {
+        path: PathBuf,
+        cause: Box<dyn Error>,
+    },
 }
 
 impl fmt::Display for ReadError {
@@ -83,7 +90,8 @@ impl fmt::Display for ReadError {
             Self::GreenButton { cause, .. }
             | Self::SessionReport { cause, .. }
             | Self::ChargesReport { cause, .. }
-            | Self::Bill { cause, .. } => cause.fmt(f),
+            | Self::Bill { cause, .. }
+            | Self::RatesWorkbook { cause, .. } => cause.fmt(f),
         }
     }
 }
@@ -94,7 +102,8 @@ impl Error for ReadError {
             Self::GreenButton { cause, .. }
             | Self::SessionReport { cause, .. }
             | Self::ChargesReport { cause, .. }
-            | Self::Bill { cause, .. } => Some(cause.as_ref()),
+            | Self::Bill { cause, .. }
+            | Self::RatesWorkbook { cause, .. } => Some(cause.as_ref()),
         }
     }
 }
@@ -119,8 +128,8 @@ pub enum ApiError {
     },
     /// The sessions were read but do not yield a cost recovery.
     ///
-    /// No `source`, unlike the two above. The rates are given as values and the period as a date,
-    /// so a cost recovery has no file for a failure to be about.
+    /// No `source`, unlike the two above. A failure about the rates names the workbook in its own
+    /// message, and the period is a date, which is no file's.
     CostRecovery(CostRecoveryError),
     /// The figures were read but do not yield a cost-recovery surplus.
     ///
@@ -136,8 +145,8 @@ pub enum ApiError {
     Conversion(ConversionError),
     /// The month's reimbursement cannot be reconciled against the report given.
     ///
-    /// No `source`, for the reason [`Self::CostRecovery`] has none: every one of these failures
-    /// already names the report it is about, or is about the rates, which are values.
+    /// No `source`, for the reason [`Self::CostRecovery`] has none: every one of these failures is
+    /// about the rates, and names the workbook in its own message.
     Reimbursement(ReimbursementError),
 }
 

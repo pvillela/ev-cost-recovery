@@ -248,8 +248,8 @@ grep -rn 'error_block\|self.error = Some' src/bin/ev_cost_recovery/
 a message should not find a paragraph explaining why some other message is missing, so the reason is
 recorded here instead:
 
-- **Field validation** — a blank rate, `cannot read "x" as the off-peak rate`, not a finite number,
-  cannot be negative, a blank amount. Six messages, in `src/bin/ev_cost_recovery/state.rs`.
+- **Field validation** — a blank amount, `cannot read "x" as the reimbursement amount`, not a
+  finite number, cannot be negative. Four messages, in `src/bin/ev_cost_recovery/state.rs`.
 - **File-choice refusals that state their whole remedy in their own text** —
   `ConversionError::OutputExists` and `OutputWouldBeInput`, and the undated-session-report and
   undated-Charges-Report refusals.
@@ -263,8 +263,9 @@ brings it into the document.
 > **Re-derive this list from the error enums rather than editing it in place.** It is the only
 > statement of which messages are deliberately missing from `docs/ERRORS.md`, so a variant that has
 > been renamed or removed leaves a reader looking for something that does not exist.
-> `ReimbursementError` has exactly one variant, `RatesNotYetInEffect`; the month check now goes
-> through `pure::check_reports_cover`, so a month that does not line up is a `CoverageError`.
+> `ReimbursementError` has exactly one variant, `Rates`, carrying a `RateScheduleError`; the month
+> check goes through `pure::check_reports_cover`, so a month that does not line up is a
+> `CoverageError`.
 
 # Sessions
 

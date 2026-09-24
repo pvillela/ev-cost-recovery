@@ -43,7 +43,6 @@ that of the libraries that read CSV, XML and PDF files. Those entries say so and
 - [Charges Report — the file holds no rows](#charges-report--the-file-holds-no-rows)
 - [Charges Report — the file could not be read](#charges-report--the-file-could-not-be-read)
 - [Charges Report — rows billed for dates outside the month](#charges-report--rows-billed-for-dates-outside-the-month)
-- [cost-recovery rates take effect after the period starts](#cost-recovery-rates-take-effect-after-the-period-starts)
 - [does not name a billing period](#does-not-name-a-billing-period)
 - [Green Button Export — no readings in the billing period](#green-button-export--no-readings-in-the-billing-period)
 - [Green Button Export — the file could not be read](#green-button-export--the-file-could-not-be-read)
@@ -53,13 +52,26 @@ that of the libraries that read CSV, XML and PDF files. Those entries say so and
 - [Hydro Bill — unrecognised charge line](#hydro-bill--unrecognised-charge-line)
 - [Hydro Bill — the layout is not what was expected](#hydro-bill--the-layout-is-not-what-was-expected)
 - [no consumption in a band, so no rate](#no-consumption-in-a-band-so-no-rate)
+- [Rates workbook — the name does not end in .xlsx](#rates-workbook--the-name-does-not-end-in-xlsx)
+- [Rates workbook — the file could not be read](#rates-workbook--the-file-could-not-be-read)
+- [Rates workbook — no rates sheet](#rates-workbook--no-rates-sheet)
+- [Rates workbook — row 1 does not name a column](#rates-workbook--row-1-does-not-name-a-column)
+- [Rates workbook — a column named twice](#rates-workbook--a-column-named-twice)
+- [Rates workbook — an effective date that is not a date](#rates-workbook--an-effective-date-that-is-not-a-date)
+- [Rates workbook — an effective date with a time of day](#rates-workbook--an-effective-date-with-a-time-of-day)
+- [Rates workbook — something below the last rates](#rates-workbook--something-below-the-last-rates)
+- [Rates workbook — there are no rates](#rates-workbook--there-are-no-rates)
+- [Rates workbook — effective dates out of order](#rates-workbook--effective-dates-out-of-order)
+- [Rates workbook — no rates in effect](#rates-workbook--no-rates-in-effect)
+- [Rates workbook — the rates change more than once in a billing period](#rates-workbook--the-rates-change-more-than-once-in-a-billing-period)
+- [Rates workbook — the rates change within the month](#rates-workbook--the-rates-change-within-the-month)
+- [Rates workbook — a rate that is not a positive number](#rates-workbook--a-rate-that-is-not-a-positive-number)
 - [saving a report or a workbook failed](#saving-a-report-or-a-workbook-failed)
 - [Session Report — missing required column](#session-report--missing-required-column)
 - [Session Report — row … cannot read](#session-report--row--cannot-read)
 - [Session Report — the file could not be read](#session-report--the-file-could-not-be-read)
 - [the closing date and the calendar disagree](#the-closing-date-and-the-calendar-disagree)
 - [the meter data covers only part of the period](#the-meter-data-covers-only-part-of-the-period)
-- [the second set of rates falls outside the period](#the-second-set-of-rates-falls-outside-the-period)
 - [the session reports do not cover the billing period](#the-session-reports-do-not-cover-the-billing-period)
 - [there is no maximum to estimate against](#there-is-no-maximum-to-estimate-against)
 - [a figure the bill states as zero](#a-figure-the-bill-states-as-zero)
@@ -163,24 +175,6 @@ The report's file name names a month, and rows inside it are billed for dates in
 in the name is what the reconciliation prices against, so the file is refused rather than half used.
 
 `src/charges_report.rs`: `row_list`
-
-### cost-recovery rates take effect after the period starts
-
-> the cost-recovery rates given for the start of the period take effect `<date>`, after it starts
-> on `<date>`
-
-**Where** Cost recovery.
-
-The billing period begins before the rates you entered came into force, so part of it would be
-priced at rates that did not yet exist. Either the *effective from* date on the form is wrong, or
-the schedule in force at the start of the period is a different one.
-
-The Evolute reimbursement tab has its own version of this, worded for a calendar month:
-
-> the rates take effect on `<date>`, after the month begins on `<date>`, so they do not price the
-> whole of it
-
-`src/api/pure/recovery.rs`: `CostRecoveryError::Display`, `src/api/pure/reimbursement.rs`: `ReimbursementError::Display`
 
 ### does not name a billing period
 
@@ -328,6 +322,197 @@ price against.
 
 `src/api/pure/energy.rs`: `EnergyError::Display`
 
+### Rates workbook — the name does not end in .xlsx
+
+> rates workbook `<file name>`: the name does not end in .xlsx. The rates are read from an Excel
+> workbook saved as .xlsx
+
+**Where** Cost recovery, Evolute reimbursement.
+
+Only the `.xlsx` format is read. A workbook in another format — `.xls`, `.ods`, `.csv` — has to be
+saved as an Excel workbook (`.xlsx`) first. The format of the workbook is in
+[README.md - The rates workbook](../README.md#the-rates-workbook).
+
+`src/rates_workbook.rs`: `RatesWorkbookError::Display`
+
+### Rates workbook — the file could not be read
+
+> rates workbook `<file name>`: the file could not be read: `<why not>`
+
+**Where** Cost recovery, Evolute reimbursement.
+
+Everything after *could not be read* is the spreadsheet library's own wording, for instance
+`IoError: No such file or directory (os error 2)` for a workbook moved or deleted since it was
+chosen. Otherwise the file is damaged, or is not an Excel workbook despite its name. Open it in the
+spreadsheet and save it again as `.xlsx`.
+
+`src/rates_workbook.rs`: `RatesWorkbookError::Display`
+
+### Rates workbook — no rates sheet
+
+> rates workbook `<file name>`: there is no sheet named "rates" or "Sheet1". Its sheets are
+> `"<sheet name>"`, …
+
+**Where** Cost recovery, Evolute reimbursement.
+
+The rates are read from the sheet named `rates` or, if there is none, the one named `Sheet1`.
+Capitals and surrounding spaces do not matter. Rename the sheet that holds the rates to `rates`.
+
+`src/rates_workbook.rs`: `RatesWorkbookError::Display`
+
+### Rates workbook — row 1 does not name a column
+
+> rates workbook `<file name>`, sheet `"<sheet name>"`: row 1 does not name the column(s)
+> `<column names>`. Row 1 must name effective_date, on_peak, mid_peak and off_peak, spelled exactly
+> so
+
+**Where** Cost recovery, Evolute reimbursement.
+
+The columns are found by the names in row 1, and those names must be exactly `effective_date`,
+`on_peak`, `mid_peak` and `off_peak`: all lower case, with underscores and no spaces. A capital or a
+trailing space makes a different name. Correct the header cells named in the message.
+
+`src/rates_workbook.rs`: `RatesWorkbookError::Display`
+
+### Rates workbook — a column named twice
+
+> rates workbook `<file name>`, sheet `"<sheet name>"`: row 1 names the column `<column name>` twice,
+> in cells `<cell>` and `<cell>`
+
+**Where** Cost recovery, Evolute reimbursement.
+
+With two columns of the same name there is no telling which holds the rates. Rename or delete one
+of them.
+
+`src/rates_workbook.rs`: `RatesWorkbookError::Display`
+
+### Rates workbook — an effective date that is not a date
+
+> rates workbook `<file name>`, sheet `"<sheet name>"`: cell `<cell>` holds the text
+> `"<the cell's contents>"`. An effective_date must be entered as a date, which the spreadsheet
+> displays in a date format
+
+In place of *holds the text …*, the message may say *holds the number `<number>`, not formatted as a
+date*, or *holds `<number>`, which no date is stored as*.
+
+**Where** Cost recovery, Evolute reimbursement.
+
+A spreadsheet stores a date as a number and shows it as a date through the cell's date format. Text
+that reads like a date is not one, and neither is a number in a cell formatted as a plain number:
+either is more likely a slip than a date. Type the date again so the spreadsheet takes it as a date,
+or give the cell a date format. A negative number, or one too large, is no date at all.
+
+`src/rates_workbook.rs`: `RatesWorkbookError::Display`
+
+### Rates workbook — an effective date with a time of day
+
+> rates workbook `<file name>`, sheet `"<sheet name>"`: cell `<cell>` holds `<date>` with a time of
+> day. An effective_date is a date alone, with no time
+
+**Where** Cost recovery, Evolute reimbursement.
+
+Rates take effect at the start of a day, so a time of day in an effective date is taken as a typing
+slip rather than guessed at. Enter the date alone.
+
+`src/rates_workbook.rs`: `RatesWorkbookError::Display`
+
+### Rates workbook — something below the last rates
+
+> rates workbook `<file name>`, sheet `"<sheet name>"`: cell `<cell>` holds `"<the cell's contents>"`,
+> below row `<number>`, which has no effective_date. The rates end at the first row without an
+> effective_date, so nothing may follow it
+
+**Where** Cost recovery, Evolute reimbursement.
+
+The rates end at the first row with an empty `effective_date`. Something below that row in one of
+the four columns means the rates probably continue past a gap — a row whose date was deleted by
+mistake — and the rows after it would be ignored without a word. Fill in the missing date, or
+delete the stray cell. Notes in other columns are fine anywhere.
+
+`src/rates_workbook.rs`: `RatesWorkbookError::Display`
+
+### Rates workbook — there are no rates
+
+> rates workbook `<file name>`, sheet `"<sheet name>"`: there are no rates: row 2 has no
+> effective_date. The rates start on row 2, under the header
+
+**Where** Cost recovery, Evolute reimbursement.
+
+The sheet holds the header and nothing under it, or its first row of rates is not directly under
+the header. Enter the rates starting on row 2.
+
+`src/api/pure/rates.rs`: `RateScheduleError::Display`
+
+### Rates workbook — effective dates out of order
+
+> rates workbook `<file name>`, sheet `"<sheet name>"`: the effective_date on row `<number>`,
+> `<date>`, is not after the one on row `<number>`, `<date>`. The effective dates must increase down
+> the sheet, with no date repeated
+
+**Where** Cost recovery, Evolute reimbursement.
+
+Each row's rates apply from its effective date until the next row's, so the rows must be in date
+order, earliest first, with no date on two rows. Sort the rows by `effective_date`, and remove or
+correct a repeated date.
+
+`src/api/pure/rates.rs`: `RateScheduleError::Display`
+
+### Rates workbook — no rates in effect
+
+> rates workbook `<file name>`, sheet `"<sheet name>"`: no rates are in effect on `<date>`: the
+> earliest effective_date is `<date>`
+
+**Where** Cost recovery, Evolute reimbursement.
+
+The first date to be priced — a billing period's first day, or the 1st of the month being
+reconciled — comes before every row of the workbook. Add a row for the rates that were in effect on
+that date.
+
+`src/api/pure/rates.rs`: `RateScheduleError::Display`
+
+### Rates workbook — the rates change more than once in a billing period
+
+> rates workbook `<file name>`, sheet `"<sheet name>"`: the rates change `<number>` times within the
+> billing period `<date>` to `<date>`, on `<dates>`. A billing period can take one change at most
+
+**Where** Cost recovery.
+
+A billing period is priced at the rates in effect on its first day, and at most one change within
+it. Two effective dates inside one period are most likely a mistyped date; correct it.
+
+`src/api/pure/rates.rs`: `RateScheduleError::Display`
+
+### Rates workbook — the rates change within the month
+
+> rates workbook `<file name>`, sheet `"<sheet name>"`: the rates change on `<date>` (row
+> `<number>`), within the month `<date>` to `<date>`. A month is reconciled at one set of rates, so
+> they can change only on the 1st
+
+**Where** Evolute reimbursement.
+
+Evolute settles a calendar month at one set of rates, so a month is priced at the rates in effect on
+the 1st and cannot take a change after it. Check the date on the row named: rates are expected to
+change on the 1st of a month.
+
+`src/api/pure/rates.rs`: `RateScheduleError::Display`
+
+### Rates workbook — a rate that is not a positive number
+
+> rates workbook `<file name>`, sheet `"<sheet name>"`: cell `<cell>`, the `<column name>` rate
+> effective `<date>`, is empty
+
+In place of *is empty*, the message may say *holds `"<the cell's contents>"`, which is not a
+number*, *is `<number>`. A rate must be greater than zero*, or *is not a finite number*.
+
+**Where** Cost recovery, Evolute reimbursement.
+
+A rate is a number of dollars per kilowatt-hour, greater than zero. An empty cell is refused rather
+than read as zero, which would price that band's energy at nothing and still produce a report.
+Only the rows a run uses are checked, so this names a row the period or month actually needs.
+Correct the cell named.
+
+`src/api/pure/rates.rs`: `RateScheduleError::Display`
+
 ### saving a report or a workbook failed
 
 > `<file name>`: `<why not>`
@@ -418,19 +603,6 @@ Toronto Hydro's own data, the peak cannot be established from it at all, and tha
 on.
 
 `src/api/pure/peak_power.rs`: `PeakPowerError::Display`
-
-### the second set of rates falls outside the period
-
-> the second set of cost-recovery rates takes effect `<date>`, which is not within the billing
-> period `<date>` to `<date>`
-
-**Where** Cost recovery.
-
-*Rates changed during the period* is ticked, and the date given for the change is not inside the
-billing period. Either the date is wrong, or the period was priced at one schedule throughout and
-the tick should come off.
-
-`src/api/pure/recovery.rs`: `CostRecoveryError::Display`
 
 ### the session reports do not cover the billing period
 

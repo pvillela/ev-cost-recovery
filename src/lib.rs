@@ -25,6 +25,9 @@ pub mod time;
 
 mod markdown;
 
+// Private: only `api::io` reads the workbook, and hands on the `RateSchedule` it returns.
+mod rates_workbook;
+
 // Number *text*, as a person writes it: the rule both document readers apply before stripping
 // thousands separators. A leaf -- it reads no file and knows no format.
 mod number;

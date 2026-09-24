@@ -28,7 +28,7 @@ There are four tabs: **Cost recovery**, **Peak power detail**, **Evolute reimbur
 
 ### Normal usage example
 
-Only the **June 2026** billing period can be run with the sample data. The sample Green Button export stops on 24 June, so no later period has meter data. Pick these four, in the order the window asks:
+Only the **June 2026** billing period can be run with the sample data. The sample Green Button export stops on 24 June, so no later period has meter data. Pick these five, in the order the window asks:
 
 | Picker | File |
 |:---|:---|
@@ -36,8 +36,9 @@ Only the **June 2026** billing period can be run with the sample data. The sampl
 | Green Button export | `data/green_button/TH_Electric_Usage_23-11-2024_to_24-06-2026.XML` |
 | Session report 1 | `data/evolute/Session_Report_May_1_2026-May_31_2026-seconds.csv` |
 | Session report 2 | `data/evolute/Session_Report_June_1_2026-June_30_2026-seconds.csv` |
+| Rates workbook | `data/EV_Cost_Recovery_Rates.xlsx` |
 
-Then the rates. **Effective from** `2026-05-01`, and `0.1100` / `0.0900` / `0.0700`.
+The rates workbook's `rates` sheet has two rows: `0.1100` / `0.0900` / `0.0700` effective `2026-05-01`, and `0.5152` / `0.4740` / `0.4218` effective `2026-09-01`. The June period is priced at the first. The workbook's format is in [README.md - The rates workbook](../README.md#the-rates-workbook).
 
 Press **Work out the surplus**. Expect:
 
@@ -93,14 +94,18 @@ empties: nothing in June belongs to a period ending 23 May.
 
 #### Other things worth trying
 
+Work on a copy of the rates workbook, and choose the copy in the **Rates workbook** picker. The workbook is read each time **Work out the surplus** is pressed, so a change saved in the spreadsheet is used on the next run without choosing the file again.
+
 | Do this                                                      | Expect                                                       |
 | :----------------------------------------------------------- | :----------------------------------------------------------- |
-| Rates `0.30` / `0.30` / `0.30`                               | Surplus **+136.95**, coloured as the accent rather than red, and "covered" in the report |
-| Rates `0.20` / `0.20` / `0.20`                               | Surplus **+0.75** — all but break-even, so you can watch the sign flip either way |
-| Tick *rates changed*, leave `0.1100/0.0900/0.0700` from 1 May, add `0.30` flat from `2026-06-01` | Cost recovery **359.52**, surplus **+87.87**; the recovery report gains a second stretches table |
+| Set the rates on row 2 to `0.30` / `0.30` / `0.30`           | Surplus **+136.95**, coloured as the accent rather than red, and "covered" in the report |
+| Set the rates on row 2 to `0.20` / `0.20` / `0.20`           | Surplus **+0.75** — all but break-even, so you can watch the sign flip either way |
+| Change row 3 to `2026-06-01`, with rates `0.30` / `0.30` / `0.30` | Cost recovery **359.52**, surplus **+87.87**; the recovery report gains a second stretches table |
 | Change any picker after a run                                | Figures vanish, and the *Peak power detail* tab greys out    |
-| Clear the mid-peak rate (delete it, don't set it to zero) and run | `the mid-peak rate is blank` — refused, not read as zero     |
-| Type `eleven cents` into the mid-peak rate                   | `cannot read "eleven cents" as the mid-peak rate: …`         |
+| Choose a rates workbook on the *Evolute reimbursement* tab after a run here | It is chosen here too, and the figures here vanish       |
+| Delete the mid-peak rate on row 2 and run                    | `… cell C2, the mid_peak rate effective 2026-05-01, is empty` — refused, not read as zero |
+| Type `eleven cents` into the mid-peak rate on row 2          | `… cell C2, the mid_peak rate effective 2026-05-01, holds "eleven cents", which is not a number` |
+| Type `tbd` into a rate on row 3                              | Nothing changes: row 3 takes effect in September, so the June period does not use it and its rates are not checked |
 
 #### Errors worth provoking
 
@@ -112,11 +117,35 @@ the meter data covers 24 of the 720 intervals in the billing period ending 2026-
 so its maxima are not the period's
 ```
 
-**A rate schedule outside the period** — set *Effective from* to `2026-08-01`:
+**No rates in effect when the period starts** — in a copy of the rates workbook, change the date on row 2 to `2026-06-10`:
 
 ```
-the cost-recovery rates given for the start of the period take effect 2026-08-01,
-after it starts on 2026-05-24
+rates workbook …/EV_Cost_Recovery_Rates.xlsx, sheet "rates": no rates are in effect on
+2026-05-24: the earliest effective_date is 2026-06-10
+```
+
+**Two rate changes within one period** — change row 3 to `2026-06-01`, and add a row 4 dated `2026-06-15` with any rates:
+
+```
+rates workbook …/EV_Cost_Recovery_Rates.xlsx, sheet "rates": the rates change 2 times
+within the billing period 2026-05-24 to 2026-06-23, on 2026-06-01, 2026-06-15. A billing
+period can take one change at most
+```
+
+**Effective dates out of order** — change the date on row 3 to `2026-04-01`, before row 2's:
+
+```
+rates workbook …/EV_Cost_Recovery_Rates.xlsx, sheet "rates": the effective_date on row 3,
+2026-04-01, is not after the one on row 2, 2026-05-01. The effective dates must increase
+down the sheet, with no date repeated
+```
+
+**An effective date typed as text** — type `'2026-09-01` into A3; the leading apostrophe makes it text:
+
+```
+rates workbook …/EV_Cost_Recovery_Rates.xlsx, sheet "rates": cell A3 holds the text
+"2026-09-01". An effective_date must be entered as a date, which the spreadsheet displays in
+a date format
 ```
 
 **A session report whose name is invalid —** The picker filters to `.csv`, so to reach this, pick the bill first and then copy a report to a name without dates:
@@ -193,7 +222,7 @@ two views of one number.
 | Evolute Session Report | `data/evolute/Session_Report_June_1_2026-June_30_2026-seconds.csv` |
 | Evolute Charges Report | `data/evolute/XX-XX_Charges_June 2026-June 2026.csv` |
 | Reimbursement | `246.26` |
-| Rates | **Effective from** `2026-06-01`, and `0.1100` / `0.0900` / `0.0700` |
+| Rates workbook | `data/EV_Cost_Recovery_Rates.xlsx` — already chosen if you chose it on the *Cost recovery* tab |
 
 Only June works. It is the one month with both a Session Report and a Charges Report.
 
@@ -234,6 +263,7 @@ Worth trying:
 | Pick `Session_Report_May_1_2026-June_30_2026-seconds.csv` instead | It runs, and gives the same figures as June alone. The month is taken from the Charges Report; the session report only has to cover it |
 | Rename the Charges Report to anything without `_Charges_<Month Year>-<Month Year>` in it | `is not a Charges Report`, or `does not state the months it covers` — the reader will not open a file it cannot date |
 | Name a Charges Report for more than one month, e.g. `XX-XX_Charges_June 2026-July 2026.csv` | `Only a single calendar month is accepted` — the reconciliation prices one month against one month |
+| In a copy of the rates workbook, change row 3 to `2026-06-15` | `… the rates change on 2026-06-15 (row 3), within the month 2026-06-01 to 2026-06-30. A month is reconciled at one set of rates, so they can change only on the 1st` |
 
 ## Convert to workbook
 

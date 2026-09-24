@@ -21,6 +21,7 @@
 mod coverage;
 mod energy;
 mod peak_power;
+mod rates;
 mod recovery;
 mod reimbursement;
 
@@ -39,12 +40,18 @@ pub use peak_power::{
     DeliveryCost, PeakPowerError, PeriodValues, PowerEstimates, PricedInterval, peak_power,
     peak_power_cost, /* HydroBill, Sessions */
 };
+pub use rates::{
+    RateBand, RateCell, RateProblem, RateRow, RateSchedule, RateScheduleError,
+    RateScheduleErrorKind,
+};
+// For `crate::rates_workbook`, whose errors give a cell's address the way the schedule's do.
+pub(crate) use rates::cell_address;
 pub use recovery::{
-    CostRecovery, CostRecoveryError, CostRecoveryRates, CostRecoveryRatesError,
-    CostRecoveryStretch, CostRecoverySurplus, CostRecoverySurplusError, RateBand, cost_recovery,
-    cost_recovery_surplus, /* PeriodValues, HydroBill, Sessions */
+    CostRecovery, CostRecoveryError, CostRecoveryRates, CostRecoveryStretch, CostRecoverySurplus,
+    CostRecoverySurplusError, cost_recovery,
+    cost_recovery_surplus, /* PeriodValues, HydroBill, Sessions, RateSchedule */
 };
 pub use reimbursement::{
     ChargesReport, ReimbursementError, ReimbursementReconciliation,
-    reconcile_evolute_reimbursement, /* CostRecoveryRates, Sessions */
+    reconcile_evolute_reimbursement, /* CostRecoveryRates, Sessions, RateSchedule */
 };

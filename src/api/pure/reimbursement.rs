@@ -22,53 +22,51 @@ use crate::{
     time::{Interval, local_midnight},
 };
 use jiff::civil::Date;
-use std::{error::Error, fmt};
+use std::{error::Error, fmt, path::PathBuf};
 
-use super::recovery::{BAND_ALIGNMENT, BAND_HEADERS, band_row, to_the_cent};
+use super::{
+    rates::RateScheduleError,
+    recovery::{BAND_ALIGNMENT, BAND_HEADERS, band_row, to_the_cent},
+};
 
 // Re-exported for the same reason `recovery` re-exports what it takes: a caller should not have to
 // know which module a type comes from in order to spell the call.
 pub use crate::{
-    api::pure::recovery::CostRecoveryRates, charges_report::ChargesReport, session::Sessions,
+    api::pure::recovery::{CostRecoveryRates, RateSchedule},
+    charges_report::ChargesReport,
+    session::Sessions,
 };
 
 /// Why a month's reimbursement cannot be reconciled.
 ///
-/// One variant, settled from the month given and the rates given, before anything is summed.
+/// One variant, settled from the month given and the rates schedule, before anything is summed.
 ///
 /// Nothing here asks about the session reports. The month comes from the Charges Report, and
 /// whether the session reports reach across it is
 /// [`check_reports_cover`](super::check_reports_cover)'s question, asked by the caller that holds
 /// the paths.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ReimbursementError {
-    /// The rates given had not taken effect by the first day of the month.
-    ///
-    /// The same refusal [`cost_recovery`](super::recovery::cost_recovery) makes, for the same
-    /// reason: rates that begin mid-month do not price the whole of it, and pricing it with them
-    /// anyway states a recovery nobody was charged.
-    RatesNotYetInEffect {
-        month_start: Date,
-        effective_date: Date,
-    },
+    /// The rates schedule does not price the month: no rates are in effect on the 1st, the rates
+    /// change within the month, or a rate on the row in effect is not a positive number.
+    Rates(Box<RateScheduleError>),
 }
 
 impl fmt::Display for ReimbursementError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::RatesNotYetInEffect {
-                month_start,
-                effective_date,
-            } => write!(
-                f,
-                "the rates take effect on {effective_date}, after the month begins on \
-                 {month_start}, so they do not price the whole of it"
-            ),
+            Self::Rates(e) => e.fmt(f),
         }
     }
 }
 
-impl Error for ReimbursementError {}
+impl Error for ReimbursementError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Rates(e) => Some(e),
+        }
+    }
+}
 
 /// Reconciliation of Evolute reimbursement for a calendar month.
 ///
@@ -105,6 +103,9 @@ pub struct ReimbursementReconciliation {
     pub kwh_variance: f64,
     /// Cost recovery rates effective during the calendar month.
     pub cost_recovery_rates: CostRecoveryRates,
+    /// The rates workbook [`Self::cost_recovery_rates`] came from, or `None` for a schedule built
+    /// in memory.
+    pub rates_workbook: Option<PathBuf>,
     /// Calculated total cost recovery amount for the calendar month.
     pub cost_recovery_amount: f64,
     /// `reimbursed - cost_recovery_amount`, each to the cent.
@@ -191,8 +192,8 @@ fn recovery_by_band(kwh: &TouKwh, rates: &CostRecoveryRates) -> [f64; 3] {
 /// - `reimbursed` - what Evolute actually paid, from wherever the money was seen to land. A third
 ///   figure rather than a second reading of the one above, so that a remittance which does not
 ///   match Evolute's own document shows up instead of being assumed away.
-/// - `cost_recovery_rates` - the rates in effect over the month. One schedule only: a rate change
-///   inside the month would need two, and our schedules change on the first of a month.
+/// - `rates` - the rates schedule. The month is priced at the rates in effect on the 1st, and the
+///   schedule may not change within the month: our rates change on the first of a month.
 ///
 /// # Errors
 ///
@@ -204,16 +205,12 @@ pub fn reconcile_evolute_reimbursement(
     charges_report_kwh: f64,
     charges_report_amount: f64,
     reimbursed: f64,
-    cost_recovery_rates: CostRecoveryRates,
+    rates: &RateSchedule,
 ) -> Result<ReimbursementReconciliation, ReimbursementError> {
     let month_end = month_start.last_of_month();
-
-    if cost_recovery_rates.effective_date > month_start {
-        return Err(ReimbursementError::RatesNotYetInEffect {
-            month_start,
-            effective_date: cost_recovery_rates.effective_date,
-        });
-    }
+    let cost_recovery_rates = rates
+        .for_month(month_start)
+        .map_err(|e| ReimbursementError::Rates(Box::new(e)))?;
 
     // Prevailing local midnight at both ends, as a rate change is cut in `recovery`: when a month
     // begins is a fact about the calendar people live in, not about the meter's clock.
@@ -239,6 +236,7 @@ pub fn reconcile_evolute_reimbursement(
         kwh_variance: charges_report_kwh - tou.total_kwh(),
         tou_kwh: tou,
         cost_recovery_rates,
+        rates_workbook: rates.workbook().map(Into::into),
         cost_recovery_amount,
         // Each operand is quantized to the cent first, then the difference, then that. The two
         // amounts are printed as cells of their own, so this is what makes the column add down to
@@ -313,6 +311,14 @@ impl fmt::Display for ReimbursementReconciliation {
                 &format!("{} - {}", self.month_start, self.month_end)
             )
         )?;
+        // The file, so that a reconciliation can be traced to the workbook it was priced from.
+        if let Some(workbook) = &self.rates_workbook {
+            writeln!(
+                f,
+                "{}",
+                field("Rates workbook", &workbook.display().to_string())
+            )?;
+        }
         writeln!(
             f,
             "{}\n",
@@ -439,6 +445,10 @@ mod test {
     use crate::{
         api::pure::{
             CoveredSpan, check_reports_cover,
+            rates::{
+                RateScheduleErrorKind,
+                test::{row, schedule},
+            },
             test_support::{as_report, close},
         },
         session::test_support::session,
@@ -451,13 +461,9 @@ mod test {
 
     const JUNE: &str = "data/Session_Report_June_1_2026-June_30_2026.csv";
 
-    fn rates(effective: Date, on: f64, mid: f64, off: f64) -> CostRecoveryRates {
-        CostRecoveryRates {
-            effective_date: effective,
-            on_peak: on,
-            mid_peak: mid,
-            off_peak: off,
-        }
+    /// One row of rates, in effect from `effective` on.
+    fn rates(effective: Date, on: f64, mid: f64, off: f64) -> RateSchedule {
+        schedule(vec![row(2, effective, [on, mid, off])])
     }
 
     /// One session wholly inside the month, in a single time-of-use band, so the recovery is one
@@ -472,7 +478,7 @@ mod test {
             10.0,
             5.00,
             5.00,
-            rates(date(2026, 6, 1), 0.11, 0.09, 0.07),
+            &rates(date(2026, 6, 1), 0.11, 0.09, 0.07),
         )
         .expect("a June report and rates effective on the 1st");
 
@@ -503,7 +509,7 @@ mod test {
             12.5,
             0.0,
             0.0,
-            rates(date(2026, 6, 1), 0.11, 0.09, 0.07),
+            &rates(date(2026, 6, 1), 0.11, 0.09, 0.07),
         )
         .expect("a June report and rates effective on the 1st");
 
@@ -529,7 +535,7 @@ mod test {
             8.0,
             0.0,
             0.0,
-            rates(date(2026, 6, 1), 0.11, 0.09, 0.07),
+            &rates(date(2026, 6, 1), 0.11, 0.09, 0.07),
         )
         .expect("a June report and rates effective on the 1st");
 
@@ -559,7 +565,7 @@ mod test {
             10.0,
             0.0,
             0.0,
-            rates(date(2026, 6, 1), 0.11, 0.09, 0.07),
+            &rates(date(2026, 6, 1), 0.11, 0.09, 0.07),
         )
         .expect("a June report and rates effective on the 1st");
 
@@ -581,7 +587,7 @@ mod test {
             0.0,
             0.0,
             0.0,
-            rates(date(2026, 6, 1), 0.11, 0.09, 0.07),
+            &rates(date(2026, 6, 1), 0.11, 0.09, 0.07),
         )
         .expect("a June report and rates effective on the 1st");
 
@@ -590,25 +596,48 @@ mod test {
         assert!(close(r.tou_kwh.total_kwh(), 0.0));
     }
 
-    /// Rates beginning after the month does would price only part of it, so the call is refused
-    /// before anything is summed.
+    /// Rates beginning after the month does would price only part of it, and so would rates that
+    /// change within it, so both are refused before anything is summed.
     ///
-    /// The only refusal here: this function is handed the month and a set of sessions, and asks
+    /// The only refusals here: this function is handed the month and a set of sessions, and asks
     /// nothing about where they came from.
     #[test]
-    fn rates_that_begin_after_the_month_are_refused() {
-        let one = vec![session(JUNE, 2, "S1", "2026-06-10T06:00:00Z", 60, 10.0)];
-        assert!(matches!(
-            reconcile_evolute_reimbursement(
-                &as_report(one),
-                date(2026, 6, 1),
-                0.0,
-                0.0,
-                0.0,
-                rates(date(2026, 6, 15), 0.11, 0.09, 0.07)
+    fn a_month_not_priced_by_one_set_of_rates_is_refused() {
+        let reconcile = |rates: &RateSchedule| {
+            reconcile_evolute_reimbursement(&june_report(), june(1), 0.0, 0.0, 0.0, rates)
+        };
+
+        let late = reconcile(&rates(june(15), 0.11, 0.09, 0.07)).expect_err("15 June");
+        assert!(
+            matches!(
+                &late,
+                ReimbursementError::Rates(e)
+                    if matches!(e.kind, RateScheduleErrorKind::NotYetInEffect { .. })
             ),
-            Err(ReimbursementError::RatesNotYetInEffect { .. })
-        ));
+            "{late}"
+        );
+
+        let changing = schedule(vec![
+            row(2, date(2026, 5, 1), [0.11, 0.09, 0.07]),
+            row(3, june(15), [0.12, 0.10, 0.08]),
+        ]);
+        let err = reconcile(&changing).expect_err("a change on 15 June");
+        assert!(
+            matches!(
+                &err,
+                ReimbursementError::Rates(e)
+                    if matches!(e.kind, RateScheduleErrorKind::ChangeInsideMonth { .. })
+            ),
+            "{err}"
+        );
+
+        // A change on the 1st is the month's rates, not a change within it.
+        let on_the_first = schedule(vec![
+            row(2, date(2026, 5, 1), [0.11, 0.09, 0.07]),
+            row(3, june(1), [0.12, 0.10, 0.08]),
+        ]);
+        let r = reconcile(&on_the_first).expect("June's rates start on the 1st");
+        assert_eq!(r.cost_recovery_rates.effective_date, june(1));
     }
 
     /// A variance too small to print is neither an overpayment nor a shortfall, whatever its sign.
@@ -663,7 +692,7 @@ mod test {
                 10.0,
                 10.0,
                 reimbursed,
-                rates(date(2026, 6, 1), 0.11, 0.09, 0.07),
+                &rates(date(2026, 6, 1), 0.11, 0.09, 0.07),
             )
             .expect("a June report and rates effective on the 1st")
             .to_string();
@@ -785,7 +814,7 @@ mod test {
             0.0,
             0.0,
             0.0,
-            rates(june(1), 0.11, 0.09, 0.07),
+            &rates(june(1), 0.11, 0.09, 0.07),
         )
         .unwrap()
         .with_charges_report(charges(
@@ -815,7 +844,7 @@ mod test {
             0.0,
             0.0,
             0.0,
-            rates(june(1), 0.11, 0.09, 0.07),
+            &rates(june(1), 0.11, 0.09, 0.07),
         )
         .unwrap();
         assert!(reconciliation.charges.is_none());

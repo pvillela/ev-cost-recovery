@@ -21,7 +21,7 @@ use crate::{
     time::{Interval, local_midnight},
 };
 use jiff::{Timestamp, civil::Date};
-use std::{error::Error, fmt, mem, num::ParseFloatError, str::FromStr};
+use std::{error::Error, fmt, mem, path::PathBuf};
 
 // Through `super`, not through `crate::api`. The two cost breakdowns are computed here in `pure`;
 // reaching them by the path the reading half re-exports them under would point this half of the
@@ -29,16 +29,15 @@ use std::{error::Error, fmt, mem, num::ParseFloatError, str::FromStr};
 use super::{
     energy::{EnergyCost, EnergyError, energy_cost},
     peak_power::{DeliveryCost, PeakPowerError, peak_power_cost},
+    rates::RateScheduleError,
 };
 
 // Re-exported because the functions here take these and return those, and a caller should not have
 // to know which module they come from in order to spell the call.
+pub use super::rates::RateSchedule;
 pub use crate::{green_button::PeriodValues, hydro_bill::HydroBill, session::Sessions};
 
-/// EV cost-recovery TOU rates. The rates are effective for at least one month.
-///
-/// Parses from the form the cost-recovery tools take a schedule in — see
-/// [`FromStr`](CostRecoveryRates#impl-FromStr-for-CostRecoveryRates).
+/// EV cost-recovery TOU rates, in dollars per kilowatt-hour: one row of a [`RateSchedule`], checked.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CostRecoveryRates {
     /// Effective date of the rates. Normally, the first day of a month.
@@ -49,168 +48,6 @@ pub struct CostRecoveryRates {
     pub mid_peak: f64,
     /// Off-peak EV cost-recovery rate.
     pub off_peak: f64,
-}
-
-/// The form a schedule is written in, quoted by every error that reports it was not followed.
-const RATE_SCHEDULE_FORM: &str = "expected EFFECTIVE_DATE:ON_PEAK,MID_PEAK,OFF_PEAK, \
-                                  as in 2026-05-01:0.1100,0.0900,0.0700";
-
-/// Which time-of-use band a rate belongs to.
-///
-/// Carried by [`CostRecoveryRatesError`] so a refusal can name the band it is about; the three
-/// rates are positional in the text, and "the second rate" is not what a reader is looking at.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RateBand {
-    OnPeak,
-    MidPeak,
-    OffPeak,
-}
-
-impl RateBand {
-    /// The band's name as the errors write it.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::OnPeak => "on-peak",
-            Self::MidPeak => "mid-peak",
-            Self::OffPeak => "off-peak",
-        }
-    }
-}
-
-/// Why a rate schedule would not read.
-///
-/// Each variant holds the text that failed, so the message can quote it back. A command line has
-/// nowhere else to explain itself, and the three rates are positional: without the band named, a
-/// refusal leaves the reader counting commas.
-#[derive(Debug)]
-pub enum CostRecoveryRatesError {
-    /// No `:` anywhere, so there is no effective date to separate from the rates.
-    NotASchedule { spec: String },
-    /// The part before the `:` is not a date.
-    EffectiveDate { text: String, cause: jiff::Error },
-    /// The part after the `:` is not three comma-separated fields.
-    NotThreeRates { text: String },
-    /// A rate is not a number at all.
-    Rate {
-        band: RateBand,
-        text: String,
-        cause: ParseFloatError,
-    },
-    /// A rate parses as `nan`, `inf` or `-inf`.
-    ///
-    /// Refused here rather than deeper in: all three parse as `f64`, and a band priced at one of
-    /// them still produces a report.
-    NotFinite { band: RateBand, text: String },
-    /// A rate parses as a negative number, which would price a band's energy at less than nothing.
-    Negative { band: RateBand, text: String },
-}
-
-impl fmt::Display for CostRecoveryRatesError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::NotASchedule { spec } => write!(
-                f,
-                "cannot read \"{spec}\" as a rate schedule: {RATE_SCHEDULE_FORM}"
-            ),
-            Self::EffectiveDate { text, cause } => write!(
-                f,
-                "cannot read \"{text}\" as an effective date, YYYY-MM-DD: {cause}"
-            ),
-            Self::NotThreeRates { text } => {
-                write!(f, "\"{text}\" is not three rates: {RATE_SCHEDULE_FORM}")
-            }
-            Self::Rate { band, text, cause } => write!(
-                f,
-                "cannot read \"{text}\" as the {} rate: {cause}",
-                band.as_str()
-            ),
-            Self::NotFinite { band, text } => write!(
-                f,
-                "cannot read \"{text}\" as the {} rate: it is not a finite number",
-                band.as_str()
-            ),
-            Self::Negative { band, text } => write!(
-                f,
-                "the {} rate cannot be negative: \"{text}\"",
-                band.as_str()
-            ),
-        }
-    }
-}
-
-impl Error for CostRecoveryRatesError {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        match self {
-            Self::EffectiveDate { cause, .. } => Some(cause),
-            Self::Rate { cause, .. } => Some(cause),
-            Self::NotASchedule { .. }
-            | Self::NotThreeRates { .. }
-            | Self::NotFinite { .. }
-            | Self::Negative { .. } => None,
-        }
-    }
-}
-
-impl FromStr for CostRecoveryRates {
-    type Err = CostRecoveryRatesError;
-
-    /// Reads one schedule as the cost-recovery tools take it:
-    /// `EFFECTIVE_DATE:ON_PEAK,MID_PEAK,OFF_PEAK`, as in `2026-05-01:0.1100,0.0900,0.0700`.
-    ///
-    /// One argument rather than four, so that the effective date cannot drift away from the rates
-    /// it belongs to when a second schedule is added to a command line.
-    ///
-    /// Here rather than in either binary because both take the same argument and have to read it
-    /// the same way; compiled into two binaries, it would be two definitions that happen to agree
-    /// today.
-    fn from_str(spec: &str) -> Result<Self, Self::Err> {
-        let (date, rates) =
-            spec.split_once(':')
-                .ok_or_else(|| CostRecoveryRatesError::NotASchedule {
-                    spec: spec.to_owned(),
-                })?;
-
-        let effective_date: Date =
-            date.parse()
-                .map_err(|cause| CostRecoveryRatesError::EffectiveDate {
-                    text: date.to_owned(),
-                    cause,
-                })?;
-
-        let [on_peak, mid_peak, off_peak] = rates.split(',').collect::<Vec<_>>()[..] else {
-            return Err(CostRecoveryRatesError::NotThreeRates {
-                text: rates.to_owned(),
-            });
-        };
-
-        let rate = |s: &str, band: RateBand| -> Result<f64, CostRecoveryRatesError> {
-            let value: f64 = s.parse().map_err(|cause| CostRecoveryRatesError::Rate {
-                band,
-                text: s.to_owned(),
-                cause,
-            })?;
-            if !value.is_finite() {
-                return Err(CostRecoveryRatesError::NotFinite {
-                    band,
-                    text: s.to_owned(),
-                });
-            }
-            if value < 0.0 {
-                return Err(CostRecoveryRatesError::Negative {
-                    band,
-                    text: s.to_owned(),
-                });
-            }
-            Ok(value)
-        };
-
-        Ok(Self {
-            effective_date,
-            on_peak: rate(on_peak, RateBand::OnPeak)?,
-            mid_peak: rate(mid_peak, RateBand::MidPeak)?,
-            off_peak: rate(off_peak, RateBand::OffPeak)?,
-        })
-    }
 }
 
 /// One stretch of a billing period over which a single schedule of rates was in effect: the dates
@@ -283,6 +120,9 @@ pub struct CostRecovery {
     /// Total cost recovery allocated to the billing period.
     pub cost_recovery: f64,
 
+    /// The rates workbook the stretches' rates came from, or `None` for a schedule built in memory.
+    pub rates_workbook: Option<PathBuf>,
+
     /// What the figures were drawn from, and what was odd about it.
     ///
     /// The consumption side's selection, as [`Energy::notes`](super::energy::Energy::notes)
@@ -344,36 +184,17 @@ pub struct CostRecoverySurplus {
 
 /// Why a billing period's sessions cannot be turned into a cost recovery.
 ///
-/// No variant names a file. The rates are given as values and the period as a date, so nothing here
-/// has a file to be about — which is why [`ApiError`](crate::api::error::ApiError) carries this one
-/// without a `source`, unlike the errors of the two costing operations.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// A `Rates` failure names the workbook the schedule came from in its own message, so
+/// [`ApiError`](crate::api::error::ApiError) carries this one without a `source`, unlike the errors
+/// of the two costing operations.
+#[derive(Debug, Clone, PartialEq)]
 pub enum CostRecoveryError {
     /// The date given does not close a billing period: it is not [`BILL_END_DAY`] of its month.
     NotABillingPeriodEnding(NotABillingPeriodEnding),
 
-    /// The rates given as the period's opening rates take effect after the period starts, so the
-    /// first days of it would be charged at no rate at all.
-    ///
-    /// Almost always one month's rates handed in for the period that straddles the month before.
-    /// Refused rather than backdated: the rates that were actually in effect on those days exist,
-    /// and inventing coverage for them would under-recover silently.
-    RatesNotYetInEffect {
-        period_start: Date,
-        effective_date: Date,
-    },
-
-    /// The second schedule of rates does not take effect during the period.
-    ///
-    /// A change dated on or before the period's first day leaves the opening rates covering
-    /// nothing, and one dated after its last day belongs to the next period. Either way the caller
-    /// has named a change this period does not contain, and passing a single schedule is what they
-    /// meant.
-    RateChangeOutsidePeriod {
-        period_start: Date,
-        period_ending: Date,
-        effective_date: Date,
-    },
+    /// The rates schedule does not price the period: no rates are in effect on its first day, the
+    /// rates change more than once within it, or a rate on a row it uses is not a positive number.
+    Rates(Box<RateScheduleError>),
 }
 
 /// Why a billing period does not yield a cost-recovery surplus.
@@ -441,23 +262,7 @@ impl fmt::Display for CostRecoveryError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::NotABillingPeriodEnding(e) => e.fmt(f),
-            Self::RatesNotYetInEffect {
-                period_start,
-                effective_date,
-            } => write!(
-                f,
-                "the cost-recovery rates given for the start of the period take effect \
-                 {effective_date}, after it starts on {period_start}"
-            ),
-            Self::RateChangeOutsidePeriod {
-                period_start,
-                period_ending,
-                effective_date,
-            } => write!(
-                f,
-                "the second set of cost-recovery rates takes effect {effective_date}, which is not \
-                 within the billing period {period_start} to {period_ending}"
-            ),
+            Self::Rates(e) => e.fmt(f),
         }
     }
 }
@@ -466,15 +271,18 @@ impl Error for CostRecoveryError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::NotABillingPeriodEnding(e) => Some(e),
-            _ => None,
+            Self::Rates(e) => Some(e),
         }
     }
 }
 
-/// Returns the cost recovery allocated to the billing period. Applies the specified EV
-/// cost-recovery TOU rates to the corresponding TOU energy use by EV charging sessions.
-/// If the cost-recovery rates change during the billing period, a second set of cost-recovery
-/// rates is specified.
+/// Returns the cost recovery allocated to the billing period. Applies the EV cost-recovery TOU
+/// rates in effect to the corresponding TOU energy use by EV charging sessions.
+///
+/// # Which rates
+///
+/// The rates in effect on the period's first day, and those of the row dated within the period, if
+/// there is one. At most one row may be dated within a period.
 ///
 /// # How the figure is arrived at
 ///
@@ -484,9 +292,9 @@ impl Error for CostRecoveryError {
 /// what the utility adjusted; and no HST or rebate, because those are the utility's and this is not
 /// a utility bill.
 ///
-/// A change of rates during the period splits it in two at prevailing local midnight starting
-/// `recovery_rates_at_end.effective_date`, and each session's energy is cut at that instant the way
-/// it is cut at the period's own boundaries. Local midnight rather than the standard-time midnight
+/// A change of rates during the period splits it in two at prevailing local midnight starting the
+/// change's effective date, and each session's energy is cut at that instant the way it is cut at
+/// the period's own boundaries. Local midnight rather than the standard-time midnight
 /// the *period* turns on: the period boundary is on standard time because Toronto Hydro's is, while
 /// when our own rates change is our own decision, and the date it is announced on means the day
 /// people live in.
@@ -498,44 +306,27 @@ impl Error for CostRecoveryError {
 /// - `sessions` - every session from every report covering the period, as
 ///   [`energy`](super::energy::energy) takes them, with the same obligation to supply all of them
 ///   and the same treatment of duplicates and of records that contradict themselves.
-/// - `recovery_rates_at_start` - the rates in effect on the period's first day. Their
-///   `effective_date` may be well before the period.
-/// - `recovery_rates_at_end` - the rates the period changed to, or `None` if it did not.
+/// - `rates` - the rates schedule. Only the rows the period uses have their rates checked.
 ///
 /// # Errors
 ///
 /// [`CostRecoveryError::NotABillingPeriodEnding`] if `billing_period_ending` is not
-/// [`BILL_END_DAY`] of its month; [`CostRecoveryError::RatesNotYetInEffect`] if the opening rates
-/// do not reach the period's first day; and [`CostRecoveryError::RateChangeOutsidePeriod`] if the
-/// second schedule takes effect outside it.
+/// [`BILL_END_DAY`] of its month, and [`CostRecoveryError::Rates`] if the schedule does not price
+/// the period.
 pub fn cost_recovery(
     billing_period_ending: Date,
     sessions: &Sessions,
-    recovery_rates_at_start: CostRecoveryRates,
-    recovery_rates_at_end: Option<CostRecoveryRates>,
+    rates: &RateSchedule,
 ) -> Result<CostRecovery, CostRecoveryError> {
     let (period_start, period_ending) = billing_period_dates(billing_period_ending)?;
-
-    if recovery_rates_at_start.effective_date > period_start {
-        return Err(CostRecoveryError::RatesNotYetInEffect {
-            period_start,
-            effective_date: recovery_rates_at_start.effective_date,
-        });
-    }
-    if let Some(rates) = &recovery_rates_at_end
-        && !(period_start < rates.effective_date && rates.effective_date <= period_ending)
-    {
-        return Err(CostRecoveryError::RateChangeOutsidePeriod {
-            period_start,
-            period_ending,
-            effective_date: rates.effective_date,
-        });
-    }
+    let (recovery_rates_at_start, recovery_rates_at_end) = rates
+        .for_billing_period(period_start, period_ending)
+        .map_err(|e| CostRecoveryError::Rates(Box::new(e)))?;
 
     let period = BillingPeriod::ending_on(billing_period_ending, BILL_END_DAY);
     let counted = sessions.countable();
 
-    // The instant the rates change, and with it the two stretches. Checked above to fall strictly
+    // The instant the rates change, and with it the two stretches. The change is dated strictly
     // inside the period, so neither stretch is empty and the two partition it exactly.
     let stretches = match recovery_rates_at_end {
         None => vec![stretch(
@@ -584,6 +375,7 @@ pub fn cost_recovery(
         },
         cost_recovery: sum(CostRecoveryStretch::recovery),
         stretches,
+        rates_workbook: rates.workbook().map(Into::into),
         notes: sessions.notes(AnomalyKind::bears_on_energy),
     })
 }
@@ -617,8 +409,7 @@ pub fn cost_recovery(
 ///   [`peak_power_cost`](super::peak_power::peak_power_cost) takes them.
 /// - `sessions` - every session from every report covering the period, as
 ///   [`energy`](super::energy::energy) takes them.
-/// - `recovery_rates_at_start` - the rates in effect on the period's first day.
-/// - `recovery_rates_at_end` - the rates the period changed to, or `None` if it did not.
+/// - `rates` - the rates schedule, as [`cost_recovery`] takes it.
 ///
 /// There is no `billing_period_ending` argument, for the reason the two costing functions have
 /// none: the bill states which period it covers, and one passed alongside could only agree with it
@@ -634,20 +425,14 @@ pub fn cost_recovery_surplus(
     bill: &HydroBill,
     gb_period_values: PeriodValues,
     sessions: &Sessions,
-    recovery_rates_at_start: CostRecoveryRates,
-    recovery_rates_at_end: Option<CostRecoveryRates>,
+    rates: &RateSchedule,
 ) -> Result<CostRecoverySurplus, CostRecoverySurplusError> {
     // The bill is the single source of the period, so all three parts are for the same one by
     // construction rather than by a check. An off-cycle bill is refused by each of them in turn;
     // the recovery is called first, so that is where it surfaces.
     let billing_period_ending = bill.period_end_date();
 
-    let mut recovery = cost_recovery(
-        billing_period_ending,
-        sessions,
-        recovery_rates_at_start,
-        recovery_rates_at_end,
-    )?;
+    let mut recovery = cost_recovery(billing_period_ending, sessions, rates)?;
     let mut delivery = peak_power_cost(bill, gb_period_values, sessions)?;
     let mut energy = energy_cost(bill, sessions)?;
 
@@ -792,6 +577,16 @@ impl fmt::Display for CostRecovery {
             "{}",
             field("Period", &billing_period_span(self.billing_period_ending))
         )?;
+        // The file, so that a report can be traced to the workbook it was priced from. The rows
+        // used need no numbers of their own: each is named by its effective date, and no two rows
+        // share one.
+        if let Some(workbook) = &self.rates_workbook {
+            writeln!(
+                f,
+                "{}",
+                field("Rates workbook", &workbook.display().to_string())
+            )?;
+        }
 
         // One schedule is the ordinary case, and it gets one table under a heading line rather than
         // a section of its own followed by a total that repeats it.
@@ -933,120 +728,21 @@ fn verdict(surplus: f64) -> &'static str {
 mod test {
     use super::*;
     use crate::{
-        api::pure::test_support::{
-            KVA_PEAK_HOUR, KW_PEAK_HOUR, NOP_PEAK_HOUR, as_report, bill, period_ending_date,
-            period_values_with_nop, two_report_sessions, two_reports,
+        api::pure::{
+            rates::{
+                RateScheduleErrorKind,
+                test::{row, schedule},
+            },
+            test_support::{
+                KVA_PEAK_HOUR, KW_PEAK_HOUR, NOP_PEAK_HOUR, as_report, bill, period_ending_date,
+                period_values_with_nop, two_report_sessions, two_reports,
+            },
         },
         golden,
         green_button::Anomaly,
         session::test_support::session,
     };
     use std::{path::PathBuf, rc::Rc};
-
-    /// The form both cost-recovery tools document, read once here rather than agreeing by
-    /// inspection in two binaries.
-    #[test]
-    fn a_schedule_reads_as_the_tools_write_it() {
-        let parsed: CostRecoveryRates = "2026-05-01:0.1100,0.0900,0.0700"
-            .parse()
-            .expect("a schedule");
-        assert_eq!(parsed.effective_date, Date::constant(2026, 5, 1));
-        assert_eq!(
-            (parsed.on_peak, parsed.mid_peak, parsed.off_peak),
-            (0.11, 0.09, 0.07)
-        );
-
-        // Zero is a rate. A schedule pricing one band at nothing is odd but not malformed.
-        let free: CostRecoveryRates = "2026-06-01:0,0,0".parse().expect("a schedule");
-        assert_eq!(
-            (free.on_peak, free.mid_peak, free.off_peak),
-            (0.0, 0.0, 0.0)
-        );
-    }
-
-    /// Every way the argument can be wrong says which part was wrong, because a command line has
-    /// nowhere else to explain itself.
-    ///
-    /// Matched on the variant as well as the message: the variants are the reason this is a typed
-    /// error rather than a `String`, and a caller that wants to act on which part failed reads
-    /// them rather than the prose.
-    #[test]
-    fn a_schedule_that_will_not_read_names_the_part_that_failed() {
-        use CostRecoveryRatesError as E;
-
-        /// The argument, a phrase its message must carry, and the variant it must be.
-        type Case = (&'static str, &'static str, fn(&E) -> bool);
-
-        let cases: [Case; 7] = [
-            ("bad", "as a rate schedule", |e| {
-                matches!(e, E::NotASchedule { .. })
-            }),
-            ("2026-05-01:0.11,0.09", "is not three rates", |e| {
-                matches!(e, E::NotThreeRates { .. })
-            }),
-            (
-                "2026-05-01:0.11,0.09,0.07,0.05",
-                "is not three rates",
-                |e| matches!(e, E::NotThreeRates { .. }),
-            ),
-            ("May 1 2026:0.11,0.09,0.07", "as an effective date", |e| {
-                matches!(e, E::EffectiveDate { .. })
-            }),
-            ("2026-05-01:nan,0.09,0.07", "not a finite number", |e| {
-                matches!(
-                    e,
-                    E::NotFinite {
-                        band: RateBand::OnPeak,
-                        ..
-                    }
-                )
-            }),
-            ("2026-05-01:0.11,inf,0.07", "not a finite number", |e| {
-                matches!(
-                    e,
-                    E::NotFinite {
-                        band: RateBand::MidPeak,
-                        ..
-                    }
-                )
-            }),
-            ("2026-05-01:0.11,0.09,-0.07", "cannot be negative", |e| {
-                matches!(
-                    e,
-                    E::Negative {
-                        band: RateBand::OffPeak,
-                        ..
-                    }
-                )
-            }),
-        ];
-
-        for (spec, expected, is_variant) in cases {
-            let err = spec.parse::<CostRecoveryRates>().expect_err(spec);
-            assert!(is_variant(&err), "{spec}: wrong variant, {err:?}");
-            let message = err.to_string();
-            assert!(message.contains(expected), "{spec}: {message}");
-        }
-    }
-
-    /// A rate that is not a number keeps the cause, so `{:#}` and `source()` reach it.
-    #[test]
-    fn a_rate_that_is_not_a_number_keeps_its_cause() {
-        let err = "2026-05-01:0.11,two,0.07"
-            .parse::<CostRecoveryRates>()
-            .expect_err("a schedule");
-        assert!(
-            matches!(
-                err,
-                CostRecoveryRatesError::Rate {
-                    band: RateBand::MidPeak,
-                    ..
-                }
-            ),
-            "{err:?}"
-        );
-        assert!(err.source().is_some(), "{err:?}");
-    }
 
     /// No sessions at all, as a report.
     ///
@@ -1068,18 +764,22 @@ mod test {
         period_values_with_nop(Some(KW_PEAK_HOUR), Some(KVA_PEAK_HOUR), Some(NOP_PEAK_HOUR))
     }
 
-    fn rates(effective: Date, on_peak: f64, mid_peak: f64, off_peak: f64) -> CostRecoveryRates {
-        CostRecoveryRates {
-            effective_date: effective,
-            on_peak,
-            mid_peak,
-            off_peak,
-        }
+    /// One row of rates, in effect from `effective` on.
+    fn rates(effective: Date, on_peak: f64, mid_peak: f64, off_peak: f64) -> RateSchedule {
+        schedule(vec![row(2, effective, [on_peak, mid_peak, off_peak])])
     }
 
     /// Flat rates, so a recovery is the energy times one number and can be checked by hand.
-    fn flat(effective: Date, rate: f64) -> CostRecoveryRates {
+    fn flat(effective: Date, rate: f64) -> RateSchedule {
         rates(effective, rate, rate, rate)
+    }
+
+    /// Flat rates from `effective`, changing to other flat rates on `change`.
+    fn changing(effective: Date, rate: f64, change: Date, changed: f64) -> RateSchedule {
+        schedule(vec![
+            row(2, effective, [rate; 3]),
+            row(3, change, [changed; 3]),
+        ])
     }
 
     /// The fixture sessions, plus one in the kW interval carrying an anomaly.
@@ -1104,13 +804,8 @@ mod test {
         // 02:00 EDT on 10 June, an hour long, wholly inside the period.
         let s = session("June.csv", 2, "IN", "2026-06-10T06:00:00Z", 60, 7.0);
 
-        let r = cost_recovery(
-            ending(),
-            &as_report(vec![s]),
-            flat(date(2026, 5, 1), 0.10),
-            None,
-        )
-        .expect("23 June closes a billing period");
+        let r = cost_recovery(ending(), &as_report(vec![s]), &flat(date(2026, 5, 1), 0.10))
+            .expect("23 June closes a billing period");
 
         assert_eq!(r.stretches.len(), 1);
         assert_eq!(r.stretches[0].from, date(2026, 5, 24));
@@ -1136,13 +831,12 @@ mod test {
             session("June.csv", 3, "JUNE", "2026-06-10T06:00:00Z", 60, 7.0),
         ]);
 
-        let whole = cost_recovery(ending(), &sessions, flat(date(2026, 5, 1), 0.10), None)
+        let whole = cost_recovery(ending(), &sessions, &flat(date(2026, 5, 1), 0.10))
             .expect("23 June closes a billing period");
         let split = cost_recovery(
             ending(),
             &sessions,
-            flat(date(2026, 5, 1), 0.10),
-            Some(flat(date(2026, 6, 1), 0.10)),
+            &changing(date(2026, 5, 1), 0.10, date(2026, 6, 1), 0.10),
         )
         .expect("1 June falls inside the period");
 
@@ -1180,8 +874,7 @@ mod test {
         let r = cost_recovery(
             ending(),
             &none(),
-            flat(date(2026, 5, 1), 0.10),
-            Some(flat(date(2026, 6, 1), 0.12)),
+            &changing(date(2026, 5, 1), 0.10, date(2026, 6, 1), 0.12),
         )
         .expect("1 June falls inside the period");
 
@@ -1210,8 +903,7 @@ mod test {
         let r = cost_recovery(
             ending(),
             &as_report(vec![off]),
-            rates(date(2026, 5, 1), 1.0, 2.0, 3.0),
-            None,
+            &rates(date(2026, 5, 1), 1.0, 2.0, 3.0),
         )
         .expect("23 June closes a billing period");
 
@@ -1228,13 +920,8 @@ mod test {
     /// than reaching the panic in `BillingPeriod::ending_on`.
     #[test]
     fn a_date_that_does_not_close_a_billing_period_is_refused() {
-        let err = cost_recovery(
-            date(2026, 6, 30),
-            &none(),
-            flat(date(2026, 5, 1), 0.10),
-            None,
-        )
-        .expect_err("30 June does not label a billing period");
+        let err = cost_recovery(date(2026, 6, 30), &none(), &flat(date(2026, 5, 1), 0.10))
+            .expect_err("30 June does not label a billing period");
         assert!(
             matches!(err, CostRecoveryError::NotABillingPeriodEnding(_)),
             "{err}"
@@ -1245,62 +932,68 @@ mod test {
     /// at all. Refused rather than backdated.
     #[test]
     fn opening_rates_must_reach_the_periods_first_day() {
-        let err = cost_recovery(ending(), &none(), flat(date(2026, 6, 1), 0.10), None)
+        let err = cost_recovery(ending(), &none(), &flat(date(2026, 6, 1), 0.10))
             .expect_err("1 June is after the period starts on 24 May");
         assert!(
             matches!(
-                err,
-                CostRecoveryError::RatesNotYetInEffect {
-                    period_start,
-                    effective_date,
-                } if period_start == date(2026, 5, 24) && effective_date == date(2026, 6, 1)
+                &err,
+                CostRecoveryError::Rates(e) if e.kind == RateScheduleErrorKind::NotYetInEffect {
+                    date: date(2026, 5, 24),
+                    first: date(2026, 6, 1),
+                }
             ),
             "{err}"
         );
 
         // Rates already in effect when the period opens are the ordinary case, and the common one:
         // a period starting on the 24th is nearly always charged at rates set earlier that month.
-        assert!(cost_recovery(ending(), &none(), flat(date(2026, 5, 1), 0.10), None).is_ok());
+        assert!(cost_recovery(ending(), &none(), &flat(date(2026, 5, 1), 0.10)).is_ok());
         // In effect exactly on the first day is inside, not outside.
-        assert!(cost_recovery(ending(), &none(), flat(date(2026, 5, 24), 0.10), None).is_ok());
+        assert!(cost_recovery(ending(), &none(), &flat(date(2026, 5, 24), 0.10)).is_ok());
     }
 
-    /// A change dated outside the period names a split this period does not contain. Both ends are
-    /// checked, and the period's own boundaries are the ones that count -- not the month's.
+    /// A row splits the period only when it is dated after the first day and on or before the
+    /// last. The period's own boundaries are the ones that count -- not the month's.
     #[test]
-    fn a_rate_change_must_fall_inside_the_period() {
-        let start = flat(date(2026, 5, 1), 0.10);
-        let outside = |change: Date| {
-            cost_recovery(ending(), &none(), start, Some(flat(change, 0.12)))
-                .expect_err("{change} is outside the period")
+    fn only_a_row_dated_inside_the_period_splits_it() {
+        let stretches = |change: Date| {
+            cost_recovery(
+                ending(),
+                &none(),
+                &changing(date(2026, 5, 1), 0.10, change, 0.12),
+            )
+            .expect("{change} leaves the period priced")
+            .stretches
+            .len()
         };
 
-        // On the first day, which would leave the opening rates covering nothing.
+        // On the first day, the second row is simply the rates in effect all period.
+        assert_eq!(stretches(date(2026, 5, 24)), 1);
+        // After the last day, it belongs to the next period.
+        assert_eq!(stretches(date(2026, 6, 24)), 1);
+        // The two days just inside each end split it, which is what fixes the boundary.
+        assert_eq!(stretches(date(2026, 5, 25)), 2);
+        assert_eq!(stretches(date(2026, 6, 23)), 2);
+    }
+
+    /// A period takes one change of rates at most. Two would need three stretches, and a
+    /// schedule changing twice within a month is far likelier to be a mistyped date.
+    #[test]
+    fn two_changes_within_one_period_are_refused() {
+        let twice = schedule(vec![
+            row(2, date(2026, 5, 1), [0.10; 3]),
+            row(3, date(2026, 6, 1), [0.11; 3]),
+            row(4, date(2026, 6, 10), [0.12; 3]),
+        ]);
+        let err = cost_recovery(ending(), &none(), &twice).expect_err("two changes");
         assert!(
             matches!(
-                outside(date(2026, 5, 24)),
-                CostRecoveryError::RateChangeOutsidePeriod { .. }
+                &err,
+                CostRecoveryError::Rates(e)
+                    if matches!(e.kind, RateScheduleErrorKind::TwoChangesInPeriod { .. })
             ),
-            "a change on the period's first day"
+            "{err}"
         );
-        // Before it, and after its last day.
-        for change in [date(2026, 5, 1), date(2026, 6, 24), date(2026, 7, 1)] {
-            assert!(
-                matches!(
-                    outside(change),
-                    CostRecoveryError::RateChangeOutsidePeriod { .. }
-                ),
-                "a change on {change}"
-            );
-        }
-
-        // The two days just inside each end are accepted, which is what fixes the boundary.
-        for change in [date(2026, 5, 25), date(2026, 6, 23)] {
-            assert!(
-                cost_recovery(ending(), &none(), start, Some(flat(change, 0.12))).is_ok(),
-                "a change on {change}"
-            );
-        }
     }
 
     /// One schedule and two are laid out differently -- one table against a section each plus a
@@ -1312,8 +1005,7 @@ mod test {
         let one = cost_recovery(
             ending(),
             &as_report(vec![s.clone()]),
-            flat(date(2026, 5, 1), 0.10),
-            None,
+            &flat(date(2026, 5, 1), 0.10),
         )
         .expect("23 June closes a billing period")
         .to_string();
@@ -1327,8 +1019,7 @@ mod test {
         let two = cost_recovery(
             ending(),
             &as_report(vec![s]),
-            flat(date(2026, 5, 1), 0.10),
-            Some(flat(date(2026, 6, 1), 0.12)),
+            &changing(date(2026, 5, 1), 0.10, date(2026, 6, 1), 0.12),
         )
         .expect("1 June falls inside the period")
         .to_string();
@@ -1352,12 +1043,12 @@ mod test {
     #[test]
     fn the_surplus_is_the_recovery_less_the_two_costs() {
         let rates = flat(date(2026, 5, 1), 0.10);
-        let s = cost_recovery_surplus(&bill(), peaks(), &two_reports(), rates, None)
+        let s = cost_recovery_surplus(&bill(), peaks(), &two_reports(), &rates)
             .expect("the fixture bill closes a billing period and has all three maxima");
 
         // Recomputed independently, so a surplus built from anything other than these three parts
         // fails here rather than in the arithmetic below.
-        let recovery = cost_recovery(ending(), &two_reports(), rates, None).expect("the recovery");
+        let recovery = cost_recovery(ending(), &two_reports(), &rates).expect("the recovery");
         let delivery =
             peak_power_cost(&bill(), peaks(), &two_reports()).expect("the delivery cost");
         let energy = energy_cost(&bill(), &two_reports()).expect("the energy cost");
@@ -1383,7 +1074,7 @@ mod test {
     #[test]
     fn the_surplus_states_its_session_notes_once() {
         let rates = flat(date(2026, 5, 1), 0.10);
-        let s = cost_recovery_surplus(&bill(), peaks(), &two_reports(), rates, None)
+        let s = cost_recovery_surplus(&bill(), peaks(), &two_reports(), &rates)
             .expect("the fixture bill closes a billing period and has all three maxima");
 
         assert_eq!(s.notes.sources.len(), 2, "{:?}", s.notes.sources);
@@ -1413,7 +1104,7 @@ mod test {
         let sessions = as_report(sessions_with_hot());
 
         let rates = flat(date(2026, 5, 1), 0.10);
-        let s = cost_recovery_surplus(&bill(), peaks(), &sessions, rates, None)
+        let s = cost_recovery_surplus(&bill(), peaks(), &sessions, &rates)
             .expect("the fixture bill closes a billing period and has all three maxima");
 
         assert!(
@@ -1457,10 +1148,10 @@ mod test {
 
         // Rates in tenth-of-a-cent steps, and three unequal bands, so the three totals land all
         // over the cent rather than tracking each other.
-        for step in 0..200 {
+        for step in 1..=200 {
             let base = f64::from(step) * 0.001;
             let rates = rates(date(2026, 5, 1), base, base + 0.0007, base + 0.0003);
-            let report = cost_recovery_surplus(&bill(), peaks(), &two_reports(), rates, None)
+            let report = cost_recovery_surplus(&bill(), peaks(), &two_reports(), &rates)
                 .expect("the fixture bill closes a billing period")
                 .to_string();
 
@@ -1488,14 +1179,15 @@ mod test {
                 &bill(),
                 peaks(),
                 &two_reports(),
-                flat(date(2026, 5, 1), rate),
-                None,
+                &flat(date(2026, 5, 1), rate),
             )
             .expect("the fixture bill closes a billing period")
         };
 
-        let none = surplus_at(0.0);
-        assert_eq!(none.recovery.cost_recovery, 0.0);
+        // A rate must be greater than zero, so the nearest thing to none is one too small to
+        // recover a cent.
+        let none = surplus_at(1e-9);
+        assert_eq!(to_the_cent(none.recovery.cost_recovery), 0.0);
         // The two costs to the cent, since that is what the surplus is built from.
         assert_eq!(
             none.surplus,
@@ -1519,14 +1211,13 @@ mod test {
             &bill(),
             peaks(),
             &two_reports(),
-            flat(date(2026, 6, 1), 0.10),
-            None,
+            &flat(date(2026, 6, 1), 0.10),
         )
         .expect_err("1 June is after the period starts on 24 May");
         assert!(
             matches!(
                 err,
-                CostRecoverySurplusError::Recovery(CostRecoveryError::RatesNotYetInEffect { .. })
+                CostRecoverySurplusError::Recovery(CostRecoveryError::Rates(_))
             ),
             "{err}"
         );
@@ -1537,8 +1228,7 @@ mod test {
             &bill(),
             no_kva,
             &two_reports(),
-            flat(date(2026, 5, 1), 0.10),
-            None,
+            &flat(date(2026, 5, 1), 0.10),
         )
         .expect_err("no kVA maximum to estimate against");
         assert!(
@@ -1557,8 +1247,7 @@ mod test {
             &flat_band,
             peaks(),
             &two_reports(),
-            flat(date(2026, 5, 1), 0.10),
-            None,
+            &flat(date(2026, 5, 1), 0.10),
         )
         .expect_err("the bill states no on-peak rate");
         assert!(
@@ -1579,8 +1268,7 @@ mod test {
             &bill(),
             peaks(),
             &two_reports(),
-            flat(date(2026, 5, 1), 0.10),
-            None,
+            &flat(date(2026, 5, 1), 0.10),
         )
         .expect("the fixture bill closes a billing period")
         .to_string();
@@ -1635,8 +1323,7 @@ mod test {
             &bill(),
             peaks(),
             &two_reports(),
-            flat(date(2026, 5, 1), 0.10),
-            None,
+            &flat(date(2026, 5, 1), 0.10),
         )
         .expect("the fixture bill closes a billing period")
         .to_string();
@@ -1661,8 +1348,7 @@ mod test {
             &bill(),
             peaks(),
             &two_reports(),
-            flat(date(2026, 5, 1), 0.10),
-            None,
+            &flat(date(2026, 5, 1), 0.10),
         )
         .expect("the fixture bill closes a billing period and has all three maxima");
         let alone = peak_power_cost(&bill(), peaks(), &two_reports())
@@ -1706,8 +1392,7 @@ mod test {
             &bill(),
             peaks(),
             &as_report(sessions_with_hot()),
-            flat(date(2026, 5, 1), 0.10),
-            None,
+            &flat(date(2026, 5, 1), 0.10),
         )
         .expect("the fixture bill closes a billing period and has all three maxima");
 
@@ -1738,8 +1423,7 @@ mod test {
             &bill(),
             peaks(),
             &two_reports(),
-            flat(date(2026, 5, 1), 0.10),
-            None,
+            &flat(date(2026, 5, 1), 0.10),
         )
         .expect("the fixture bill closes a billing period and has all three maxima");
 
@@ -1796,14 +1480,20 @@ mod test {
             Anomaly::MissingKva,
         )];
 
-        let s = cost_recovery_surplus(
-            &bill(),
-            meter,
-            &as_report(sessions_with_hot()),
-            flat(date(2026, 5, 1), 0.10),
-            Some(flat(date(2026, 6, 1), 0.12)),
+        // Read from a named workbook, so the line naming it is pinned too.
+        let rates = RateSchedule::new(
+            Some(PathBuf::from("EV_Cost_Recovery_Rates.xlsx")),
+            "rates".to_owned(),
+            [2, 3, 4],
+            vec![
+                row(2, date(2026, 5, 1), [0.10; 3]),
+                row(3, date(2026, 6, 1), [0.12; 3]),
+            ],
         )
-        .expect("the fixture bill closes a billing period and has all three maxima");
+        .expect("two increasing rows");
+
+        let s = cost_recovery_surplus(&bill(), meter, &as_report(sessions_with_hot()), &rates)
+            .expect("the fixture bill closes a billing period and has all three maxima");
 
         golden::check("api/EV_Cost_Recovery_Surplus.report.md", &s.to_string());
     }
@@ -1815,8 +1505,7 @@ mod test {
             &bill(),
             peaks(),
             &two_reports(),
-            flat(date(2026, 5, 1), 0.10),
-            None,
+            &flat(date(2026, 5, 1), 0.10),
         )
         .expect("the fixture bill closes a billing period and has all three maxima")
         .to_string();
