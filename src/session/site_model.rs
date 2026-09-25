@@ -38,8 +38,8 @@ pub const CONTINUOUS_DUTY_DERATE: f64 = 0.80;
 /// here is.
 pub const PANEL_COUNT: u8 = 1;
 
-/// Number of EVSE breakers in one panel. Bounds how many vehicles that panel can charge.
-pub const PANEL_BREAKER_COUNT: u32 = 10;
+/// Maximum number of active breakers on the panel.
+pub const PANEL_MAX_ACTIVE_BREAKERS: u32 = 10;
 
 /// True (distortion-inclusive) power factor of the vehicle's onboard
 /// charger at full rated current.
@@ -222,7 +222,7 @@ fn transformer_load(secondary: Load) -> Load {
 /// Total load seen at the transformer primary for a single panel, given vehicle count.
 ///
 /// The count is fractional: a segment counts a vehicle by the share of the segment it covers, so
-/// whole numbers are the exception. It is not bounded by [`PANEL_BREAKER_COUNT`] either, but a
+/// whole numbers are the exception. It is not bounded by [`PANEL_MAX_ACTIVE_BREAKERS`] either, but a
 /// count above that one describes a single transformer carrying more than the panel in front of it
 /// can hold, and the square-law loss and reactance terms make it a poor answer for a site that
 /// would in fact have been built with a second panel. `Segment::count_based_load` and
@@ -306,7 +306,7 @@ mod tests {
     #[test]
     fn site_power_factor_rises_then_plateaus() {
         let single = single_panel_load(1.0).true_power_factor();
-        let plateau = single_panel_load(PANEL_BREAKER_COUNT as f64).true_power_factor();
+        let plateau = single_panel_load(PANEL_MAX_ACTIVE_BREAKERS as f64).true_power_factor();
         assert!(single < plateau, "PF should improve with loading");
         assert!(
             plateau <= max_true_power_factor(),
@@ -324,7 +324,7 @@ mod tests {
     /// constants are wrong, not the test.
     #[test]
     fn full_occupancy_stays_within_nameplate() {
-        assert!(loading_ratio(single_panel_load(PANEL_BREAKER_COUNT as f64)) < 1.0);
+        assert!(loading_ratio(single_panel_load(PANEL_MAX_ACTIVE_BREAKERS as f64)) < 1.0);
     }
 
     /// A count between two whole vehicles gives a load between their two loads.
@@ -333,7 +333,7 @@ mod tests {
     /// and the transformer terms are square-law, so this is worth pinning rather than assuming.
     #[test]
     fn a_fractional_count_lands_between_its_whole_neighbours() {
-        for ev_count in 0..PANEL_BREAKER_COUNT {
+        for ev_count in 0..PANEL_MAX_ACTIVE_BREAKERS {
             let low = single_panel_load(f64::from(ev_count)).apparent_kva();
             let mid = single_panel_load(f64::from(ev_count) + 0.5).apparent_kva();
             let high = single_panel_load(f64::from(ev_count) + 1.0).apparent_kva();
@@ -344,7 +344,7 @@ mod tests {
     #[test]
     fn apparent_power_never_exceeds_scalar_sum_of_parts() {
         // Quadrature addition is bounded by arithmetic addition.
-        for ev_count in 0..=PANEL_BREAKER_COUNT {
+        for ev_count in 0..=PANEL_MAX_ACTIVE_BREAKERS {
             let secondary = ev_load().scaled(f64::from(ev_count));
             let total = single_panel_load(ev_count as f64).apparent_kva();
             let scalar = secondary.apparent_kva() + transformer_load(secondary).apparent_kva();

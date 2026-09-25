@@ -1,6 +1,6 @@
 Level 2 EV charging site - load at transformer primary
 
-  Panel            208 V, 10 x 40 A breakers
+  Panel            208 V, at most 10 active 40 A breakers at any time
   Pilot current    32.0 A per vehicle (80% continuous derate)
   Per vehicle      6.656 kVA = 6.589 kW + 0.890 kvar + 0.299 kvar distortion
   Transformer      75 kVA

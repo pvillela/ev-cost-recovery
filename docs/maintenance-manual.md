@@ -142,7 +142,7 @@ which is `ev_real_power_kw()` under the name the rest of the crate uses, and
 #### Spreading a count over the panels, and counts above what they hold
 
 `single_panel_load()` models one panel on one transformer. It will happily take a count above
-`PANEL_BREAKER_COUNT`, but the answer it gives there is a transformer driven past its nameplate:
+`PANEL_MAX_ACTIVE_BREAKERS`, but the answer it gives there is a transformer driven past its nameplate:
 its copper-loss and reactance terms rise with the square of loading, so the figure climbs steeply
 and describes an installation nobody would build.
 
@@ -150,7 +150,7 @@ The segment estimates therefore do not call `single_panel_load()` directly.
 `Segment::count_based_load` and `Segment::energy_based_load` both go through
 `Segment::scaled_load` (`src/session/common.rs`), which does two things:
 
-- **Packs the vehicles into as few panels as possible.** Panels fill to `PANEL_BREAKER_COUNT` one
+- **Packs the vehicles into as few panels as possible.** Panels fill to `PANEL_MAX_ACTIVE_BREAKERS` one
   at a time, one panel takes the remainder, and the rest stand idle. Packing rather than spreading
   gives the larger figure, because a panel's copper loss and leakage reactance are square-law in
   its own loading. **Every panel is in the total whether or not it is charging anything** — an idle
@@ -164,7 +164,7 @@ Both boundaries — each panel filling, and aggregate capacity — are continuou
 estimate does not jump on which side of one its count happens to fall.
 
 The site-load report and its golden file are unaffected: `site_load_report()` calls
-`single_panel_load()` and tabulates 0 to `PANEL_BREAKER_COUNT`, one panel throughout.
+`single_panel_load()` and tabulates 0 to `PANEL_MAX_ACTIVE_BREAKERS`, one panel throughout.
 
 #### The rule the tests are written to
 
@@ -186,7 +186,7 @@ break by accident:
   `timing_anomalies` (`src/session/test_support.rs`) rather than asserting on them whole. If you
   add a test in either that reads a whole anomaly list, filter it the same way.
 - **Two constants read against each other.** `full_occupancy_stays_within_nameplate` does this on
-  purpose: it asserts that `PANEL_BREAKER_COUNT` vehicles do not exceed `XFMR_RATING_KVA`. That is a
+  purpose: it asserts that `PANEL_MAX_ACTIVE_BREAKERS` vehicles do not exceed `XFMR_RATING_KVA`. That is a
   sizing invariant, not a number — a configuration violating it describes an installation that
   would trip — so the test failing is the correct outcome and the constants are what is wrong. It
   is the only deliberate instance; add another only with the same justification, and say so in the

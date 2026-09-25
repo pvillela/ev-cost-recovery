@@ -19,7 +19,7 @@ Grouped by how likely a change is, not by module.
 | `BREAKER_RATING_A` | 40.0 | Rating of each EVSE branch breaker |
 | `CONTINUOUS_DUTY_DERATE` | 0.80 | Continuous-load derating, CEC Rule 8-104 |
 | `PANEL_COUNT` | 1 | Installed panels, each on a transformer of its own |
-| `PANEL_BREAKER_COUNT` | 10 | EVSE breakers in one panel |
+| `PANEL_MAX_ACTIVE_BREAKERS` | 10 | Maximum number of active breakers on the panel |
 | `EV_TRUE_POWER_FACTOR` | 0.99 | Onboard charger's true power factor at full current |
 | `EV_CURRENT_THD` | 0.045 | Onboard charger's input current distortion |
 | `XFMR_RATING_KVA` | 75.0 | Transformer nameplate |

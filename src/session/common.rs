@@ -1,6 +1,6 @@
 use super::site_model::{
-    Load, NORMAL_VOLTAGE_FLUCTUATION_FACTOR, PANEL_BREAKER_COUNT, PANEL_COUNT, ev_real_power_kw,
-    single_panel_load,
+    Load, NORMAL_VOLTAGE_FLUCTUATION_FACTOR, PANEL_COUNT, PANEL_MAX_ACTIVE_BREAKERS,
+    ev_real_power_kw, single_panel_load,
 };
 use crate::{
     log::SourceLog,
@@ -504,7 +504,7 @@ impl Segment {
     /// the clock, so an idle panel contributes it and a busy one does not contribute more.
     ///
     /// Without information about which panel a session ran on, the vehicles are packed into the
-    /// smallest number of panels that can hold them: panels are filled to [`PANEL_BREAKER_COUNT`]
+    /// smallest number of panels that can hold them: panels are filled to [`PANEL_MAX_ACTIVE_BREAKERS`]
     /// one at a time, one panel takes whatever is left over, and the rest stand idle. Packing this
     /// way maximises the figure, because a panel's copper loss and leakage reactance rise with the
     /// square of its loading.
@@ -527,7 +527,7 @@ impl Segment {
     /// idle panel still drawing its standing block, the boundary between one panel and the next —
     /// would otherwise be unreachable, and a test written against it would assert nothing.
     fn load_over_panels(scaling: f64, panels: u8) -> Load {
-        let panel_capacity = f64::from(PANEL_BREAKER_COUNT);
+        let panel_capacity = f64::from(PANEL_MAX_ACTIVE_BREAKERS);
         let panel_count = f64::from(panels);
         let aggregate_capacity = panel_count * panel_capacity;
 
@@ -1368,7 +1368,7 @@ mod test {
     const PANEL_COUNTS: [u8; 3] = [PANEL_COUNT, 2, 3];
 
     fn panel_capacity() -> f64 {
-        f64::from(PANEL_BREAKER_COUNT)
+        f64::from(PANEL_MAX_ACTIVE_BREAKERS)
     }
 
     /// What `panels` panels can hold between them.
@@ -1502,7 +1502,7 @@ mod test {
     #[test]
     fn vehicles_within_one_panel_load_that_panel_and_leave_the_rest_idle() {
         for panels in PANEL_COUNTS {
-            for tenths in 1..=(PANEL_BREAKER_COUNT * 10) {
+            for tenths in 1..=(PANEL_MAX_ACTIVE_BREAKERS * 10) {
                 let count = f64::from(tenths) / 10.0;
                 assert_load_close(
                     Segment::load_over_panels(count, panels),

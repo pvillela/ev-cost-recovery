@@ -28,7 +28,7 @@ use super::{
     Anomaly, AnomalyKind, Estimate, IntervalEstimates, RSession, Session, SessionNotes,
     report_coverage,
     site_model::{
-        BREAKER_RATING_A, CONTINUOUS_DUTY_DERATE, PANEL_BREAKER_COUNT, PANEL_VOLTAGE_V,
+        BREAKER_RATING_A, CONTINUOUS_DUTY_DERATE, PANEL_MAX_ACTIVE_BREAKERS, PANEL_VOLTAGE_V,
         XFMR_RATING_KVA, ev_load, ev_pilot_current_a, loading_ratio, single_panel_load,
     },
 };
@@ -792,8 +792,8 @@ pub fn site_load_report() -> String {
 
     out.push_str("Level 2 EV charging site - load at transformer primary\n\n");
     out.push_str(&format!(
-        "  Panel            {:.0} V, {} x {:.0} A breakers\n",
-        PANEL_VOLTAGE_V, PANEL_BREAKER_COUNT, BREAKER_RATING_A
+        "  Panel            {:.0} V, at most {} active {:.0} A breakers at any time\n",
+        PANEL_VOLTAGE_V, PANEL_MAX_ACTIVE_BREAKERS, BREAKER_RATING_A
     ));
     out.push_str(&format!(
         "  Pilot current    {:.1} A per vehicle ({:.0}% continuous derate)\n",
@@ -818,7 +818,7 @@ pub fn site_load_report() -> String {
     ));
     out.push_str(&format!("{}\n", "-".repeat(69)));
 
-    for ev_count in 0..=PANEL_BREAKER_COUNT {
+    for ev_count in 0..=PANEL_MAX_ACTIVE_BREAKERS {
         let load = single_panel_load(ev_count as f64);
         let percent = loading_ratio(load) * PERCENT;
         let flag = if percent > PERCENT {
@@ -840,7 +840,7 @@ pub fn site_load_report() -> String {
         ));
     }
 
-    let full = single_panel_load(PANEL_BREAKER_COUNT as f64);
+    let full = single_panel_load(PANEL_MAX_ACTIVE_BREAKERS as f64);
     out.push_str(&format!(
         "\nAt full occupancy: {:.3} kW, {:.3} kVA, {:.1}% of nameplate.\n",
         full.real_kw,
