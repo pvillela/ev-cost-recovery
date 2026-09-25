@@ -20,13 +20,11 @@ pub mod hydro_bill;
 // now writes them too -- reaching into `crate::session` for the type would have `green_button`
 // depend on a module it shares nothing else with.
 pub mod log;
+pub mod rates;
 pub mod session;
 pub mod time;
 
 mod markdown;
-
-// Private: only `api::io` reads the workbook, and hands on the `RateSchedule` it returns.
-mod rates_workbook;
 
 // Number *text*, as a person writes it: the rule both document readers apply before stripping
 // thousands separators. A leaf -- it reads no file and knows no format.

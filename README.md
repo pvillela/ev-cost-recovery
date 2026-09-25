@@ -79,7 +79,7 @@ Five files:
 | Green Button export        | Toronto Hydro's ESPI XML feed of meter readings for a date range. The data must cover at least the full billing period. |
 | Session report 1           | An Evolute Session Report CSV. The reports given must cover the whole billing period between them, without a gap. |
 | Session report 2           | A second Session Report CSV, if one report does not cover the whole period. Optional. |
-| Rates workbook             | The Excel workbook of TOU EV cost-recovery rates, described in [The rates workbook](#the-rates-workbook). The period is priced at the rates in effect on its first day, with at most one change within it. |
+| Rates workbook             | The Excel workbook of TOU EV cost-recovery rates, described in [docs/rates/README.md](docs/rates/README.md). The period is priced at the rates in effect on its first day, with at most one change within it. |
 
 #### Outputs
 
@@ -96,7 +96,7 @@ Three files and a remittance amount:
 | Session report             | An Evolute Session Report CSV covering the calendar month the Charges Report is for. |
 | Charges report             | The Evolute Charges Report CSV file for the calendar month. Its file name is what states the month, and only a single month is accepted. |
 | Remittance                 | The reimbursement received from Evolute for the calendar month. |
-| Rates workbook             | The same workbook as for `Cost recovery`; choosing it on one tab chooses it on both. The month is priced at the rates in effect on the 1st, and the rates may not change within the month. |
+| Rates workbook             | The same workbook as for `Cost recovery`, described in [docs/rates/README.md](docs/rates/README.md); choosing it on one tab chooses it on both. The month is priced at the rates in effect on the 1st, and the rates may not change within the month. |
 
 #### Outputs
 
@@ -121,43 +121,6 @@ When converting a Green Button export:
 #### Outputs
 
 Converted files are written to the same folder as the input files. Each converted file has the same name as its input file, but with the ".xlsx" file type.
-
-### The rates workbook
-
-The EV cost-recovery rates are read from an Excel workbook (`.xlsx`), which can have any name. The `Cost recovery` and `Evolute reimbursement` tabs share it: choosing it on one chooses it on both. It is read each time the figures are worked out, so a change saved in the spreadsheet is used on the next run.
-
-**The sheet.** The rates are on the sheet named `rates`. If there is none, the sheet named `Sheet1` is used. Capitals and surrounding spaces in the sheet name do not matter. Other sheets are ignored.
-
-**The columns.** Row 1 names the columns. It must hold these four names, spelled exactly as shown, in any order:
-
-| Column           | Contents of the rows below                                   |
-| :--------------- | :----------------------------------------------------------- |
-| `effective_date` | The first day the rates on that row apply. It must be an Excel date — a date the spreadsheet shows in a date format — not text, and with no time of day. |
-| `on_peak`        | The on-peak rate, in dollars per kilowatt-hour. A number greater than zero. |
-| `mid_peak`       | The mid-peak rate, in dollars per kilowatt-hour. A number greater than zero. |
-| `off_peak`       | The off-peak rate, in dollars per kilowatt-hour. A number greater than zero. |
-
-Other columns are ignored, and can hold notes.
-
-**The rows.**
-
-- The rates start on row 2 and end at the first row with an empty `effective_date`. Nothing may follow that row in the four columns.
-- The effective dates must increase down the sheet: each one later than the one above it.
-- The effective dates are checked on every run. A rate is checked only when a run uses its row, so an old row with a rate missing does not stop a run that does not reach it.
-
-**Which rows are used.** The rates in effect on a date are those on the last row whose `effective_date` is on or before that date.
-
-- `Cost recovery` uses the rates in effect on the billing period's first day. If a row's `effective_date` falls within the period, the period is split at local midnight at the start of that date, and the rest of it is priced at that row's rates. At most one row may fall within a billing period.
-- `Evolute reimbursement` uses the rates in effect on the 1st of the month. No row may fall within the month after the 1st.
-
-An example sheet:
-
-| effective_date | on_peak | mid_peak | off_peak |
-| :------------- | ------: | -------: | -------: |
-| 2026-05-01     |  0.1100 |   0.0900 |   0.0700 |
-| 2026-09-01     |  0.5152 |   0.4740 |   0.4218 |
-
-**A known limit.** Dates are read in the 1900 date system, which every current version of Excel and LibreOffice uses by default. A workbook saved in the 1904 date system, an option in old versions of Excel for Mac, would read every date four years and one day early.
 
 ## Error reporting and logging
 
@@ -210,6 +173,7 @@ Much, but not all, of this documentation pertains to software structure or elect
 - [docs/session/Evolute-Simultaneous_Charging.pdf](docs/session/Evolute-Simultaneous_Charging.pdf) -- Evolute technical documentation about simultaneous charging limits in terms of voltages, currents, kW, kVA, transformer parameters, and number of charging stations.
 - [docs/green_button/README.md](docs/green_button/README.md) -- What the meter export is, when a reading is treated as an anomaly, and when a billing period counts as complete.
 - [docs/green_button/Toronto_Hydro_Object_Model.md](docs/green_button/Toronto_Hydro_Object_Model.md) -- The conceptual domain model for the Green Button ESPI XML feed.
+- [docs/rates/README.md](docs/rates/README.md) -- What the rates workbook holds, and which of its rows price a billing period or a month.
 - [docs/time/README.md](docs/time/README.md) -- Date-time-related functions and constants.
 - [docs/Development_Approach_and_Roles.md](docs/Development_Approach_and_Roles.md) -- How the software was developed.
 
@@ -272,6 +236,7 @@ meets them.
 | `api`            | Functions and types that represent the majority of the software functionality. Builds on all the other modules. The binaries call primarily functions in this module, although they may also call functions in the other modules. |
 | `green_button`   | Functionality related to Toronto Hydro's Green Button export, an ESPI XML feed of hourly meter readings. Notably, computes the intervals that maximise the building's kW, kVA, and 7-7 kW during a billing period. |
 | `hydro_bill`     | Functionality to read the PDF invoices Toronto Hydro issues. |
+| `rates`          | Our EV cost-recovery rates, and reading them from the [rates workbook](docs/rates/README.md): which of its rows price a billing period or a month. |
 | `session`        | Functionality related to the Evolute monthly CSV Session Report. Notably, computes peak load and energy consumption attributable to EV charging sessions. |
 | `time`           | Date-time-related constants and functions.                   |
 | `charges_report` | Functionality to read the Evolute monthly CSV Charges Report. |
@@ -281,7 +246,6 @@ meets them.
 | `log`            | Common functionality to produce read logs.                   |
 | `markdown` (private) | Common functionality to produce markdown reports.        |
 | `number` (private) | What a number written for a person looks like: the rule both document readers apply before stripping thousands separators. |
-| `rates_workbook` (private) | Reads the [rates workbook](#the-rates-workbook) and checks its effective dates. Which rows price a period is decided in `api`. |
 
 ### Building the GUI app and command line tools
 
@@ -306,7 +270,7 @@ The command-line tools are listed below. Each prints its usage when run with no 
 - `energy_cli` -- gives the kilowatt-hours drawn by EV charging sessions during a billing period, split by time-of-use band.
 - `energy_cost_cli` -- gives the energy-related costs attributable to EV charging sessions for a billing period.
 - `peak_power_cost_cli` -- gives the peak power-related costs attributable to EV charging sessions for a billing period.
-- `cost_recovery_cli` -- is the other side of the ledger: it prices the kilowatt-hours consumed by EV charging activity during a billing period, using the cost-recovery rates in the [rates workbook](#the-rates-workbook).
+- `cost_recovery_cli` -- is the other side of the ledger: it prices the kilowatt-hours consumed by EV charging activity during a billing period, using the cost-recovery rates in the [rates workbook](docs/rates/README.md).
 
 - `cost_recovery_surplus_cli` -- puts the two sides together: what the rates recover, less the delivery and energy costs, and the difference. A positive surplus means the rates covered the chargers' share of the bill; a negative one means they fell short.
 

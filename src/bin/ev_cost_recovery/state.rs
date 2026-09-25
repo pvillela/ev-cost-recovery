@@ -1193,7 +1193,7 @@ mod test {
             PathBuf::from("data/green_button/TH_Electric_Usage_23-11-2024_to_24-06-2026.XML"),
             PathBuf::from("data/evolute/Session_Report_May_1_2026-May_31_2026-mock.csv"),
             PathBuf::from("data/evolute/Session_Report_June_1_2026-June_30_2026.csv"),
-            PathBuf::from("data/EV_Cost_Recovery_Rates.xlsx"),
+            PathBuf::from("data/rates/EV_Cost_Recovery_Rates.xlsx"),
         );
         for path in [&paths.0, &paths.1, &paths.2, &paths.3, &paths.4] {
             assert!(
@@ -1235,7 +1235,7 @@ mod test {
     /// that use it stop short of a run.
     fn rates() -> RatesWorkbook {
         let mut rates = RatesWorkbook::default();
-        rates.choose(PathBuf::from("/data/EV_Cost_Recovery_Rates.xlsx"));
+        rates.choose(PathBuf::from("/data/rates/EV_Cost_Recovery_Rates.xlsx"));
         rates
     }
 
@@ -1274,13 +1274,13 @@ mod test {
         assert!(app.surplus.error.is_some());
 
         app.rates_workbook
-            .choose(PathBuf::from("/data/EV_Cost_Recovery_Rates.xlsx"));
+            .choose(PathBuf::from("/data/rates/EV_Cost_Recovery_Rates.xlsx"));
         app.settle_rates_workbook();
         assert!(app.surplus.error.is_none());
         assert!(app.reimbursement.error.is_none());
         assert_eq!(
             app.rates_workbook.get(),
-            Some(Path::new("/data/EV_Cost_Recovery_Rates.xlsx"))
+            Some(Path::new("/data/rates/EV_Cost_Recovery_Rates.xlsx"))
         );
 
         // Settled once per choice: a later run's figures are not dropped by the same choice.

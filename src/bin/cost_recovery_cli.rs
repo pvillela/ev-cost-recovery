@@ -22,9 +22,9 @@ The rates are yours rather than Toronto Hydro's, so no bill is read and no tax i
 is the rate times the kilowatt-hours it was charged on.
 
 The rates workbook is an .xlsx file with a sheet named \"rates\" (or \"Sheet1\") whose first row
-names the columns effective_date, on_peak, mid_peak and off_peak; README.md describes it in full.
-The period is priced at the rates in effect on its first day, and changes once, at local midnight
-starting the date of a row dated within it. More than one such row is refused.
+names the columns effective_date, on_peak, mid_peak and off_peak; docs/rates/README.md describes
+it in full. The period is priced at the rates in effect on its first day, and changes once, at
+local midnight starting the date of a row dated within it. More than one such row is refused.
 
 A billing period straddles two calendar months, so it usually takes two session reports -- but the
 portal exports any date range, and one report covering the whole period is enough on its own. Give
@@ -38,7 +38,7 @@ Usage:
     cost_recovery_cli --help
 
 Example:
-    cost_recovery_cli 2026-06-23 data/EV_Cost_Recovery_Rates.xlsx data/May.csv data/June.csv
+    cost_recovery_cli 2026-06-23 data/rates/EV_Cost_Recovery_Rates.xlsx data/May.csv data/June.csv
 ";
 
 fn main() -> ExitCode {

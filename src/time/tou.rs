@@ -52,7 +52,8 @@ impl Tou {
     /// meant to be read back by column name.
     ///
     /// Preferably rather than must. Nothing reads a `Tou` token back — [`Self::from_token`] has
-    /// only its own round-trip test — and this crate reads no workbook at all. A rename leaves
+    /// only its own round-trip test — and the one workbook this crate reads, the rates workbook,
+    /// names its bands in columns of its own: `on_peak`, `mid_peak` and `off_peak`. A rename leaves
     /// workbooks already written spelling the band one way and the code spelling it another, which
     /// costs a reader of an old sheet and nothing else.
     pub fn as_str(&self) -> &'static str {

@@ -1,4 +1,4 @@
-//! The rates workbook: our EV cost-recovery rates, one row per change, in an Excel workbook.
+//! The rates workbook's file to rows.
 //!
 //! The workbook can have any name. The rates are on the sheet named `rates` or, failing that,
 //! `sheet1` -- matched ignoring case and surrounding spaces, so Excel's default `Sheet1` is found.
@@ -6,23 +6,17 @@
 //! `effective_date`, `on_peak`, `mid_peak` and `off_peak`. Any other column, and any other sheet, is
 //! ignored.
 //!
-//! Everything about the effective dates is settled here, on every read, whatever the calculation
-//! will use: each is a date entered as a date, the dates run strictly upwards, and the rates end at
-//! the first row without one. The rate cells are handed on as found and checked by
-//! [`RateSchedule`] on the rows a calculation actually uses.
+//! Everything about the effective dates is settled here, whatever the rows will be asked: each is a
+//! date entered as a date, the dates run strictly upwards, and the rates end at the first row
+//! without one. The rate cells are kept as found, for `select` to judge.
 //!
 //! `.xlsx` only: it is what `umya-spreadsheet` reads.
 
-use crate::api::pure::{
-    RateBand, RateCell, RateRow, RateSchedule, RateScheduleError, cell_address,
-};
-use jiff::{ToSpan, civil::Date};
-use std::{
-    error::Error,
-    fmt,
-    path::{Path, PathBuf},
-};
-use umya_spreadsheet::{Cell, CellRawValue, Worksheet, XlsxError, reader::xlsx};
+use super::error::{Found, RatesWorkbookError};
+use crate::time::{Tou, date_of_serial};
+use jiff::civil::Date;
+use std::path::{Path, PathBuf};
+use umya_spreadsheet::{Cell, CellRawValue, Worksheet, reader::xlsx};
 
 /// The sheet names looked for, in order, compared ignoring case and surrounding spaces.
 const SHEET_NAMES: [&str; 2] = ["rates", "sheet1"];
@@ -30,186 +24,64 @@ const SHEET_NAMES: [&str; 2] = ["rates", "sheet1"];
 /// The column holding each row's effective date.
 const DATE_COLUMN: &str = "effective_date";
 
-/// Why a rates workbook could not be read.
+/// The three bands, in the order [`RateRow::cells`] holds them.
+pub(super) const BANDS: [Tou; 3] = [Tou::OnPeak, Tou::MidPeak, Tou::OffPeak];
+
+/// A band's column name in the header row.
+pub(super) fn column_name(tou: Tou) -> &'static str {
+    match tou {
+        Tou::OnPeak => "on_peak",
+        Tou::MidPeak => "mid_peak",
+        Tou::OffPeak => "off_peak",
+    }
+}
+
+/// The rates sheet of a workbook, row by row, in effective-date order.
+///
+/// Built only by [`rate_sheet`], which refuses a sheet with no rows or with effective dates that do
+/// not strictly increase, so the row in effect on any date is well defined. The rate cells are as
+/// found.
 #[derive(Debug)]
-pub(crate) enum RatesWorkbookError {
-    /// The file is not named `.xlsx`, in any case.
-    NotXlsx { path: PathBuf },
-    /// The file could not be opened or is not a workbook.
-    Read { path: PathBuf, cause: XlsxError },
-    /// No sheet has either of the names looked for.
-    NoRatesSheet { path: PathBuf, sheets: Vec<String> },
-    /// Row 1 does not name every column read.
-    MissingColumns {
-        path: PathBuf,
-        sheet: String,
-        missing: Vec<&'static str>,
-    },
-    /// Row 1 names a column read more than once.
-    RepeatedColumn {
-        path: PathBuf,
-        sheet: String,
-        column: &'static str,
-        cells: [String; 2],
-    },
-    /// An effective date is not a date: text, or a number not formatted as a date.
-    NotADate {
-        path: PathBuf,
-        sheet: String,
-        cell: String,
-        found: Found,
-    },
-    /// An effective date carries a time of day.
-    NotMidnight {
-        path: PathBuf,
-        sheet: String,
-        cell: String,
-        date: Date,
-    },
-    /// A cell in one of the four columns holds something below the row where the rates end.
-    ContentBelowEnd {
-        path: PathBuf,
-        sheet: String,
-        end_row: u32,
-        cell: String,
-        found: String,
-    },
-    /// The rows read, but do not make a schedule. Names the workbook itself.
-    Schedule(RateScheduleError),
+pub(super) struct RateSheet {
+    /// The workbook the sheet is in.
+    pub(super) path: PathBuf,
+    /// The sheet's name, as the workbook spells it.
+    pub(super) sheet: String,
+    /// The sheet column, counting from 1, of each band's rates, in [`BANDS`] order.
+    pub(super) rate_columns: [u32; 3],
+    /// Earliest effective date first.
+    pub(super) rows: Vec<RateRow>,
 }
 
-/// What stood in an effective-date cell instead of a date.
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) enum Found {
-    /// Anything that is not a number, as the spreadsheet displays it.
-    Text(String),
-    /// A number, with a number format that is not a date's.
+/// One row of the rates sheet: the date the rates take effect, and the three rate cells.
+#[derive(Debug)]
+pub(super) struct RateRow {
+    /// The row's number in the sheet, counting the header as row 1.
+    pub(super) row: u32,
+    /// The first day these rates are charged on.
+    pub(super) effective_date: Date,
+    /// The rate cells, in [`BANDS`] order.
+    pub(super) cells: [RateCell; 3],
+}
+
+/// A rate cell as it was found, before anything is asked of it.
+#[derive(Debug)]
+pub(super) enum RateCell {
+    /// A number, of any sign or size.
     Number(f64),
-    /// A number too small or too large to be a date.
-    OutOfRange(f64),
-}
-
-impl fmt::Display for RatesWorkbookError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let in_sheet = |f: &mut fmt::Formatter<'_>, path: &Path, sheet: &str| {
-            write!(f, "rates workbook {}, sheet \"{sheet}\": ", path.display())
-        };
-        match self {
-            Self::NotXlsx { path } => write!(
-                f,
-                "rates workbook {}: the name does not end in .xlsx. The rates are read from an \
-                 Excel workbook saved as .xlsx",
-                path.display()
-            ),
-            Self::Read { path, cause } => write!(
-                f,
-                "rates workbook {}: the file could not be read: {cause}",
-                path.display()
-            ),
-            Self::NoRatesSheet { path, sheets } => {
-                let sheets: Vec<String> = sheets.iter().map(|s| format!("\"{s}\"")).collect();
-                write!(
-                    f,
-                    "rates workbook {}: there is no sheet named \"rates\" or \"Sheet1\". Its sheets \
-                     are {}",
-                    path.display(),
-                    sheets.join(", ")
-                )
-            }
-            Self::MissingColumns {
-                path,
-                sheet,
-                missing,
-            } => {
-                in_sheet(f, path, sheet)?;
-                write!(
-                    f,
-                    "row 1 does not name the column{} {}. Row 1 must name effective_date, \
-                     on_peak, mid_peak and off_peak, spelled exactly so",
-                    if missing.len() == 1 { "" } else { "s" },
-                    missing.join(", ")
-                )
-            }
-            Self::RepeatedColumn {
-                path,
-                sheet,
-                column,
-                cells: [first, second],
-            } => {
-                in_sheet(f, path, sheet)?;
-                write!(
-                    f,
-                    "row 1 names the column {column} twice, in cells {first} and {second}"
-                )
-            }
-            Self::NotADate {
-                path,
-                sheet,
-                cell,
-                found,
-            } => {
-                in_sheet(f, path, sheet)?;
-                write!(f, "cell {cell} ")?;
-                match found {
-                    Found::Text(text) => write!(f, "holds the text \"{text}\""),
-                    Found::Number(n) => write!(f, "holds the number {n}, not formatted as a date"),
-                    Found::OutOfRange(n) => write!(f, "holds {n}, which no date is stored as"),
-                }?;
-                write!(
-                    f,
-                    ". An effective_date must be entered as a date, which the spreadsheet \
-                     displays in a date format"
-                )
-            }
-            Self::NotMidnight {
-                path,
-                sheet,
-                cell,
-                date,
-            } => {
-                in_sheet(f, path, sheet)?;
-                write!(
-                    f,
-                    "cell {cell} holds {date} with a time of day. An effective_date is a date \
-                     alone, with no time"
-                )
-            }
-            Self::ContentBelowEnd {
-                path,
-                sheet,
-                end_row,
-                cell,
-                found,
-            } => {
-                in_sheet(f, path, sheet)?;
-                write!(
-                    f,
-                    "cell {cell} holds \"{found}\", below row {end_row}, which has no \
-                     effective_date. The rates end at the first row without an effective_date, \
-                     so nothing may follow it"
-                )
-            }
-            Self::Schedule(e) => e.fmt(f),
-        }
-    }
-}
-
-impl Error for RatesWorkbookError {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        match self {
-            Self::Read { cause, .. } => Some(cause),
-            Self::Schedule(e) => Some(e),
-            _ => None,
-        }
-    }
+    /// Nothing in the cell, or only spaces.
+    Empty,
+    /// Anything that is not a number, as the spreadsheet would display it.
+    Text(String),
 }
 
 /// The rates sheet of the workbook at `path`, with every effective date checked.
 ///
 /// # Errors
 ///
-/// [`RatesWorkbookError`], naming the workbook, and the sheet and cell where there is one.
-pub(crate) fn read_rates_workbook(path: &Path) -> Result<RateSchedule, RatesWorkbookError> {
+/// [`RatesWorkbookError`] for a file that is not an `.xlsx` workbook or cannot be read, and for a
+/// sheet, header or effective date that breaks one of the rules in the module documentation.
+pub(super) fn rate_sheet(path: &Path) -> Result<RateSheet, RatesWorkbookError> {
     let path_buf = || path.to_path_buf();
     if !path
         .extension()
@@ -236,7 +108,7 @@ pub(crate) fn read_rates_workbook(path: &Path) -> Result<RateSchedule, RatesWork
     let sheet_name = sheet.name().to_owned();
     let in_sheet = || (path_buf(), sheet_name.clone());
 
-    let [date_column, bands @ ..] = header(sheet).map_err(|problem| {
+    let [date_column, rate_columns @ ..] = header(sheet).map_err(|problem| {
         let (path, sheet) = in_sheet();
         match problem {
             HeaderProblem::Missing(missing) => RatesWorkbookError::MissingColumns {
@@ -244,41 +116,59 @@ pub(crate) fn read_rates_workbook(path: &Path) -> Result<RateSchedule, RatesWork
                 sheet,
                 missing,
             },
-            HeaderProblem::Repeated(column, cells) => RatesWorkbookError::RepeatedColumn {
+            HeaderProblem::Repeated {
+                name,
+                first,
+                second,
+            } => RatesWorkbookError::RepeatedColumn {
                 path,
                 sheet,
-                column,
-                cells,
+                name,
+                first,
+                second,
             },
         }
     })?;
-    let columns = [date_column, bands[0], bands[1], bands[2]];
 
-    let mut rows = Vec::new();
+    let mut rows: Vec<RateRow> = Vec::new();
     let mut row = 2;
     while let Some(cell) = sheet.cell((date_column, row)).filter(|c| !is_blank(c)) {
         let effective_date = effective_date(cell).map_err(|problem| {
             let (path, sheet) = in_sheet();
-            let cell = cell_address(date_column, row);
             match problem {
                 DateProblem::NotADate(found) => RatesWorkbookError::NotADate {
                     path,
                     sheet,
-                    cell,
+                    column: date_column,
+                    row,
                     found,
                 },
                 DateProblem::NotMidnight(date) => RatesWorkbookError::NotMidnight {
                     path,
                     sheet,
-                    cell,
+                    column: date_column,
+                    row,
                     date,
                 },
             }
         })?;
+        if let Some(previous) = rows.last()
+            && effective_date <= previous.effective_date
+        {
+            let (path, sheet) = in_sheet();
+            return Err(RatesWorkbookError::NotIncreasing {
+                path,
+                sheet,
+                row,
+                date: effective_date,
+                previous_row: previous.row,
+                previous: previous.effective_date,
+            });
+        }
         rows.push(RateRow {
             row,
             effective_date,
-            cells: bands.map(|column| rate_cell(sheet.cell((column, row)))),
+            cells: rate_columns.map(|column| rate_cell(sheet.cell((column, row)))),
         });
         row += 1;
     }
@@ -286,38 +176,55 @@ pub(crate) fn read_rates_workbook(path: &Path) -> Result<RateSchedule, RatesWork
     // Formatting alone does not make a row: a sheet whose rows were styled well past the rates is
     // still a sheet whose rates end where the dates do. Only a value counts as content.
     for below in row + 1..=sheet.highest_row() {
-        for column in columns {
+        for column in [
+            date_column,
+            rate_columns[0],
+            rate_columns[1],
+            rate_columns[2],
+        ] {
             if let Some(cell) = sheet.cell((column, below)).filter(|c| !is_blank(c)) {
                 let (path, sheet) = in_sheet();
                 return Err(RatesWorkbookError::ContentBelowEnd {
                     path,
                     sheet,
                     end_row: row,
-                    cell: cell_address(column, below),
+                    column,
+                    row: below,
                     found: cell.value().into_owned(),
                 });
             }
         }
     }
 
-    RateSchedule::new(Some(path_buf()), sheet_name, bands, rows)
-        .map_err(RatesWorkbookError::Schedule)
+    if rows.is_empty() {
+        let (path, sheet) = in_sheet();
+        return Err(RatesWorkbookError::NoRows { path, sheet });
+    }
+    Ok(RateSheet {
+        path: path_buf(),
+        sheet: sheet_name,
+        rate_columns,
+        rows,
+    })
 }
 
 /// What was wrong with the header row.
 enum HeaderProblem {
     Missing(Vec<&'static str>),
-    Repeated(&'static str, [String; 2]),
+    Repeated {
+        name: &'static str,
+        first: u32,
+        second: u32,
+    },
 }
 
-/// The column, counting from 1, of `effective_date` and then of each band in [`RateBand::ALL`]
-/// order.
+/// The column, counting from 1, of `effective_date` and then of each band in [`BANDS`] order.
 fn header(sheet: &Worksheet) -> Result<[u32; 4], HeaderProblem> {
     let names = [
         DATE_COLUMN,
-        RateBand::OnPeak.column(),
-        RateBand::MidPeak.column(),
-        RateBand::OffPeak.column(),
+        column_name(BANDS[0]),
+        column_name(BANDS[1]),
+        column_name(BANDS[2]),
     ];
     let mut found: [Option<u32>; 4] = [None; 4];
     for column in 1..=sheet.highest_column() {
@@ -329,23 +236,25 @@ fn header(sheet: &Worksheet) -> Result<[u32; 4], HeaderProblem> {
             continue;
         };
         if let Some(first) = found[i] {
-            return Err(HeaderProblem::Repeated(
-                names[i],
-                [cell_address(first, 1), cell_address(column, 1)],
-            ));
+            return Err(HeaderProblem::Repeated {
+                name: names[i],
+                first,
+                second: column,
+            });
         }
         found[i] = Some(column);
     }
-    let missing: Vec<&'static str> = names
-        .iter()
-        .zip(found)
-        .filter(|(_, column)| column.is_none())
-        .map(|(name, _)| *name)
-        .collect();
-    if !missing.is_empty() {
-        return Err(HeaderProblem::Missing(missing));
+    match found {
+        [Some(date), Some(on), Some(mid), Some(off)] => Ok([date, on, mid, off]),
+        _ => Err(HeaderProblem::Missing(
+            names
+                .iter()
+                .zip(found)
+                .filter(|(_, column)| column.is_none())
+                .map(|(name, _)| *name)
+                .collect(),
+        )),
     }
-    Ok(found.map(|column| column.expect("every column was found")))
 }
 
 /// Whether a cell holds nothing a reader would see: no value, or only spaces.
@@ -382,8 +291,8 @@ fn effective_date(cell: &Cell) -> Result<Date, DateProblem> {
     if !is_date_format(cell) {
         return Err(DateProblem::NotADate(Found::Number(serial)));
     }
-    let date =
-        serial_date(serial.trunc()).ok_or(DateProblem::NotADate(Found::OutOfRange(serial)))?;
+    let date = date_of_serial(serial.trunc() as i64)
+        .ok_or(DateProblem::NotADate(Found::OutOfRange(serial)))?;
     if serial.fract() != 0.0 {
         return Err(DateProblem::NotMidnight(date));
     }
@@ -423,25 +332,7 @@ fn is_date_format(cell: &Cell) -> bool {
     false
 }
 
-/// The date a whole number of days stands for, in the 1900 date system every current spreadsheet
-/// writes by default, or `None` for a number no date is stored as.
-///
-/// The system counts 1900 as a leap year, as Lotus 1-2-3 did: day 60 is a 29 February that never
-/// was, and every day from 61 on is one later than a plain count from 1 January 1900 would make it.
-fn serial_date(days: f64) -> Option<Date> {
-    const LAST: f64 = 2_958_465.0; // 9999-12-31
-    if !(1.0..=LAST).contains(&days) || days == 60.0 {
-        return None;
-    }
-    let origin = if days < 60.0 {
-        Date::constant(1899, 12, 31)
-    } else {
-        Date::constant(1899, 12, 30)
-    };
-    origin.checked_add((days as i64).days()).ok()
-}
-
-/// A rate cell as found, for [`RateSchedule`] to judge.
+/// A rate cell as found, for `select` to judge.
 fn rate_cell(cell: Option<&Cell>) -> RateCell {
     match cell {
         None => RateCell::Empty,
@@ -453,11 +344,10 @@ fn rate_cell(cell: Option<&Cell>) -> RateCell {
     }
 }
 
-// cargo test --lib -- rates_workbook::test
+// cargo test --lib -- rates::excel::read::test
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::api::pure::{RateScheduleErrorKind, cell_address as address};
     use jiff::civil::date;
     use std::{env, fs, process};
     use umya_spreadsheet::{Workbook, new_file, writer};
@@ -477,28 +367,33 @@ mod test {
         Date(f64),
     }
 
-    /// A workbook of one sheet named `sheet`, holding `cells` by address.
-    fn book(sheet: &str, cells: &[(&str, Value)]) -> Workbook {
-        let mut book = new_file();
-        let ws = book.sheet_mut(0).unwrap();
-        ws.set_name(sheet);
+    /// Puts `cells`, by address, into `sheet`.
+    fn fill(sheet: &mut Worksheet, cells: &[(&str, Value)]) {
         for (at, value) in cells {
-            let cell = ws.cell_mut(*at);
             match value {
                 Value::Text(t) => {
-                    cell.set_value_string(*t);
+                    sheet.cell_mut(*at).set_value_string(*t);
                 }
                 Value::Number(n) => {
-                    cell.set_value_number(*n);
+                    sheet.cell_mut(*at).set_value_number(*n);
                 }
                 Value::Date(n) => {
-                    cell.set_value_number(*n);
-                    ws.style_mut(*at)
+                    sheet.cell_mut(*at).set_value_number(*n);
+                    sheet
+                        .style_mut(*at)
                         .number_format_mut()
                         .set_format_code("yyyy-mm-dd");
                 }
             }
         }
+    }
+
+    /// A workbook of one sheet named `name`, holding `cells` by address.
+    fn book(name: &str, cells: &[(&str, Value)]) -> Workbook {
+        let mut book = new_file();
+        let sheet = book.sheet_mut(0).unwrap();
+        sheet.set_name(name);
+        fill(sheet, cells);
         book
     }
 
@@ -533,19 +428,20 @@ mod test {
     }
 
     #[test]
-    fn a_workbook_as_the_example_lays_it_out_reads() {
+    fn a_workbook_laid_out_as_the_example_is_reads() {
         let dir = temp_dir("reads");
         let path = write(&dir, "Rates.xlsx", &book("rates", &two_rows()));
 
-        let schedule = read_rates_workbook(&path).expect("a valid workbook");
-        assert_eq!(schedule.workbook(), Some(path.as_path()));
-        let may = schedule
-            .for_month(date(2026, 6, 1))
-            .expect("May's rates are in effect in June");
-        assert_eq!(may.effective_date, date(2026, 5, 1));
-        assert_eq!(
-            (may.on_peak, may.mid_peak, may.off_peak),
-            (0.11, 0.09, 0.07)
+        let sheet = rate_sheet(&path).expect("a valid workbook");
+        assert_eq!(sheet.sheet, "rates");
+        assert_eq!(sheet.rate_columns, [2, 3, 4]);
+        let dates: Vec<Date> = sheet.rows.iter().map(|r| r.effective_date).collect();
+        assert_eq!(dates, [date(2026, 1, 9), date(2026, 5, 1)]);
+        assert!(
+            matches!(sheet.rows[1].cells, [RateCell::Number(on), RateCell::Number(mid), RateCell::Number(off)]
+                if (on, mid, off) == (0.11, 0.09, 0.07)),
+            "{:?}",
+            sheet.rows[1]
         );
 
         fs::remove_dir_all(&dir).ok();
@@ -568,14 +464,7 @@ mod test {
         ];
         let path = write(&dir, "Rates.xlsx", &book("rates", &cells));
 
-        let rates = read_rates_workbook(&path)
-            .unwrap()
-            .for_month(date(2026, 5, 1))
-            .unwrap();
-        assert_eq!(
-            (rates.on_peak, rates.mid_peak, rates.off_peak),
-            (0.11, 0.09, 0.07)
-        );
+        assert_eq!(rate_sheet(&path).unwrap().rate_columns, [3, 5, 1]);
 
         fs::remove_dir_all(&dir).ok();
     }
@@ -587,34 +476,17 @@ mod test {
         let dir = temp_dir("sheet");
         for name in ["rates", " Rates ", "RATES", "Sheet1", "sheet1"] {
             let path = write(&dir, "Rates.xlsx", &book(name, &two_rows()));
-            assert!(read_rates_workbook(&path).is_ok(), "{name:?}");
+            assert!(rate_sheet(&path).is_ok(), "{name:?}");
         }
 
         // `rates` wins over `Sheet1` when both are there.
         let mut both = book("Sheet1", &[("A1", Value::Text("nothing useful"))]);
-        let rates = both.new_sheet("rates").unwrap();
-        for (at, value) in two_rows() {
-            match value {
-                Value::Text(t) => {
-                    rates.cell_mut(at).set_value_string(t);
-                }
-                Value::Number(n) => {
-                    rates.cell_mut(at).set_value_number(n);
-                }
-                Value::Date(n) => {
-                    rates.cell_mut(at).set_value_number(n);
-                    rates
-                        .style_mut(at)
-                        .number_format_mut()
-                        .set_format_code("yyyy-mm-dd");
-                }
-            }
-        }
+        fill(both.new_sheet("rates").unwrap(), &two_rows());
         let path = write(&dir, "Both.xlsx", &both);
-        assert!(read_rates_workbook(&path).is_ok());
+        assert_eq!(rate_sheet(&path).unwrap().sheet, "rates");
 
         let path = write(&dir, "Other.xlsx", &book("Tariff", &two_rows()));
-        let err = read_rates_workbook(&path).unwrap_err();
+        let err = rate_sheet(&path).unwrap_err();
         assert!(
             matches!(&err, RatesWorkbookError::NoRatesSheet { sheets, .. } if sheets == &["Tariff"]),
             "{err}"
@@ -629,10 +501,10 @@ mod test {
 
     #[test]
     fn a_file_not_named_xlsx_is_refused_unopened() {
-        let err = read_rates_workbook(Path::new("/nonexistent/rates.xls")).unwrap_err();
+        let err = rate_sheet(Path::new("/nonexistent/rates.xls")).unwrap_err();
         assert!(matches!(err, RatesWorkbookError::NotXlsx { .. }), "{err}");
         // Either case of the extension is a workbook's, so this one gets as far as opening.
-        let err = read_rates_workbook(Path::new("/nonexistent/rates.XLSX")).unwrap_err();
+        let err = rate_sheet(Path::new("/nonexistent/rates.XLSX")).unwrap_err();
         assert!(matches!(err, RatesWorkbookError::Read { .. }), "{err}");
         assert_eq!(err.to_string().matches("rates.XLSX").count(), 1, "{err}");
     }
@@ -645,7 +517,7 @@ mod test {
         cells[1] = ("B1", Value::Text("On_Peak"));
         cells[3] = ("D1", Value::Text("off_peak "));
         let path = write(&dir, "Rates.xlsx", &book("rates", &cells));
-        let err = read_rates_workbook(&path).unwrap_err();
+        let err = rate_sheet(&path).unwrap_err();
         assert!(
             matches!(&err, RatesWorkbookError::MissingColumns { missing, .. }
                 if missing == &["on_peak", "off_peak"]),
@@ -660,12 +532,20 @@ mod test {
         let mut cells = two_rows();
         cells.push(("E1", Value::Text("mid_peak")));
         let path = write(&dir, "Repeated.xlsx", &book("rates", &cells));
-        let err = read_rates_workbook(&path).unwrap_err();
+        let err = rate_sheet(&path).unwrap_err();
         assert!(
-            matches!(&err, RatesWorkbookError::RepeatedColumn { column: "mid_peak", cells, .. }
-                if cells == &["C1".to_owned(), "E1".to_owned()]),
+            matches!(
+                err,
+                RatesWorkbookError::RepeatedColumn {
+                    name: "mid_peak",
+                    first: 3,
+                    second: 5,
+                    ..
+                }
+            ),
             "{err}"
         );
+        assert!(err.to_string().ends_with("in cells C1 and E1"), "{err}");
 
         fs::remove_dir_all(&dir).ok();
     }
@@ -691,7 +571,7 @@ mod test {
             let mut cells = two_rows();
             cells[8] = ("A3", value);
             let path = write(&dir, "Rates.xlsx", &book("rates", &cells));
-            let message = read_rates_workbook(&path).unwrap_err().to_string();
+            let message = rate_sheet(&path).unwrap_err().to_string();
             assert!(
                 message.starts_with(&format!(
                     "rates workbook {}, sheet \"rates\": cell A3 {wording}",
@@ -725,7 +605,7 @@ mod test {
                 .number_format_mut()
                 .set_format_code(code);
             let path = write(&dir, "Rates.xlsx", &formatted);
-            assert_eq!(read_rates_workbook(&path).is_ok(), is_date, "{code}");
+            assert_eq!(rate_sheet(&path).is_ok(), is_date, "{code}");
         }
 
         fs::remove_dir_all(&dir).ok();
@@ -734,43 +614,51 @@ mod test {
     #[test]
     fn effective_dates_that_do_not_increase_are_refused_naming_both_rows() {
         let dir = temp_dir("increase");
-        // May above January: the dates run downwards.
-        let mut cells = two_rows();
-        cells[4] = ("A2", Value::Date(MAY_1));
-        cells[8] = ("A3", Value::Date(JAN_9));
-        let path = write(&dir, "Rates.xlsx", &book("rates", &cells));
+        for (second, name) in [(MAY_1, "Descending.xlsx"), (JAN_9, "Repeated.xlsx")] {
+            let mut cells = two_rows();
+            cells[4] = ("A2", Value::Date(MAY_1));
+            cells[8] = ("A3", Value::Date(second));
+            let path = write(&dir, name, &book("rates", &cells));
 
-        let err = read_rates_workbook(&path).unwrap_err();
-        assert!(
-            matches!(&err, RatesWorkbookError::Schedule(e)
-                if matches!(e.kind, RateScheduleErrorKind::NotIncreasing { row: 3, previous_row: 2, .. })),
-            "{err}"
-        );
-        // Named once, by the schedule's own message.
-        assert_eq!(
-            err.to_string().matches(&path.display().to_string()).count(),
-            1,
-            "{err}"
-        );
+            let err = rate_sheet(&path).unwrap_err();
+            assert!(
+                matches!(
+                    err,
+                    RatesWorkbookError::NotIncreasing {
+                        row: 3,
+                        previous_row: 2,
+                        ..
+                    }
+                ),
+                "{err}"
+            );
+        }
 
         fs::remove_dir_all(&dir).ok();
     }
 
     /// The rates end at the first empty effective date. Below it, a value is refused; formatting
-    /// alone is not.
+    /// alone is not, and nor is a value in a column nothing reads.
     #[test]
     fn nothing_may_follow_the_first_row_without_an_effective_date() {
         let dir = temp_dir("below");
         let mut cells = two_rows();
         cells.push(("C6", Value::Number(0.12)));
         let path = write(&dir, "Rates.xlsx", &book("rates", &cells));
-        let err = read_rates_workbook(&path).unwrap_err();
+        let err = rate_sheet(&path).unwrap_err();
         assert!(
-            matches!(&err, RatesWorkbookError::ContentBelowEnd { end_row: 4, cell, .. } if cell == "C6"),
+            matches!(
+                err,
+                RatesWorkbookError::ContentBelowEnd {
+                    end_row: 4,
+                    column: 3,
+                    row: 6,
+                    ..
+                }
+            ),
             "{err}"
         );
 
-        // Styled but empty cells below the rates are not content.
         let mut styled = book("rates", &two_rows());
         styled
             .sheet_mut(0)
@@ -779,13 +667,12 @@ mod test {
             .number_format_mut()
             .set_format_code("#,##0.0000");
         let path = write(&dir, "Styled.xlsx", &styled);
-        assert!(read_rates_workbook(&path).is_ok());
+        assert!(rate_sheet(&path).is_ok());
 
-        // Nor is a value in a column nothing reads.
         let mut cells = two_rows();
         cells.push(("F9", Value::Text("a note")));
         let path = write(&dir, "Noted.xlsx", &book("rates", &cells));
-        assert!(read_rates_workbook(&path).is_ok());
+        assert!(rate_sheet(&path).is_ok());
 
         fs::remove_dir_all(&dir).ok();
     }
@@ -794,47 +681,30 @@ mod test {
     fn a_sheet_with_no_rates_is_refused() {
         let dir = temp_dir("empty");
         let path = write(&dir, "Rates.xlsx", &book("rates", &two_rows()[..4]));
-        let err = read_rates_workbook(&path).unwrap_err();
-        assert!(
-            matches!(&err, RatesWorkbookError::Schedule(e) if e.kind == RateScheduleErrorKind::NoRows),
-            "{err}"
-        );
+        let err = rate_sheet(&path).unwrap_err();
+        assert!(matches!(err, RatesWorkbookError::NoRows { .. }), "{err}");
 
         fs::remove_dir_all(&dir).ok();
     }
 
-    /// Rate cells are handed on as found: a bad one is reported only when a period uses its row,
-    /// and then by its address.
+    /// Rate cells are kept as found, whatever they hold: judging them is `select`'s.
     #[test]
-    fn rate_cells_are_judged_only_on_the_rows_used() {
-        let dir = temp_dir("lazy");
+    fn rate_cells_are_kept_as_found() {
+        let dir = temp_dir("cells");
         let mut cells = two_rows();
         cells[5] = ("B2", Value::Text("tbd"));
+        cells[6] = ("C2", Value::Text("  "));
+        cells[7] = ("D2", Value::Number(-1.0));
         let path = write(&dir, "Rates.xlsx", &book("rates", &cells));
 
-        let schedule = read_rates_workbook(&path).expect("the dates are sound");
-        assert!(schedule.for_month(date(2026, 6, 1)).is_ok());
-        let err = schedule
-            .for_month(date(2026, 2, 1))
-            .expect_err("January's row prices February");
+        let sheet = rate_sheet(&path).expect("the dates are sound");
         assert!(
-            err.to_string().contains(&format!(
-                "cell {}, the on_peak rate effective 2026-01-09, holds \"tbd\"",
-                address(2, 2)
-            )),
-            "{err}"
+            matches!(&sheet.rows[0].cells, [RateCell::Text(t), RateCell::Empty, RateCell::Number(n)]
+                if t == "tbd" && *n == -1.0),
+            "{:?}",
+            sheet.rows[0]
         );
 
         fs::remove_dir_all(&dir).ok();
-    }
-
-    #[test]
-    fn serial_dates_follow_the_1900_date_system() {
-        assert_eq!(serial_date(1.0), Some(date(1900, 1, 1)));
-        assert_eq!(serial_date(59.0), Some(date(1900, 2, 28)));
-        assert_eq!(serial_date(60.0), None);
-        assert_eq!(serial_date(61.0), Some(date(1900, 3, 1)));
-        assert_eq!(serial_date(MAY_1), Some(date(2026, 5, 1)));
-        assert_eq!(serial_date(0.0), None);
     }
 }

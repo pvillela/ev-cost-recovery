@@ -331,9 +331,9 @@ price against.
 
 Only the `.xlsx` format is read. A workbook in another format — `.xls`, `.ods`, `.csv` — has to be
 saved as an Excel workbook (`.xlsx`) first. The format of the workbook is in
-[README.md - The rates workbook](../README.md#the-rates-workbook).
+[docs/rates/README.md](rates/README.md).
 
-`src/rates_workbook.rs`: `RatesWorkbookError::Display`
+`src/rates/excel/error.rs`: `RatesWorkbookError::Display`
 
 ### Rates workbook — the file could not be read
 
@@ -346,7 +346,7 @@ Everything after *could not be read* is the spreadsheet library's own wording, f
 chosen. Otherwise the file is damaged, or is not an Excel workbook despite its name. Open it in the
 spreadsheet and save it again as `.xlsx`.
 
-`src/rates_workbook.rs`: `RatesWorkbookError::Display`
+`src/rates/excel/error.rs`: `RatesWorkbookError::Display`
 
 ### Rates workbook — no rates sheet
 
@@ -358,7 +358,7 @@ spreadsheet and save it again as `.xlsx`.
 The rates are read from the sheet named `rates` or, if there is none, the one named `Sheet1`.
 Capitals and surrounding spaces do not matter. Rename the sheet that holds the rates to `rates`.
 
-`src/rates_workbook.rs`: `RatesWorkbookError::Display`
+`src/rates/excel/error.rs`: `RatesWorkbookError::Display`
 
 ### Rates workbook — row 1 does not name a column
 
@@ -372,7 +372,7 @@ The columns are found by the names in row 1, and those names must be exactly `ef
 `on_peak`, `mid_peak` and `off_peak`: all lower case, with underscores and no spaces. A capital or a
 trailing space makes a different name. Correct the header cells named in the message.
 
-`src/rates_workbook.rs`: `RatesWorkbookError::Display`
+`src/rates/excel/error.rs`: `RatesWorkbookError::Display`
 
 ### Rates workbook — a column named twice
 
@@ -384,7 +384,7 @@ trailing space makes a different name. Correct the header cells named in the mes
 With two columns of the same name there is no telling which holds the rates. Rename or delete one
 of them.
 
-`src/rates_workbook.rs`: `RatesWorkbookError::Display`
+`src/rates/excel/error.rs`: `RatesWorkbookError::Display`
 
 ### Rates workbook — an effective date that is not a date
 
@@ -402,7 +402,7 @@ that reads like a date is not one, and neither is a number in a cell formatted a
 either is more likely a slip than a date. Type the date again so the spreadsheet takes it as a date,
 or give the cell a date format. A negative number, or one too large, is no date at all.
 
-`src/rates_workbook.rs`: `RatesWorkbookError::Display`
+`src/rates/excel/error.rs`: `RatesWorkbookError::Display`
 
 ### Rates workbook — an effective date with a time of day
 
@@ -414,7 +414,7 @@ or give the cell a date format. A negative number, or one too large, is no date 
 Rates take effect at the start of a day, so a time of day in an effective date is taken as a typing
 slip rather than guessed at. Enter the date alone.
 
-`src/rates_workbook.rs`: `RatesWorkbookError::Display`
+`src/rates/excel/error.rs`: `RatesWorkbookError::Display`
 
 ### Rates workbook — something below the last rates
 
@@ -429,7 +429,7 @@ the four columns means the rates probably continue past a gap — a row whose da
 mistake — and the rows after it would be ignored without a word. Fill in the missing date, or
 delete the stray cell. Notes in other columns are fine anywhere.
 
-`src/rates_workbook.rs`: `RatesWorkbookError::Display`
+`src/rates/excel/error.rs`: `RatesWorkbookError::Display`
 
 ### Rates workbook — there are no rates
 
@@ -441,7 +441,7 @@ delete the stray cell. Notes in other columns are fine anywhere.
 The sheet holds the header and nothing under it, or its first row of rates is not directly under
 the header. Enter the rates starting on row 2.
 
-`src/api/pure/rates.rs`: `RateScheduleError::Display`
+`src/rates/excel/error.rs`: `RatesWorkbookError::Display`
 
 ### Rates workbook — effective dates out of order
 
@@ -455,7 +455,7 @@ Each row's rates apply from its effective date until the next row's, so the rows
 order, earliest first, with no date on two rows. Sort the rows by `effective_date`, and remove or
 correct a repeated date.
 
-`src/api/pure/rates.rs`: `RateScheduleError::Display`
+`src/rates/excel/error.rs`: `RatesWorkbookError::Display`
 
 ### Rates workbook — no rates in effect
 
@@ -468,7 +468,7 @@ The first date to be priced — a billing period's first day, or the 1st of the 
 reconciled — comes before every row of the workbook. Add a row for the rates that were in effect on
 that date.
 
-`src/api/pure/rates.rs`: `RateScheduleError::Display`
+`src/rates/excel/error.rs`: `RatesWorkbookError::Display`
 
 ### Rates workbook — the rates change more than once in a billing period
 
@@ -480,7 +480,7 @@ that date.
 A billing period is priced at the rates in effect on its first day, and at most one change within
 it. Two effective dates inside one period are most likely a mistyped date; correct it.
 
-`src/api/pure/rates.rs`: `RateScheduleError::Display`
+`src/rates/excel/error.rs`: `RatesWorkbookError::Display`
 
 ### Rates workbook — the rates change within the month
 
@@ -494,7 +494,7 @@ Evolute settles a calendar month at one set of rates, so a month is priced at th
 the 1st and cannot take a change after it. Check the date on the row named: rates are expected to
 change on the 1st of a month.
 
-`src/api/pure/rates.rs`: `RateScheduleError::Display`
+`src/rates/excel/error.rs`: `RatesWorkbookError::Display`
 
 ### Rates workbook — a rate that is not a positive number
 
@@ -511,7 +511,7 @@ than read as zero, which would price that band's energy at nothing and still pro
 Only the rows a run uses are checked, so this names a row the period or month actually needs.
 Correct the cell named.
 
-`src/api/pure/rates.rs`: `RateScheduleError::Display`
+`src/rates/excel/error.rs`: `RatesWorkbookError::Display`
 
 ### saving a report or a workbook failed
 

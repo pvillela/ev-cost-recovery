@@ -35,7 +35,8 @@ pub(crate) use base::{
     TZ_OFFSETS, local_datetime, local_hour, local_midnight, standard_date, standard_midnight,
 };
 pub(crate) use excel::{
-    serial_of_civil, serial_of_date, serial_of_duration, serial_of_instant, serial_of_local,
+    date_of_serial, serial_of_civil, serial_of_date, serial_of_duration, serial_of_instant,
+    serial_of_local,
 };
 pub(crate) use format::{zoned_minute, zoned_span_end};
 pub(crate) use tou::{is_off_peak, tou_of, tou_partition};

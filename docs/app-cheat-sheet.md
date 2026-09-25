@@ -36,9 +36,9 @@ Only the **June 2026** billing period can be run with the sample data. The sampl
 | Green Button export | `data/green_button/TH_Electric_Usage_23-11-2024_to_24-06-2026.XML` |
 | Session report 1 | `data/evolute/Session_Report_May_1_2026-May_31_2026-seconds.csv` |
 | Session report 2 | `data/evolute/Session_Report_June_1_2026-June_30_2026-seconds.csv` |
-| Rates workbook | `data/EV_Cost_Recovery_Rates.xlsx` |
+| Rates workbook | `data/rates/EV_Cost_Recovery_Rates.xlsx` |
 
-The rates workbook's `rates` sheet has two rows: `0.1100` / `0.0900` / `0.0700` effective `2026-05-01`, and `0.5152` / `0.4740` / `0.4218` effective `2026-09-01`. The June period is priced at the first. The workbook's format is in [README.md - The rates workbook](../README.md#the-rates-workbook).
+The rates workbook's `rates` sheet has two rows: `0.1100` / `0.0900` / `0.0700` effective `2026-05-01`, and `0.5152` / `0.4740` / `0.4218` effective `2026-09-01`. The June period is priced at the first. The workbook's format is in [docs/rates/README.md](rates/README.md).
 
 Press **Work out the surplus**. Expect:
 
@@ -222,7 +222,7 @@ two views of one number.
 | Evolute Session Report | `data/evolute/Session_Report_June_1_2026-June_30_2026-seconds.csv` |
 | Evolute Charges Report | `data/evolute/XX-XX_Charges_June 2026-June 2026.csv` |
 | Reimbursement | `246.26` |
-| Rates workbook | `data/EV_Cost_Recovery_Rates.xlsx` — already chosen if you chose it on the *Cost recovery* tab |
+| Rates workbook | `data/rates/EV_Cost_Recovery_Rates.xlsx` — already chosen if you chose it on the *Cost recovery* tab |
 
 Only June works. It is the one month with both a Session Report and a Charges Report.
 

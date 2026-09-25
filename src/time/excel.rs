@@ -1,4 +1,4 @@
-//! Excel serial-date arithmetic, shared by both sheet writers.
+//! Excel serial-date arithmetic, shared by both sheet writers and the rates workbook's reader.
 //!
 //! Excel has no concept of a time zone. A serial is a count of days since day zero, and a local
 //! column and a UTC column differ only in which instant was converted; they are told apart by
@@ -50,6 +50,29 @@ pub fn serial_of_local(ts: Timestamp) -> f64 {
 /// Excel stores a duration as a fraction of a day.
 pub fn serial_of_duration(d: Duration) -> f64 {
     d.as_secs() as f64 / SECS_PER_DAY
+}
+
+/// The date a whole number of days since day zero stands for: the inverse of [`serial_of_date`],
+/// for a date read from a sheet.
+///
+/// `None` before 1900-03-01, and for a count too large to be a date.
+pub fn date_of_serial(days: i64) -> Option<Date> {
+    // Before 1900-03-01, which is day 61, Excel counts a 29 February 1900 that never was, so its
+    // serials there are a day out from a plain count from day zero. No date this crate reads is
+    // that old, so those days are refused rather than corrected.
+    const FIRST: i64 = 61;
+    if days < FIRST {
+        return None;
+    }
+    let seconds = days
+        .checked_mul(SECS_PER_DAY as i64)?
+        .checked_add(EXCEL_EPOCH_UNIX_SECS)?;
+    Some(
+        Timestamp::from_second(seconds)
+            .ok()?
+            .to_zoned(TimeZone::UTC)
+            .date(),
+    )
 }
 
 /// Reads a local wall time as though it were UTC.
@@ -118,6 +141,20 @@ mod test {
                 "{s}: offset came to {} hours",
                 offset_days * 24.0
             );
+        }
+    }
+
+    /// A serial read back gives the date it was written for, over the range a sheet can hold.
+    #[test]
+    fn a_serial_reads_back_as_the_date_it_was_written_for() {
+        for d in [date(1900, 3, 1), date(2026, 5, 1), date(9999, 12, 1)] {
+            assert_eq!(date_of_serial(serial_of_date(d) as i64), Some(d), "{d}");
+        }
+        assert_eq!(date_of_serial(46143), Some(date(2026, 5, 1)));
+
+        // Excel's 29 February 1900 and everything before it, and counts no date reaches.
+        for days in [i64::MIN, -3, 0, 1, 60, 3_000_000, i64::MAX] {
+            assert_eq!(date_of_serial(days), None, "{days}");
         }
     }
 

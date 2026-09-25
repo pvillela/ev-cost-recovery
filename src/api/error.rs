@@ -41,7 +41,7 @@ use crate::error::ConversionError;
 /// the private `session::csv::SessionCsvError`,
 /// [`ChargesReportError`](crate::charges_report::ChargesReportError),
 /// [`BillError`](crate::hydro_bill::BillError) and the private
-/// `rates_workbook::RatesWorkbookError`. Writing it here as well produced
+/// `rates::excel::RatesWorkbookError`. Writing it here as well produced
 /// `data/x.XML: data/x.XML: ...`.
 #[derive(Debug)]
 pub enum ReadError {
@@ -77,7 +77,11 @@ pub enum ReadError {
         cause: Box<dyn Error>,
     },
 
-    /// The rates workbook could not be read, or its effective dates break a rule of the workbook.
+    /// The rates workbook could not be read, breaks one of the workbook's rules, or does not price
+    /// the billing period or month asked for.
+    ///
+    /// Not pricing the period is reported here, as an export that does not reach its period is
+    /// reported under [`Self::GreenButton`]: the rows are chosen as the file is read.
     RatesWorkbook {
         path: PathBuf,
         cause: Box<dyn Error>,
@@ -128,8 +132,8 @@ pub enum ApiError {
     },
     /// The sessions were read but do not yield a cost recovery.
     ///
-    /// No `source`, unlike the two above. A failure about the rates names the workbook in its own
-    /// message, and the period is a date, which is no file's.
+    /// No `source`, unlike the two above. The rates are given as values and the period as a date,
+    /// so a cost recovery has no file for a failure to be about.
     CostRecovery(CostRecoveryError),
     /// The figures were read but do not yield a cost-recovery surplus.
     ///
@@ -145,8 +149,8 @@ pub enum ApiError {
     Conversion(ConversionError),
     /// The month's reimbursement cannot be reconciled against the report given.
     ///
-    /// No `source`, for the reason [`Self::CostRecovery`] has none: every one of these failures is
-    /// about the rates, and names the workbook in its own message.
+    /// No `source`, for the reason [`Self::CostRecovery`] has none: every one of these failures
+    /// already names the report it is about, or is about the rates, which are values.
     Reimbursement(ReimbursementError),
 }
 

@@ -19,9 +19,9 @@ No closing date is asked for: the bill states which period it covers, and everyt
 fetched for that period.
 
 The rates workbook is an .xlsx file with a sheet named \"rates\" (or \"Sheet1\") whose first row
-names the columns effective_date, on_peak, mid_peak and off_peak; README.md describes it in full.
-The period is priced at the rates in effect on its first day, and changes once, at local midnight
-starting the date of a row dated within it. More than one such row is refused.
+names the columns effective_date, on_peak, mid_peak and off_peak; docs/rates/README.md describes
+it in full. The period is priced at the rates in effect on its first day, and changes once, at
+local midnight starting the date of a row dated within it. More than one such row is refused.
 
 A billing period straddles two calendar months, so it usually takes two session reports -- but the
 portal exports any date range, and one report covering the whole period is enough on its own. Give
@@ -40,7 +40,7 @@ Usage:
 
 Example:
     cost_recovery_surplus_cli data/June.pdf data/TH_Electric_Usage.XML \\
-        data/EV_Cost_Recovery_Rates.xlsx data/May.csv data/June.csv
+        data/rates/EV_Cost_Recovery_Rates.xlsx data/May.csv data/June.csv
 ";
 
 fn main() -> ExitCode {

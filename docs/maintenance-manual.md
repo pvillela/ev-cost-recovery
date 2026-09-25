@@ -256,16 +256,19 @@ recorded here instead:
 
 Also absent: the `widgets::note` text that describes a rule rather than a finding, the overwrite
 confirmation on the Convert tab, and variants no route through the GUI can reach —
-`GbReadError::BillEndDayOutOfRange`, `GbReadError::NotABillingCalendar` and
-`PeakPowerError::ValuesAreForAnotherPeriod`. A change that makes one of those reachable from the app
-brings it into the document.
+`GbReadError::BillEndDayOutOfRange`, `GbReadError::NotABillingCalendar`,
+`PeakPowerError::ValuesAreForAnotherPeriod`, and the three checks the `pure` calculations make on the
+rates they are given: `CostRecoveryError::RatesNotYetInEffect`,
+`CostRecoveryError::RateChangeOutsidePeriod` and `ReimbursementError::RatesNotYetInEffect`. The app
+reaches `pure` only through `api::io`, which selects the rates from the workbook, and the selection
+refuses such rates first. A change that makes one of those reachable from the app brings it into
+the document.
 
 > **Re-derive this list from the error enums rather than editing it in place.** It is the only
 > statement of which messages are deliberately missing from `docs/ERRORS.md`, so a variant that has
 > been renamed or removed leaves a reader looking for something that does not exist.
-> `ReimbursementError` has exactly one variant, `Rates`, carrying a `RateScheduleError`; the month
-> check goes through `pure::check_reports_cover`, so a month that does not line up is a
-> `CoverageError`.
+> `ReimbursementError` has exactly one variant, `RatesNotYetInEffect`; the month check goes through
+> `pure::check_reports_cover`, so a month that does not line up is a `CoverageError`.
 
 # Sessions
 
