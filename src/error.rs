@@ -1,13 +1,13 @@
 //! Errors a library module raises about a file it was asked to produce.
 //!
-//! One type, for now. The test for whether something belongs here is who *raises* it, not who
+//! One type. The test for whether something belongs here is who *raises* it, not who
 //! renders it: [`ConversionError`] is returned by
 //! the crate-private `session::session_csv_to_xlsx` and
 //! [`write_gb_workbook`](crate::green_button::write_gb_workbook), neither of which depends on the
 //! API, so it cannot live in `api::error` without pointing that arrow the wrong way.
 //!
-//! [`ReadError`](crate::api::ReadError) was here too, briefly. It failed the same test in the other
-//! direction — nothing outside `api::io` ever built one — and is declared with the API again.
+//! [`ReadError`](crate::api::ReadError) fails the same test in the other direction — nothing
+//! outside `api::io` builds one — and is declared with the API.
 
 use std::{
     error::Error,

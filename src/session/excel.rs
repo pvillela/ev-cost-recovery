@@ -459,7 +459,7 @@ fn add_comments(sheet: &mut Worksheet) {
 ///
 /// Every column holding a date and time takes that width, whichever it is. The header's own length
 /// decides nothing here: `Conn_DateTime_Start` is a long name and a value longer still, and sizing
-/// to the name left the value hidden.
+/// to the name would leave the value hidden.
 fn set_widths(sheet: &mut Worksheet) {
     for (i, (header, source)) in COLUMNS.iter().enumerate() {
         let letters = column_letters(i + 1);

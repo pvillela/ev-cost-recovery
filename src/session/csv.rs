@@ -351,8 +351,8 @@ struct CsvSession {
 /// One output row, one per CSV record.
 ///
 /// Carries a whole [`Session`] rather than loose timestamps, so that every derived column is
-/// computed by the same methods the estimating logic uses. Separate fields let the write path grow
-/// its own definition of the session's end, which was wrong.
+/// computed by the same methods the estimating logic uses. Separate fields would let the write path
+/// grow its own definition of the session's end.
 ///
 /// The pass-through CSV columns are not part of a `Session` and never should be, so the row keeps
 /// an index back into the records instead — see [`SessionRows::field`].
@@ -417,7 +417,7 @@ impl CsvSession {
     /// `common::SESSION_OFFSET` — so a reported wall time names exactly one instant, all year.
     /// There is no repeated hour to choose between and no skipped hour to refuse, which is why
     /// nothing here consults `Conn_Duration` to place the record. That value is still checked, by
-    /// [`duration_is_consistent`], but it is now evidence about the record's own consistency rather
+    /// [`duration_is_consistent`], but it is evidence about the record's own consistency rather
     /// than about which instant it sits on.
     fn resolve(&self, source: &Rc<PathBuf>, row: usize) -> Row {
         let mut anomalies = Vec::new();
@@ -483,7 +483,7 @@ mod test {
     use std::{env, fs, path::PathBuf, process};
 
     /// Both forms the reader itself accepts, in the same order — see `parse_local`. The portal
-    /// states seconds; the minute form is what its reports carried before.
+    /// states seconds.
     fn dt(s: &str) -> civil::DateTime {
         civil::DateTime::strptime("%Y-%m-%d %H:%M:%S", s)
             .or_else(|_| civil::DateTime::strptime("%Y-%m-%d %H:%M", s))
@@ -815,7 +815,7 @@ S3,2026-06-03 09:00:00,2026-06-03 09:00:00,0:00:00,0:00:00,4.2
             report.logs[0].path(),
             dir.join("Session_Report_Test.session.csv.read.log")
         );
-        // The log's text, not a file: the reader no longer writes one. See `Sessions::logs`.
+        // The log's text, not a file: the reader writes none. See `Sessions::logs`.
         let log = report.logs[0].render();
         assert!(
             log.contains("InconsistentDuration") || log.contains("contradict"),
@@ -924,10 +924,10 @@ S1,2026-06-01 16:22,2026-06-01 21:29,5:07:53,5:07:52
 
     /// A malformed `Charge_Duration` fails the read rather than the write.
     ///
-    /// The workbook echoes this column and parses it on demand. Left to that, the error surfaced
-    /// from the writing half: it named the workbook path as well as the CSV, reported a read
-    /// failure as a failure to write, and left the two readers disagreeing — `csv_sessions` never
-    /// asks for the column and accepted a report the conversion refused.
+    /// The workbook echoes this column and parses it on demand. Left to that, the error would
+    /// surface from the writing half: it would name the workbook path as well as the CSV, report a
+    /// read failure as a failure to write, and leave the two readers disagreeing — `csv_sessions`
+    /// never asks for the column and would accept a report the conversion refused.
     #[test]
     fn a_malformed_charge_duration_fails_the_read() {
         const CSV: &str = "\

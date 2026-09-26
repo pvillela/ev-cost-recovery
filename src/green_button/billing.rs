@@ -14,16 +14,11 @@ use crate::hydro_bill::BillingPeriod;
 impl BillingPeriod {
     /// How many meter intervals a complete period contains.
     ///
-    /// Still computed as the elapsed time between the two boundaries rather than as days times 24,
-    /// though on a standard-time clock the two now always agree: a fixed offset has no short or
+    /// Computed as the elapsed time between the two boundaries rather than as days times 24,
+    /// though on a standard-time clock the two always agree: a fixed offset has no short or
     /// long days, so every period is a whole number of 24-hour days and matches the `Number of
-    /// Days` its invoice states.
-    ///
-    /// It was not always so. While the boundary was at prevailing local midnight this returned 671
-    /// for the period ending 2026-03-23 and 745 for the one ending 2025-11-23, and those were
-    /// treated as complete. They were the symptom that the boundary was wrong — the invoices state
-    /// 28 and 31 days, meaning 672 and 744 hours. Deriving the count from the instants is kept
-    /// because it stays correct however the boundary is defined.
+    /// Days` its invoice states. Deriving the count from the instants stays correct however the
+    /// boundary is defined.
     pub fn expected_intervals(&self) -> i64 {
         (self.end.as_second() - self.start.as_second()) / METER_INTERVAL.as_secs() as i64
     }
@@ -38,7 +33,7 @@ mod test {
 
     /// The interval counts the invoices state, as `Number of Days` times 24. The two
     /// daylight-saving periods are in here deliberately: they are 672 and 744, not the 671 and 745
-    /// a prevailing-local boundary produced.
+    /// a prevailing-local boundary would give.
     #[test]
     fn expected_counts_match_the_invoices() {
         let cases = [
@@ -57,8 +52,8 @@ mod test {
     }
 
     /// Every period is exactly 24 hours per calendar day, clock changes included. On a fixed
-    /// offset there is nothing to make a day short or long, so this is now an equality rather than
-    /// the range it had to be before.
+    /// offset there is nothing to make a day short or long, so this is an equality rather than a
+    /// range.
     #[test]
     fn every_period_is_exactly_24_hours_per_day() {
         for year in 2024..2030 {

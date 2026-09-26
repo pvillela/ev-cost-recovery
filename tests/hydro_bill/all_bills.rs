@@ -14,8 +14,8 @@
 //!
 //! Parsing without error is the weaker half of what this checks. The stronger half is that the
 //! figures agree with each other: a label matched to the wrong column, or a charge line quietly
-//! dropped because a rate change printed it twice, still parses -- it just gives a total that no
-//! longer equals its parts.
+//! dropped because a rate change printed it twice, still parses -- it just gives a total that does
+//! not equal its parts.
 
 use ev_cost_recovery::hydro_bill::{
     hydro_bill_from_pdf,

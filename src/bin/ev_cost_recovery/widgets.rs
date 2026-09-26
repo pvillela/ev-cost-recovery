@@ -27,8 +27,9 @@ pub fn dialog(working: &WorkingDir) -> rfd::FileDialog {
 /// A tab's title, in the app's colour. Headings are the one place colour does structural work:
 /// they say where a screen begins without a rule across the window.
 ///
-/// Sized explicitly rather than left at egui's 18pt `heading`, which was smaller than the 20pt
-/// figures the tabs state under it — the title of a screen read as subordinate to a line within it.
+/// Sized explicitly rather than left at egui's 18pt `heading`, which is smaller than the 20pt
+/// figures the tabs state under it — the title of a screen would read as subordinate to a line
+/// within it.
 pub fn heading(ui: &mut egui::Ui, text: &str) {
     ui.label(
         egui::RichText::new(text)
@@ -206,8 +207,8 @@ pub fn section_ui(ui: &mut egui::Ui, section: &Section) {
 
 /// The Copy and Save… row every report sits under.
 ///
-/// One definition rather than one per tab: three tabs offered the same two buttons, and the only
-/// thing that differed was the sentence beside them.
+/// One definition rather than one per tab: three tabs offer the same two buttons, and the only
+/// thing that differs is the sentence beside them.
 ///
 /// `save_error` is where a failed write is left, for the caller to draw *on the tab the save was
 /// made from*. It is not the run's error: by the time there is a report to save, the figures are

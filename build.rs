@@ -65,11 +65,11 @@ fn notices() {
     let released = env::var("PROFILE").as_deref() == Ok("release");
 
     // Declared only on the builds that read it. NOTICES is gitignored, and cargo treats a watched
-    // path that does not exist as permanently stale -- so declaring it unconditionally made every
-    // dev build on a fresh checkout recompile the crate, to rebuild against a file a dev build
-    // never opens. A release build does open it, and cannot succeed without it: `release_notices`
-    // panics. The release workflow runs scripts/gen-notices.sh immediately before
-    // `cargo build --release`, so by then the file is there to watch.
+    // path that does not exist as permanently stale -- so declaring it unconditionally would make
+    // every dev build on a fresh checkout recompile the crate, to rebuild against a file a dev
+    // build never opens. A release build does open it, and cannot succeed without it:
+    // `release_notices` panics. The release workflow runs scripts/gen-notices.sh immediately
+    // before `cargo build --release`, so by then the file is there to watch.
     if released {
         println!("cargo:rerun-if-changed={NOTICES}");
     }

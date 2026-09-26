@@ -7,8 +7,7 @@
 //!
 //! It is shared so the two cannot drift apart, and the message is as much of the reason as the
 //! code is: a refusal names the document it expected before it names the file, and that sentence
-//! is now written once. Before this module the two readers each had their own copy of it, kept in
-//! step by a comment in each pointing at the other.
+//! is written once.
 //!
 //! What is *not* here is anything that depends on which document was opened. The value parsers
 //! belong to the format that writes the values — a Charges Report's `01-Jun-26` and a session

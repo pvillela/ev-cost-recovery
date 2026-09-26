@@ -26,5 +26,5 @@ assets/** binary
 # the pattern would be normalised on the next `git add` from a machine with `core.autocrlf` set,
 # and no test anywhere would fail. That silence is why the pattern names no directory and spells
 # the extension as a character class: a feed is covered wherever it is put and however its
-# extension is capitalised, rather than only where the four that exist today happen to sit.
+# extension is capitalised, rather than only where the existing four happen to sit.
 *.[xX][mM][lL] -text

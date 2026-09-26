@@ -27,7 +27,7 @@
 //!
 //! # The seam, if a pure conversion is ever wanted
 //!
-//! [`write_gb_workbook`](crate::green_button::write_gb_workbook) currently builds the workbook
+//! [`write_gb_workbook`](crate::green_button::write_gb_workbook) builds the workbook
 //! *and* writes it. Splitting those two is where a pure version would begin — to assert on cell
 //! contents without a temp file, say. Not worth doing speculatively, since the only thing any
 //! caller does with a workbook is write it, but that is the place.
@@ -135,7 +135,7 @@ pub fn peak_power(
 /// There is no `billing_period_ending` argument. The bill states which period it covers, and it is
 /// read first so that every other file is fetched for that period — the meter export selected by
 /// it, and the reports checked against it. A period passed alongside could only agree with the bill
-/// or contradict it, and [`pure::peak_power_cost`](fn@super::pure::peak_power_cost) drops it for
+/// or contradict it, and [`pure::peak_power_cost`](fn@super::pure::peak_power_cost) takes none for
 /// the same reason.
 ///
 /// They must cover the billing period completely between them, checked from their file names. How
@@ -684,7 +684,8 @@ fn rates_read_error(rates_xlsx: &Path, cause: RatesWorkbookError) -> ReadError {
 /// Merged rather than flattened, and merged as reports rather than as lists of sessions. What each
 /// file contributed — the anomalies that are relations between its records, the path it was read
 /// from, the log written beside it — is context that belongs to the read, and flattening the
-/// buckets into a bare `Vec` threw all of it away at the one point in the program that had it.
+/// buckets into a bare `Vec` would throw all of it away at the one point in the program that has
+/// it.
 ///
 /// [`Sessions::merge`] is where the merging is defined; this only fetches the files and hands them
 /// over in the order given.
@@ -709,7 +710,7 @@ mod test {
 
     /// A file that cannot be read is named exactly once, whichever reader raised it.
     ///
-    /// Every reader now carries the path as a field and writes it at `Display`, and every wrapper
+    /// Every reader carries the path as a field and writes it at `Display`, and every wrapper
     /// above them defers rather than adding its own. Both halves are easy to get right in
     /// isolation and wrong together: a wrapper that adds the path to a cause that already carries
     /// one produces `data/x.XML: data/x.XML: ...`, and nothing in the type system notices. This

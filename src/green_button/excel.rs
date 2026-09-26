@@ -4,12 +4,12 @@
 //! its data rows, its column widths and its number formats together, so adding or moving a column
 //! is one edit rather than four that have to agree.
 //!
-//! Formatting descends from the hand-formatted workbook the Python filled in place, kept as
-//! `data/reference/green_button/Green_Button_Peak_Values-python-2026-07-16.xlsx`, but does not copy it
-//! slavishly: that workbook stamps a row height on all 13,924 of its rows because that is what
-//! LibreOffice writes, and only three of them were ever a decision. See
-//! `docs/maintenance-manual.md`, "Row heights: three, and only three". The current standard is `tests/fixtures/green_button/billed_period.xlsx`,
-//! regenerated with the goldens.
+//! Formatting follows the hand-formatted reference workbook
+//! `data/reference/green_button/Green_Button_Peak_Values-python-2026-07-16.xlsx`, but does not
+//! copy it slavishly: that workbook stamps a row height on all 13,924 of its rows because that is
+//! what LibreOffice writes, and only three of them are a decision. See
+//! `docs/maintenance-manual.md`, "Row heights: three, and only three". The standard is
+//! `tests/fixtures/green_button/billed_period.xlsx`, regenerated with the goldens.
 //!
 //! `umya-spreadsheet` is used rather than `rust_xlsxwriter` because it stores row heights and
 //! column widths as `f64` written straight through, whereas `rust_xlsxwriter` models them as whole
@@ -63,9 +63,9 @@ const FONT: &str = "Arial";
 /// takes [`DEFAULT_ROW_HEIGHT`].
 ///
 /// The reference workbook instead stamps a height on all 13,924 of its rows, which is what
-/// LibreOffice writes rather than a decision anyone made. Reproducing that was a mistake: it buries
-/// the three heights that are actually chosen among thousands that are not, and it made the two
-/// files disagree in ways that only showed up on screen.
+/// LibreOffice writes rather than a decision anyone made. Reproducing that would bury the three
+/// heights that are actually chosen among thousands that are not, and would make the two files
+/// disagree in ways that only show up on screen.
 const DEFAULT_ROW_HEIGHT: f64 = 13.8;
 
 /// Both sheet titles, Arial 12 bold. The reference set `Interval_values` a point larger than
@@ -263,8 +263,8 @@ impl Out {
 
 /// What was written, for the CLI to report.
 ///
-/// No `Default`. It carried one while every field was a number or a map, and nothing ever asked
-/// for it; a report with an empty `path` and a log naming no file is not a report of anything.
+/// No `Default`: a report with an empty `path` and a log naming no file is not a report of
+/// anything.
 #[derive(Debug, Clone)]
 pub struct GbWriteReport {
     pub path: PathBuf,
@@ -486,8 +486,8 @@ fn set_text(sheet: &mut Worksheet, col: u32, row: u32, text: &str, kind: ColKind
 ///
 /// The rule the workbook follows, and the one to keep: a row either has a pinned height because
 /// somebody decided it, or it has no stored height at all and takes the sheet default. The
-/// half-state — a stored height that the application is free to re-fit — is what made two files
-/// with identical stored numbers render differently.
+/// half-state — a stored height that the application is free to re-fit — is what makes two
+/// files with identical stored numbers render differently.
 fn set_row_height(sheet: &mut Worksheet, row: u32, height: f64) {
     sheet.row_dimension_mut(row).set_height(height);
 }

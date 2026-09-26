@@ -6,12 +6,12 @@ does, which belongs in its rustdoc.
 
 This is not the user manual. It is for whoever changes the software, not whoever runs it.
 
-**One manual, three parts.** `sessions` and `green_button` had a manual each before they were one
-crate. Shared material is stated once, under Shared; the rest is under the module it belongs to.
+**One manual, three parts.** Shared material is stated once, under Shared; the rest is under the
+module it belongs to.
 
-**Cite sections by title, never by number.** Numbering was how the old manuals were referenced, and
-inserting a section renumbered every citation after it without breaking a build or failing a test.
-Titles are stable; if one changes, the citation fails to find it and says so.
+**Cite sections by title, never by number.** Inserting a section renumbers every citation after it
+without breaking a build or failing a test. Titles are stable; if one changes, the citation fails
+to find it and says so.
 
 ## Contents
 
@@ -33,12 +33,12 @@ Titles are stable; if one changes, the citation fails to find it and says so.
 - Invariants nothing enforces
 - What would force a re-check of the TOU rules
 - The Ontario holiday calendar is not the ESA list
-- Why umya-spreadsheet, and what still differs
+- Why umya-spreadsheet, and what differs
 - Row heights: three, and only three
 - Alignment follows the column, not the row
 - Regenerating the fixtures
 - The invoice fixture
-- The port gate — run once, recorded here, then removed
+- The reference workbook
 
 ---
 
@@ -61,9 +61,8 @@ The report goldens straddle two targets, which is why the command is unfiltered:
 reports and the surplus report are produced by unit tests in `src/`, where the renderer's input is
 crate-internal, while the site-load table is pinned from `tests/session/site_load_golden.rs`.
 
-`--test <file>` selects nothing: the test binaries were consolidated into `tests/integration.rs`
-when the two projects merged. The Green Button form above names that binary and then filters by
-module path.
+`--test <file>` selects nothing: the integration tests are one binary, `tests/integration.rs`. The
+Green Button form above names that binary and then filters by module path.
 
 ### The rendered reports
 
@@ -287,10 +286,8 @@ its doc comment — the number is worth nothing without it.
 
 **Narrowing it to zero excludes real sessions.** That is what the one off-by-one row demonstrates.
 
-This section used to describe a `TIME_GRID_STEP` of 60 seconds, the padding it added to every
-session's end, and a divisibility rule against `SEGMENT_DURATION`. All of it existed because the
-report stated times only to the minute. The portal states seconds, the padding is gone, and the
-only surviving grid is `green_button::METER_INTERVAL`.
+The portal states times to the second, so session times are on no grid; the only grid is
+`green_button::METER_INTERVAL`.
 
 ## Strict and lenient overlap tests
 
@@ -367,11 +364,10 @@ and `docs/ERRORS.md` carries one entry per kind.
 reading wherever it is carried out of the module — the `anomalies` column of a generated workbook,
 the run log, the Convert tab.
 
-Add variants freely. Renaming one costs less here than the phrase "wire format" suggests: nothing
-outside `from_token`'s own round-trip test reads a token back, in either vocabulary. What a rename
-actually does is leave workbooks already written spelling the kind one way while the code spells it
-another, which is a problem for whoever reads an old sheet by eye — not for anything that runs
-today. Worth a moment's thought, not a prohibition.
+Add variants freely. Keep tokens stable: each is the heading of its entry in `docs/ERRORS.md`, so
+a renamed token leaves earlier workbooks carrying a name the document no longer explains. Nothing
+outside `from_token`'s own round-trip test reads a token back, in either vocabulary, so a rename
+breaks no code; `tests/docs_errors.rs` fails until the document follows.
 
 **The prose.** `description` — one clause, for a report's glossary. Free-form, reword at will.
 
@@ -411,8 +407,8 @@ debug build and only if such a peak actually occurred.
 
 **"Business days" is undefined.** Toronto Hydro uses the term for its demand window and does not
 define it publicly — no page states whether statutory holidays are excluded from demand measurement.
-That holidays *are* excluded is inherited from the Python and is unsourced. The two documents that
-might settle it are the Conditions of Service PDF and the EB-2023-0195 Exhibit 8 rate-design filing.
+That holidays *are* excluded is unsourced. The two documents that might settle it are the
+Conditions of Service PDF and the EB-2023-0195 Exhibit 8 rate-design filing.
 
 **TOU boundaries must fall on whole hours.** Enforced by the type: `Schedule` is
 `&[(u8, Tou)]`, so a half-hour boundary cannot be written. This is what guarantees that an
@@ -428,8 +424,8 @@ meter.
 boundary is 00:00 EST year-round; Time-of-Use periods, the 07:00–19:00 demand window and the holiday
 calendar follow the clocks. `standard_midnight` and `local_midnight` in `src/time/base.rs` are the
 two, and they must not be merged — a summer period cut on the wrong one is an hour out at each end.
-The counts 671 and 745 are what that error used to produce, and their absence is now a signal:
-seeing either again means the boundary has drifted back to prevailing time.
+The counts 671 and 745 are what that error produces, and their absence is a signal: seeing either
+means the boundary has drifted to prevailing time.
 
 ## What would force a re-check of the TOU rules
 
@@ -464,19 +460,19 @@ monthly peak. The `civic_holiday` fixture exists to make that failure loud.
 The ESA's substitute-day entitlement is negotiated per employee within a three- or twelve-month
 window. It is not a calendar rule and cannot be computed; do not try.
 
-## Why umya-spreadsheet, and what still differs
+## Why umya-spreadsheet, and what differs
 
 
-`rust_xlsxwriter` was the first choice and was wrong. It models row heights and column widths as
-**whole pixels** — `set_row_height` is `(height * 4.0 / 3.0).round() as u32`, stored back as
-`0.75 x pixels` — so the reference workbook's 13.8pt rows, 12.8pt data rows, 23.85pt header and
-1.39-wide spacers are not representable in it at all. Left unset, its default row height of 15pt
-rendered every row at 0.53cm against the reference's 0.49.
+`rust_xlsxwriter` does not fit. It models row heights and column widths as **whole pixels** —
+`set_row_height` is `(height * 4.0 / 3.0).round() as u32`, stored back as `0.75 x pixels` — so the
+reference workbook's 13.8pt rows, 12.8pt data rows, 23.85pt header and 1.39-wide spacers are not
+representable in it at all. Left unset, its default row height of 15pt renders every row at 0.53cm
+against the reference's 0.49.
 
 `umya-spreadsheet` stores both as `f64` written straight through. Every column width, including the
 1.39 spacers, reproduces exactly. It is the writer this crate uses throughout.
 
-The general lesson, if the writer is ever swapped again: a crate that models a dimension in pixels
+The general lesson, if the writer is ever swapped: a crate that models a dimension in pixels
 cannot reproduce a workbook authored in points, and the discrepancy will be small enough to look
 like rounding noise rather than a wrong choice.
 
@@ -501,14 +497,14 @@ height and takes `defaultRowHeight`.
 
 **The rule to keep:** a row either has a *pinned* height because somebody chose it, or it has no
 stored height at all. Never the half-state — a stored height the application is free to re-fit.
-That middle case is what made two files with identical stored numbers render at different heights,
-and it cost three rounds of chasing to find, because every XML comparison said they matched.
+That middle case can make two files with identical stored numbers render at different heights,
+and it is hard to find, because every XML comparison says they match.
 
 The reference workbook stamps a height on all 13,924 of its rows. That is what LibreOffice writes,
-not a decision anyone made, and reproducing it was a mistake: it buries the three heights that are
-chosen among thousands that are not. Two figures in the reference are also accidents worth not
-copying — its `Interval_values` data rows are 12.8 where `Peak_values` uses 13.8 for the same font
-and content, and its two sheet titles are different sizes. Both are unified here.
+not a decision anyone made, and reproducing it would be a mistake: it would bury the three heights
+that are chosen among thousands that are not. Two figures in the reference are also accidents
+worth not copying — its `Interval_values` data rows are 12.8 where `Peak_values` uses 13.8 for the
+same font and content, and its two sheet titles are different sizes. Both are unified here.
 
 Row 3 of `Peak_values` is the one genuinely content-dependent height: 24pt fits two wrapped lines at
 the current column widths. Change a column width enough that a header collapses to one line or needs
@@ -522,8 +518,8 @@ data alike — and centres every other column. On `Interval_values` column A is 
 title is still left. So the rule encoded in `Kind::horizontal` is "alignment follows the column",
 with the A1 title left on both sheets as a special case.
 
-This was got wrong once, with the `billing_period_ending` header centred where the reference
-left-aligns it. The golden dumps now record horizontal alignment for exactly that reason.
+The golden dumps record horizontal alignment, so that a header such as `billing_period_ending`
+centred where the reference left-aligns it shows up in the diff.
 
 ## Regenerating the fixtures
 
@@ -544,7 +540,7 @@ Each range is the target billing period plus a day of slack either side. The sla
 end are not waste: they exercise the incomplete-period highlight.
 
 That 05:00 UTC anchor is the feed keeping a permanent midnight-EST day, which is the same boundary
-the billing period now uses. See `green_button/Toronto_Hydro_Object_Model.md`, "Fixed daily grid".
+the billing period uses. See `green_button/Toronto_Hydro_Object_Model.md`, "Fixed daily grid".
 
 Current fixture checksums:
 
@@ -571,68 +567,30 @@ directly, and the TOU energy buckets have to be divided by the loss factor befor
 loss factor is deliberately **not** modelled — it is not in the Green Button data, it varies by rate
 class, and it changes between rate applications, so hardcoding it would rot silently.
 
-## The port gate — run once, recorded here, then removed
+## The reference workbook
 
+`data/reference/green_button/Green_Button_Peak_Values-python-2026-07-16.xlsx` is the output of a
+separate Python program, generated from
+`data/green_button/TH_Electric_Usage_23-11-2024_to_24-06-2026.XML`. Its figures were reconciled
+against real invoices, and its June 2026 period ties out to one to the milli-kWh, which makes it a
+check from outside the crate.
 
-The Rust implementation replaced a Python one. The question "does it reproduce what the Python
-produced?" was answered once, by comparing full output against the workbook the Python had filled,
-and the answer is recorded here rather than kept as a test.
+To check against it, generate the workbook from the same input and compare `Peak_values` and
+`Interval_values` by **column name** over the columns both carry, floats to 5e-7. Blank cells count:
+a billing period with no non-peak maxima is blank in both. The comparison cannot be wholesale: this
+crate adds four `*_tou` columns and an `anomalies` column, and spells every machine name in
+`lower_snake_case`.
 
-| | |
-|---|---|
-| Date | 2026-08-09 |
-| Code | commit `c9a8c46` |
-| Input | `data/green_button/TH_Electric_Usage_23-11-2024_to_24-06-2026.XML` (18,018,534 bytes) |
-| Reference | `data/reference/green_button/Green_Button_Peak_Values-python-2026-07-16.xlsx`, sha256 `6ea76c29efbcf4a613a659abf72efb35b6eb97c8fdb0e20a07cdd29ad1b2a5f0` |
-| Method | `Peak_values` compared by **column name** over the shared subset, floats to 5e-7 |
-| Scope | 21 billing periods × 19 shared columns = **399 cells** |
-| Result | **0 mismatches** |
-
-The 19 columns compared were `billing_period_ending`, `nbr_of_intervals`, `kwh`, and the four
-groups `max_kw{,_interval,_interval_utc,_kva}`, `max_kw_nop{…}`, `max_kva{,_interval,_interval_utc,_kw}`,
-`max_kva_nop{…}`. The comparison could not be wholesale: the Rust schema adds four `*_tou` columns
-and an `anomalies` column, and renames every machine name to `lower_snake_case`.
-
-To repeat it, generate the workbook and compare by column name against the reference. There is no
-test to run — deliberately. The shared subset only shrinks as the Rust version diverges further
-from the Python-era sheet, so a standing test would weaken over time while looking like it still
-meant something.
-
-### Re-run, 2026-08-19
-
-The gate was run again after the merger review, at commit `184f467`, against the same reference and
-the same input. Two changes to method, both widening it:
-
-- `Interval_values` was compared as well as `Peak_values`. The original gate covered only the peak
-  sheet, and the interval sheet is where every figure the peaks are drawn from lives.
-- Every shared cell was compared, not the grid: the count below is lower than 399 because 8 cells
-  are **blank in both** workbooks, one billing period having no non-peak maxima. Agreement includes
-  the blanks.
-
-| | |
-|---|---|
-| Code | commit `184f467` |
-| `Peak_values` | 21 periods × 19 shared columns, 391 non-blank cells |
-| `Interval_values` | 13,896 rows × 5 shared columns, 69,480 cells |
-| Total compared | **69,871 cells** |
-| Result | **0 mismatches** |
-| Largest absolute difference | 1.0e-10 on `Peak_values`, 3.6e-11 on `Interval_values` — float text formatting, not arithmetic |
-
-So everything from the merger through the four review phases left the figures where the Python put
-them. That is a stronger statement than baseline parity, which only says this work changed nothing:
-this says the numbers agree with an implementation outside the crate, whose own figures were
-reconciled against real invoices.
-
-The `data/reference/green_button/` workbook stays as provenance: it is the artefact whose figures
-were reconciled against real invoices, and whose June 2026 period ties out to one to the milli-kWh.
-Nothing in the test suite reads it, and its **formatting is not the current standard** — see
-"Row heights: three, and only three".
+There is no test for it, deliberately. The shared columns shrink whenever this crate's schema grows,
+so a standing test would weaken while looking as if it still meant something. Nothing in the test
+suite reads the workbook, and its **formatting is not the current standard** — see "Row heights:
+three, and only three".
 
 Three workbooks, three jobs, no overlap:
 
 | Path | What | Committed | Read by code |
 |---|---|---|---|
-| `data/reference/green_button/Green_Button_Peak_Values-python-2026-07-16.xlsx` | the Python-era output | yes | never |
+| `data/reference/green_button/Green_Button_Peak_Values-python-2026-07-16.xlsx` | the Python program's output | yes | never |
 | `tests/fixtures/green_button/billed_period.xlsx` | the current formatting standard | yes | regenerated with the goldens |
 | `data/*.xlsx` | whatever you last generated | no, ignored | no |
 

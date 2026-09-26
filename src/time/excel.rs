@@ -4,14 +4,11 @@
 //! column and a UTC column differ only in which instant was converted; they are told apart by
 //! their number format, not by anything stored in the cell.
 //!
-//! The names say which input a function takes, because that is where the two modules previously
-//! disagreed: both had a function called `excel_serial`, one taking a [`Timestamp`] and one taking
-//! a [`jiff::civil::DateTime`], with different meanings. Keeping either name would have silently
-//! changed
-//! behaviour on one side, so neither survives.
+//! The names say which input a function takes: a [`Timestamp`] and a [`jiff::civil::DateTime`]
+//! give serials with different meanings, and one name for both would hide which a caller gets.
 //!
 //! All of these are infallible. The fallible forms could only fail on a civil date-time that UTC
-//! cannot represent, and UTC has no gaps or folds, so the error was unreachable.
+//! cannot represent, and UTC has no gaps or folds, so the error would be unreachable.
 
 use super::local_datetime;
 use jiff::{

@@ -1,8 +1,8 @@
 name: CI
 
-# Every push and every pull request. The release workflow runs on tags alone, so until this one
-# existed a broken test, a clippy warning or a rotted intra-doc link was discovered when a release
-# was tagged — and the examples were compiled by nothing at all.
+# Every push and every pull request. The release workflow runs on tags alone, so without this one
+# a broken test, a clippy warning or a rotted intra-doc link would be discovered when a release
+# was tagged — and the examples would be compiled by nothing at all.
 on:
   push:
   pull_request:

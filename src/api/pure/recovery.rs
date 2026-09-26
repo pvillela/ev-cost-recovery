@@ -777,9 +777,9 @@ impl fmt::Display for CostRecoverySurplus {
 /// Three outcomes rather than two. A surplus that is not a number has no sign to read -- every
 /// comparison against `NaN` is false, `self.surplus < 0.0` included -- so choosing on that test
 /// alone would print "covered" for a figure that says nothing at all. That cannot arise while every
-/// divisor is checked, which [`ZeroDenominator`](crate::hydro_bill::ZeroDenominator) now sees to;
+/// divisor is checked, which [`ZeroDenominator`](crate::hydro_bill::ZeroDenominator) sees to;
 /// this is the guard that keeps a bad figure from being narrated as good news if one ever gets
-/// through again.
+/// through.
 fn verdict(surplus: f64) -> &'static str {
     if !surplus.is_finite() {
         return "The surplus could not be worked out from the figures above. Do not read the \
@@ -1382,7 +1382,7 @@ mod test {
         assert_eq!(verdict(f64::INFINITY), neither);
         assert_eq!(verdict(f64::NEG_INFINITY), neither);
 
-        // The two real outcomes are unchanged, zero counting as covered.
+        // The two real outcomes, zero counting as covered.
         assert!(verdict(1.0).contains("covered"));
         assert!(verdict(0.0).contains("covered"));
         assert!(verdict(-1.0).contains("fell short"));

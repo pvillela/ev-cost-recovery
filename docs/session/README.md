@@ -1,6 +1,6 @@
 # `session` module
 
-This module contains functionality related to the Evolute monthly CSV Session Report. Notably, it computes peak load and energy consumption attributable to EV charging sessions.
+This module contains functionality related to the Evolute CSV Session Report. Notably, it computes peak load and energy consumption attributable to EV charging sessions.
 
 The rest of this document describes the computation of peak loads.
 
@@ -12,7 +12,7 @@ For a given billing period, we can identify the time intervals in which the high
 
 Given a time interval of interest, this module estimates the peak kW and kVA demand associated with EV charging activity during the interval. If the interval of interest is the one where the building's Demand kW or 7-7 kW was highest, then the kW attributable to EV charging activity is the value of interest. If the interval of interest is the one where the building's Demand kVA was highest, then the kVA attributable to EV charging activity is the value of interest.
 
-The data source for EV power demand is the Evolute monthly session report.
+The data source for EV power demand is the Evolute session report.
 
 #### Interval of interest boundaries
 
@@ -64,7 +64,7 @@ A session occupies `[Conn_DateTime_Start, Conn_DateTime_End)`, exactly as the re
 
 #### Interval of interest with no EVs charging
 
-In such cases, the EV charging infrastructure still impacts the overall building's peak kW and kVA, but the impact is small (currently ~ 0.20 kW and ~1.51 kVA for the transformer), and the software reports these values.
+In such cases, the EV charging infrastructure still impacts the overall building's peak kW and kVA, but the impact is small (~ 0.20 kW and ~1.51 kVA for the transformer), and the software reports these values.
 
 ### Technical Notes
 

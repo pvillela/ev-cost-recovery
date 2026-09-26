@@ -123,7 +123,11 @@ fn unwrapped(text: &str) -> String {
 fn every_session_anomaly_has_an_entry_in_the_errors_document() {
     let doc = errors_doc();
     for (kind, token) in session_tokens() {
-        assert_eq!(kind.as_str(), token, "the wire format was renamed");
+        assert_eq!(
+            kind.as_str(),
+            token,
+            "the wire format differs from its token"
+        );
         assert!(
             has_entry(&doc, token),
             "docs/ERRORS.md has no `### `{token}`` entry"
@@ -143,7 +147,11 @@ fn every_session_anomaly_has_an_entry_in_the_errors_document() {
 fn every_meter_anomaly_has_an_entry_in_the_errors_document() {
     let doc = errors_doc();
     for (kind, token) in meter_tokens() {
-        assert_eq!(kind.as_str(), token, "the wire format was renamed");
+        assert_eq!(
+            kind.as_str(),
+            token,
+            "the wire format differs from its token"
+        );
         assert!(
             has_entry(&doc, token),
             "docs/ERRORS.md has no `### `{token}`` entry"

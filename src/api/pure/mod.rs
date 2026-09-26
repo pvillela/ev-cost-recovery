@@ -10,8 +10,8 @@
 //!
 //! The submodules are by subject, not by call. The API layer's other axis — reading versus
 //! computing — is already spent on the `io`/`pure` division, and spending it twice would leave
-//! every subject scattered. `peak_power` is one API operation today; `coverage` is what it and
-//! every later operation are built from.
+//! every subject scattered. `peak_power` is one API operation; `coverage` is what it and every
+//! other operation are built from.
 //!
 //! What a billing period *is* is not here. It is a fact about the bill, so it lives in
 //! [`hydro_bill::billing_period`](crate::hydro_bill) with [`BILL_END_DAY`](crate::hydro_bill::BILL_END_DAY)

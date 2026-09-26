@@ -1,7 +1,7 @@
 //! Checks the computation against a real Toronto Hydro invoice.
 //!
 //! This is the only test whose expected values come from outside the software. Everything else
-//! pins behaviour against itself or against a workbook this project's own predecessor produced; if
+//! pins behaviour against itself or against the reference workbook a Python program produced; if
 //! a rule here were wrong in a self-consistent way, only this test would notice.
 //!
 //! The invoice covers `MAY 23 2026 TO JUN 23 2026`, which is the period the `billed_period`
@@ -92,10 +92,10 @@ fn the_billed_period_reproduces_the_invoice() {
         );
     }
 
-    // The energy total agrees to the milli-kWh, and that is the point of the check. It did not
-    // while the period boundary was at prevailing local midnight: the invoice then read 11.16 kWh
-    // higher, which was the 00:00 EDT hour of the closing day falling into the next period. On a
-    // standard-time boundary that hour lands where the meter puts it and the totals coincide.
+    // The energy total agrees to the milli-kWh, and that is the point of the check. A period
+    // boundary at prevailing local midnight would leave the invoice 11.16 kWh higher, the 00:00
+    // EDT hour of the closing day falling into the next period. On a standard-time boundary that
+    // hour lands where the meter puts it and the totals coincide.
     // `docs/archive/hydro_bill/dst-energy-anomaly-pre-fix.md` has the derivation over all 19
     // invoices.
     let printed_kwh = number(&invoice, "kwh_used");
@@ -110,7 +110,7 @@ fn the_billed_period_reproduces_the_invoice() {
 ///
 /// The buckets are computed here rather than written to the workbook. The invoice states them
 /// loss-factor adjusted, and the workbook deliberately reports raw meter values, so putting an
-/// adjusted figure in a column would mean the sheet no longer agreed with itself.
+/// adjusted figure in a column would mean the sheet did not agree with itself.
 #[test]
 fn the_tou_buckets_reproduce_the_invoice() {
     let invoice = invoice();

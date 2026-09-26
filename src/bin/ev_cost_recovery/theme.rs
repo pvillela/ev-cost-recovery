@@ -149,7 +149,7 @@ fn widget(fill: u8, stroke: u8, text: u8, stroke_width: f32) -> WidgetVisuals {
 }
 
 fn dark(v: &mut Visuals) {
-    // The window recedes; the widgets keep their fill, so the two no longer read as one surface.
+    // The window recedes; the widgets keep their fill, so the two do not read as one surface.
     v.panel_fill = Color32::from_gray(16);
     v.window_fill = Color32::from_gray(32);
     v.extreme_bg_color = Color32::from_gray(8);
@@ -159,7 +159,7 @@ fn dark(v: &mut Visuals) {
 
     //                       fill  outline text  outline width
     v.widgets.noninteractive = widget(16, 105, 236, 1.0); // labels, separators, indent lines
-    v.widgets.inactive = widget(66, 130, 245, 1.0); // a button at rest — now outlined
+    v.widgets.inactive = widget(66, 130, 245, 1.0); // a button at rest — outlined
     v.widgets.hovered = widget(88, 195, 255, 1.5);
     v.widgets.active = widget(110, 255, 255, 1.5);
     v.widgets.open = widget(76, 150, 248, 1.0);
@@ -186,7 +186,7 @@ fn light(v: &mut Visuals) {
     // Every separation here is wider than the dark theme's counterpart, and the accent is darker.
     // A bright ground leaves the eye less range to spend, so greys that look distinct against a
     // dark panel run together against a pale one. Reflecting the dark theme's numbers through the
-    // middle is what produced the wash of grey this replaces.
+    // middle would produce a wash of grey.
     v.panel_fill = Color32::from_gray(216);
     v.window_fill = Color32::from_gray(252);
     v.extreme_bg_color = Color32::from_gray(255);
@@ -221,7 +221,7 @@ fn light(v: &mut Visuals) {
 /// right value differs between them — see each function's own `weak_text_alpha`, and the module
 /// doc for why the light theme needs more of everything.
 fn common(v: &mut Visuals) {
-    // A striped table is easier to follow than an unstriped one, and the stripe is now visible.
+    // A striped table is easier to follow than an unstriped one, and the stripe is visible.
     v.striped = true;
     v.button_frame = true;
     v.collapsing_header_frame = true;

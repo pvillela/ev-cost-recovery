@@ -209,7 +209,7 @@ A Toronto Hydro bill for the building states that it covers from the 23rd of a m
 
 Toronto Hydro Green Button metering data is reported in UTC (Coordinated Universal Time = EST + 5h, no DST).
 
-Evolute's session reports state their times in EST as well, all year round, so they are not impacted by DST either. This was confirmed after gaining access to the Evolute portal; the software previously read them as ET and had to disambiguate the hour that repeats when DST ends.
+Evolute's session reports state their times in EST as well, all year round, so they are not impacted by DST either.
 
 Evolute's charges reports cover calendar months, not Toronto Hydro billing periods.
 
@@ -219,7 +219,7 @@ Reports produced by the application to be shown to the user are stated in prevai
 
 While Toronto Hydro measures peak power using 15-minute intervals, its comprehensive Green Button metering data provides data in 1-hour intervals. So, the software has to figure out which of the four 15-minute intervals in an hour is the one that maximises a particular power value.
 
-Evolute's Session Report provides crucial data for the calculations performed by this software. Reported session start and end times are stated to the second, and are taken at face value. They were truncated to whole minutes before the Evolute portal was available, which put an inherent 1-in-15 uncertainty on where each session fell within a 15-minute Toronto Hydro interval of interest, and every estimate was reported as a range for that reason. Only one allowance survives: a second of slack when checking a session's reported duration against its reported span, because the source rounds somewhere at second level.
+Evolute's Session Report provides crucial data for the calculations performed by this software. Reported session start and end times are stated to the second, and are taken at face value. One allowance is made: a second of slack when checking a session's reported duration against its reported span, because the source rounds somewhere at second level.
 
 #### Challenge 5: Non-linearity
 
@@ -237,7 +237,7 @@ meets them.
 | `green_button`   | Functionality related to Toronto Hydro's Green Button export, an ESPI XML feed of hourly meter readings. Notably, computes the intervals that maximise the building's kW, kVA, and 7-7 kW during a billing period. |
 | `hydro_bill`     | Functionality to read the PDF invoices Toronto Hydro issues. |
 | `rates`          | Our EV cost-recovery rates, and reading them from the [rates workbook](docs/rates/README.md): which of its rows price a billing period or a month. |
-| `session`        | Functionality related to the Evolute monthly CSV Session Report. Notably, computes peak load and energy consumption attributable to EV charging sessions. |
+| `session`        | Functionality related to the Evolute CSV Session Report. Notably, computes peak load and energy consumption attributable to EV charging sessions. |
 | `time`           | Date-time-related constants and functions.                   |
 | `charges_report` | Functionality to read the Evolute monthly CSV Charges Report. |
 | `csv`            | Common CSV reading logic.                                    |

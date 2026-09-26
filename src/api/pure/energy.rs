@@ -505,8 +505,8 @@ fn band_row(name: &str, kwh: f64) -> Vec<String> {
 
 /// A band's name as a bill and a reader spell it.
 ///
-/// Not [`Tou::as_str`], which is documented as a wire format for workbook column names and spells
-/// these `OnPeak`. This is prose, and goes into a sentence.
+/// Not [`Tou::as_str`], which is the text of a workbook cell and spells these `OnPeak`. This is
+/// prose, and goes into a sentence.
 fn band_name(tou: Tou) -> &'static str {
     match tou {
         Tou::OnPeak => "on-peak",
@@ -861,7 +861,7 @@ mod test {
         assert!(text.contains("Loss factor: 1.0500"), "{text}");
         // The rebate is shown as the credit it is, not as a positive to be subtracted by the
         // reader. Read off the line rather than matched against a figure, so the test says what it
-        // is checking and not merely that the arithmetic has not moved.
+        // is checking and not merely that the arithmetic matches a figure.
         let rebate = text
             .lines()
             .find(|l| l.contains("Ontario Electricity Rebate"))

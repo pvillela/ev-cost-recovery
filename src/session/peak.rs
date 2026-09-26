@@ -602,9 +602,9 @@ mod test {
     /// An excluded session shows the report-level anomalies it carries, not only what excluded it.
     ///
     /// `session_anomalies` cannot hold these: that list is scoped by `intersects`, which panics on
-    /// the inverted span an excluded session may have. So of two rows sharing an id where one is
-    /// inconsistent, the kept one was flagged `DuplicateId` and the excluded one showed only
-    /// `InconsistentDuration`, with nothing saying the two were about each other.
+    /// the inverted span an excluded session may have. Without them, of two rows sharing an id
+    /// where one is inconsistent, the kept one is flagged `DuplicateId` and the excluded one shows
+    /// only `InconsistentDuration`, with nothing saying the two are about each other.
     #[test]
     fn an_excluded_session_keeps_its_duplicate_id() {
         // Two rows with one id. The second's end precedes its start, so it is excluded; both are

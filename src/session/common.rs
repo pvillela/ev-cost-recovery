@@ -105,7 +105,7 @@ pub(crate) fn duration_is_consistent(
 /// the use site, as `time::base::BILLING_OFFSET` is.
 ///
 /// Nothing here pins the index. `time::base::test::the_billing_offset_is_the_standard_time_one`
-/// pins the same entry, so reordering the array is caught today — but only because the two
+/// pins the same entry, so reordering the array is caught — but only because the two
 /// constants share an index, which the block above says they need not.
 pub const SESSION_OFFSET: (&str, i8) = TZ_OFFSETS[0];
 
@@ -316,9 +316,9 @@ impl Session {
     }
 }
 
-// `Session` deliberately has no `PartialEq`, `Ord` or `Hash`. It had them so that [`Segment`] could
-// hold a `BTreeSet`, and they compared `id` alone — which made segment membership, and every figure
-// drawn from it, rest on `Charge_Session_ID` being unique. It is not: Evolute's June 2026 report
+// `Session` deliberately has no `PartialEq`, `Ord` or `Hash`. A `BTreeSet` in [`Segment`] would
+// need them, and comparing `id` alone would make segment membership, and every figure drawn from
+// it, rest on `Charge_Session_ID` being unique. It is not: Evolute's June 2026 report
 // carries `S37487` on two unrelated sessions a week apart. `Segment` holds a `Vec` for that reason,
 // and nothing else needs to ask whether two sessions are equal.
 
@@ -327,7 +327,7 @@ struct MergedSessions {
     /// Every session, in the order the lists were given, less the records collapsed as identical.
     sessions: Vec<RSession>,
     /// Anomalies that are not properties of any single record and so are not on
-    /// [`Session::anomalies`]. Currently [`AnomalyKind::DuplicateId`] only.
+    /// [`Session::anomalies`]: [`AnomalyKind::DuplicateId`].
     anomalies: Vec<Anomaly>,
     /// Records dropped as identical copies of one already kept, for the log.
     collapsed: Vec<Collapse>,
@@ -374,7 +374,7 @@ impl MergedSessions {
             for session in list {
                 // Linear against what is already kept. The comparison is on the compared fields,
                 // not on the id, so no map keyed by id would serve: an id may legitimately name
-                // several distinct sessions, which is the case that produced this function.
+                // several distinct sessions, which is the case this function exists for.
                 let already_kept = sessions.iter().find(|kept| {
                     kept.id == session.id && !kept.is_inconsistent_duplicate(&session)
                 });
@@ -628,13 +628,12 @@ impl AnomalyKind {
         matches!(self, Self::InconsistentDuration)
     }
 
-    /// The variant name, as written to the workbook's `anomalies` column. Deliberately distinct
-    /// from [`fmt::Display`], which is free-form prose for humans and may be reworded at will;
-    /// this is a wire format and should preferably stay stable.
+    /// The variant name, as written to the workbook's `anomalies` column, and the heading of its
+    /// entry in `docs/ERRORS.md`. Distinct from [`fmt::Display`], which is prose for humans.
     ///
-    /// Preferably rather than must: nothing reads a token back any more. A rename leaves workbooks
-    /// already written spelling the kind one way and the code spelling it another, which costs
-    /// whoever opens an old sheet and nothing else.
+    /// Keep the token stable: a renamed token leaves earlier workbooks carrying a name the
+    /// document no longer explains. No release code reads a token back, so a rename breaks
+    /// nothing at run time; `tests/docs_errors.rs` fails until the document follows.
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::ZeroActiveChargeTime => "ZeroActiveChargeTime",
@@ -646,7 +645,7 @@ impl AnomalyKind {
 
     /// Inverse of [`AnomalyKind::as_str`]. `None` for an unrecognised token.
     ///
-    /// Test-only since the workbook reader went: the writer still fills the `anomalies` column,
+    /// Test-only: the writer fills the `anomalies` column,
     /// and `test_support::timing_anomalies_in_cell` reads it back to check that what was written
     /// is a token at all. Nothing in a release build parses one.
     #[cfg(test)]
@@ -666,10 +665,10 @@ impl AnomalyKind {
 /// [`crate::session::SessionWriteReport`] and [`crate::session::IntervalEstimates`].
 ///
 /// Holds the session itself rather than a copy of a field or two off it. Copying `id` and `row` out
-/// meant every consumer that wanted anything else — the average power beside the flag, the file the
-/// row is in — had to find its way back to the session through a key, and no key available is one
-/// Evolute guarantees: ids repeat across a report and across the reports of adjacent months.
-/// Holding the `Rc` is what removes that question.
+/// would mean every consumer that wants anything else — the average power beside the flag, the
+/// file the row is in — has to find its way back to the session through a key, and no key
+/// available is one Evolute guarantees: ids repeat across a report and across the reports of
+/// adjacent months. Holding the `Rc` is what removes that question.
 #[derive(Debug, Clone)]
 pub struct Anomaly {
     pub session: RSession,
@@ -739,10 +738,6 @@ impl fmt::Display for Anomaly {
 /// Returned by the private `csv::csv_sessions`, because the grouping is a property of the sessions
 /// rather than of the file they were read out of. The writing direction returns a
 /// [`crate::session::SessionWriteReport`] instead.
-///
-/// It was `SessionReport` until this crate had three things called a report: the document a
-/// [`Display`](std::fmt::Display) writes, the CSV Evolute exports, and this. Only the CSV is still
-/// called one.
 #[derive(Debug)]
 pub struct Sessions {
     /// Sessions with a finite average power. This is what the peak power contribution logic
@@ -765,12 +760,12 @@ pub struct Sessions {
     /// `docs/archive/Questions_for_Evolute.md`, "Answers received". See docs/session/README.md, "Anomalies".
     pub spikes: Vec<RSession>,
     /// Sessions that cannot be placed on a timeline — every kind [`AnomalyKind::excludes_session`]
-    /// names, which today is [`AnomalyKind::InconsistentDuration`] alone: the reported start, end
+    /// names, which is [`AnomalyKind::InconsistentDuration`] alone: the reported start, end
     /// and duration contradict each other. Excluded from the estimates and returned only for
     /// review. See docs/session/README.md, "Anomalies".
     pub excluded: Vec<RSession>,
     /// Anomalies that are not properties of any single record, and so are not reachable through
-    /// [`Session::anomalies`]. Currently [`AnomalyKind::DuplicateId`] alone.
+    /// [`Session::anomalies`]: [`AnomalyKind::DuplicateId`].
     ///
     /// Separate from the sessions because such an anomaly is a relation between records rather than
     /// a fault in one: an id is a duplicate only relative to another session, and which of the two
@@ -787,8 +782,8 @@ pub struct Sessions {
     /// What they hold depends on which reader produced this report — see their docs.
     ///
     /// Held rather than written. A reader returns what it found and leaves writing it to whoever
-    /// asked, which for a `Vec<PathBuf>` of already-written files was impossible: by the time the
-    /// caller saw the paths the files were there. [`Sessions::write_logs`] is how a binary puts
+    /// asked, which a `Vec<PathBuf>` of already-written files cannot do: by the time the caller
+    /// sees the paths the files are there. [`Sessions::write_logs`] is how a binary puts
     /// them where a user can read them.
     ///
     /// A vector because a report can be built from several files at once — see
@@ -990,8 +985,7 @@ impl Sessions {
 ///
 /// Every result the API returns carries one. A figure a reader cannot check is a figure they have
 /// to take on trust, and the three things they need in order to check it — which files it came
-/// from, which records were left out, and what needed a judgement call — were until now reachable
-/// only from a log file written beside the input, or from nowhere at all.
+/// from, which records were left out, and what needed a judgement call — are what this holds.
 ///
 /// The anomalies are filtered by what bears on the figure; see [`Sessions::notes`]. The sources and
 /// the excluded sessions are not.
@@ -1325,8 +1319,8 @@ mod test {
     ///
     /// The two sections say opposite things about the same row — one that its figures take no part
     /// in any total, the other that its rows count towards them — and a session carries its
-    /// exclusion anomaly like any other, so it reached both. A reader reconciling the month was
-    /// told the same record counted and did not.
+    /// exclusion anomaly like any other, so it could reach both. A reader reconciling the month
+    /// would then be told the same record counted and did not.
     #[test]
     fn a_left_out_session_is_not_listed_as_counting() {
         let mut broken = session("June.csv", 2, "BAD", "2026-06-01T12:00:00Z", 4.0);

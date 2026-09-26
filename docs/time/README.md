@@ -19,8 +19,7 @@ instant with the zone it is read in, `excel.rs` for serial-date conversion, `tou
 | `METER_INTERVAL`, the interval a Toronto Hydro meter records, and `is_on_grid` | `green_button` |
 
 The meter interval and the predicate that tests against it live together, in the module with a
-reason for the value. The session reader had a grid of its own — the resolution its timestamps were
-reported at — until the portal confirmed they are stated to the second.
+reason for the value. Session times are stated to the second and are on no grid.
 
 ## Two clocks, and which is which
 
@@ -35,15 +34,15 @@ clock, `BILLING_OFFSET` is the offset, and `hydro_bill::BillingPeriod` is the on
 The two coincide from November to March and differ by an hour from March to November, which is what
 makes the distinction easy to lose and expensive to get wrong: a summer period cut on the wrong
 clock is an hour out at each end, and a period containing a clock change is an hour out overall.
-Cutting on prevailing local time reproduced 6 of 19 invoices; cutting on standard time reproduces
+Cutting on prevailing local time reproduces 6 of 19 invoices; cutting on standard time reproduces
 all 19 to the milli-kWh. The derivation is in
 [`../archive/hydro_bill/dst-energy-anomaly-pre-fix.md`](../archive/hydro_bill/dst-energy-anomaly-pre-fix.md).
 
 Two consequences worth knowing:
 
 - A standard-time day is always 24 hours, so a billing period is always a whole number of days and
-  matches the `Number of Days` its invoice states. Periods of 671 and 745 hours were what the
-  prevailing-local boundary produced, and they are gone.
+  matches the `Number of Days` its invoice states. A prevailing-local boundary would give periods
+  of 671 and 745 hours.
 - `standard_midnight` cannot fail, where `local_midnight` can in principle: a fixed offset has no
   gap for a wall time to fall into and no fold for it to be ambiguous in.
 
@@ -100,16 +99,8 @@ sides of a transition, and then two headings in the same document differ by an h
 
 The workbook could show both clocks in one row, so it shows only one. Its `Conn_DateTime_Start` and
 `Conn_DateTime_End` are the CSV's own text, copied verbatim, and it derives no local column of its
-own — the padded `adj_conn_*` pair it used to carry is gone with the padding. Its UTC columns are
-instants. So nothing in the sheet is on prevailing time, and a workbook that carries no zone labels
-stays honest.
-
-**Before the portal.** Until the offset was confirmed, the reader read session times as prevailing
-local and had to resolve the two hours a year that are ambiguous or absent: it enumerated readings
-at each offset, settled the fold against `Conn_Duration`, duplicated a record no reading could
-choose between, and assigned sentinel timestamps where a wall time named nothing. All of it is gone,
-along with the four anomaly kinds it raised. The history is in
-[`docs/archive/dst-gap-plan.md`](../archive/dst-gap-plan.md).
+own. Its UTC columns are instants. So nothing in the sheet is on prevailing time, and a workbook
+that carries no zone labels stays honest.
 
 ## Where the labour divides
 

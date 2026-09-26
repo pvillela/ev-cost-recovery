@@ -56,9 +56,9 @@ const MEMBERSHIP: [(&str, &[&str]); 4] = [
     // sessions already running.
     ("17:00", &["A", "B", "C"]),
     // `B` is reported to end at 16:15, exactly where this quarter opens. Spans are half-open, so
-    // it abuts the quarter rather than meeting it. It used to be here: the padding put its
-    // adjusted end a minute later, on the reasoning that a time stated to the minute could mean
-    // anywhere inside it. The portal states seconds, so 16:15 means 16:15.
+    // it abuts the quarter rather than meeting it. Padding its end a minute, on the reasoning that
+    // a time stated to the minute could mean anywhere inside it, would put it here. The portal
+    // states seconds, so 16:15 means 16:15.
     ("17:15", &["A", "C", "D", "E"]),
     // `D` and `E` are reported to end at 16:34 and `F` to start at 16:34, so all three are here:
     // the reported times cannot say whether they overlapped or merely abutted.
@@ -109,8 +109,8 @@ fn an_hour_is_tiled_by_four_consecutive_quarters() {
 
 /// Each quarter holds exactly the sessions whose span meets it.
 ///
-/// This is the assertion that would have caught the inverted overlap test: with `intersects`
-/// negated, every quarter collected precisely the sessions listed for the others.
+/// This is the assertion that catches an inverted overlap test: with `intersects` negated, every
+/// quarter collects precisely the sessions listed for the others.
 #[test]
 fn each_quarter_holds_the_sessions_that_meet_it() {
     let report = estimates();
@@ -138,8 +138,8 @@ fn a_shared_instant_is_counted_once() {
 
     // The exact fraction, not a band. Five sessions meet the quarter: `A` covers the whole of it,
     // and `C`, `D`, `E` and `F` cover 12, 4, 4 and 8 of its 15 minutes. A band from 1 to 5 admits
-    // 3.0, which is what the padded-end regression this test guards against produced -- so the
-    // assertion it was written to make was the one it could not fail.
+    // 3.0, which is what padding the reported ends would give -- so a band would pass on exactly
+    // the error this test guards against.
     let count = third.agg_count();
     let expected = 1.0 + 12.0 / 15.0 + 4.0 / 15.0 + 4.0 / 15.0 + 8.0 / 15.0;
     assert!((count - expected).abs() < 1e-9, "{count} is not {expected}");

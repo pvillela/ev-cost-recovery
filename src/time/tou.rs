@@ -47,15 +47,12 @@ pub enum Tou {
 }
 
 impl Tou {
-    /// The token written to the workbook. A wire format, like
-    /// [`crate::green_button::Anomaly::as_str`], and should preferably stay stable: these sheets are
-    /// meant to be read back by column name.
+    /// The text written to a price-period cell of the Green Button workbook: `OnPeak`, `MidPeak`
+    /// or `OffPeak`. [`Self::from_token`] is its inverse.
     ///
-    /// Preferably rather than must. Nothing reads a `Tou` token back — [`Self::from_token`] has
-    /// only its own round-trip test — and the one workbook this crate reads, the rates workbook,
-    /// names its bands in columns of its own: `on_peak`, `mid_peak` and `off_peak`. A rename leaves
-    /// workbooks already written spelling the band one way and the code spelling it another, which
-    /// costs a reader of an old sheet and nothing else.
+    /// Keep the spelling stable, so that workbooks written at different times agree. Nothing in
+    /// the crate reads the text back except `from_token`'s round-trip test, so a change breaks no
+    /// code; it only leaves earlier workbooks spelling the period differently.
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::OnPeak => "OnPeak",

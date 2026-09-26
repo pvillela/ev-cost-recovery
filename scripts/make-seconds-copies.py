@@ -19,8 +19,7 @@
 #
 # One second and no more. A row further out than the tolerance is excluded from every estimate,
 # which is a session's worth of energy missing from figures that a reader is checking against the
-# bill -- and reading the sample data is not the moment to be teaching that lesson. Both files
-# carried such a row until 2026-09-08.
+# bill -- and reading the sample data is not the moment to be teaching that lesson.
 #
 # The May-June file is the two months' rows concatenated, under the name of the range they cover.
 # It is what a single portal export spanning the whole billing period looks like, which is the case

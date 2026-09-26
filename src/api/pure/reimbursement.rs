@@ -638,8 +638,8 @@ mod test {
     /// A variance too small to print is neither an overpayment nor a shortfall, whatever its sign.
     ///
     /// Neither is a variance that is not a number. Every comparison against `NaN` is false,
-    /// including the two the sentence is chosen on, so without the guard such a figure was
-    /// narrated as a shortfall beside a column that printed `NaN`.
+    /// including the two the sentence is chosen on, so without the guard such a figure would be
+    /// narrated as a shortfall beside a column that prints `NaN`.
     #[test]
     fn a_variance_below_a_printed_cent_is_called_neither_way() {
         assert!(verdict(0.0).contains("reimbursed what"));

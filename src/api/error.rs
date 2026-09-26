@@ -31,8 +31,8 @@ use crate::error::ConversionError;
 /// Here rather than in [`crate::error`], which holds what the library modules raise: nothing
 /// outside the API's `io` half ever builds one of these. Each variant wraps what the corresponding
 /// reader returned, so this is the API's own vocabulary for "an input could not be read", not a
-/// type any reader knows about. [`ConversionError`](crate::error::ConversionError), which
-/// travelled here with it once, stayed behind — the two workbook writers do raise that.
+/// type any reader knows about. [`ConversionError`](crate::error::ConversionError) is in
+/// [`crate::error`], because the two workbook writers raise it.
 ///
 /// `path` is held for a caller that wants to act on which file failed rather than print it, and is
 /// deliberately not written into the message. All five causes are structured types, and each cause
@@ -41,7 +41,7 @@ use crate::error::ConversionError;
 /// the private `session::csv::SessionCsvError`,
 /// [`ChargesReportError`](crate::charges_report::ChargesReportError),
 /// [`BillError`](crate::hydro_bill::BillError) and the private
-/// `rates::excel::RatesWorkbookError`. Writing it here as well produced
+/// `rates::excel::RatesWorkbookError`. Writing it here as well would print it twice:
 /// `data/x.XML: data/x.XML: ...`.
 #[derive(Debug)]
 pub enum ReadError {
@@ -69,9 +69,9 @@ pub enum ReadError {
     /// Which of those it is, this does not say. `cause` is a
     /// [`BillError`](crate::hydro_bill::BillError), whose
     /// [`is_layout`](crate::hydro_bill::BillError::is_layout) tells the two apart — but nothing
-    /// downcasts to it today, so treat that as a fact about the current implementation rather than
-    /// as a contract. If telling them apart from outside is ever wanted, say so in the variant
-    /// rather than leaving a caller to guess at the boxed type.
+    /// downcasts to it, so treat that as an implementation detail rather than as a contract. If
+    /// telling them apart from outside is ever wanted, say so in the variant rather than leaving a
+    /// caller to guess at the boxed type.
     Bill {
         path: PathBuf,
         cause: Box<dyn Error>,
@@ -161,8 +161,8 @@ pub enum ApiError {
 // and how a bad date passed to `io::peak_power` arrives here.
 //
 // Written into the message, unlike `ReadError::path`. The readers name their own file and prefixing
-// theirs produced `data/x.XML: data/x.XML: ...`; these errors name none, so without the prefix a
-// caller holding four paths is told a period is uncovered and left to guess by which.
+// theirs would print it twice, `data/x.XML: data/x.XML: ...`; these errors name none, so without
+// the prefix a caller holding four paths is told a period is uncovered and left to guess by which.
 
 impl From<CoverageError> for ApiError {
     fn from(e: CoverageError) -> Self {

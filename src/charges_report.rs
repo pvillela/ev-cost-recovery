@@ -135,7 +135,7 @@ impl Error for ChargesReportNameError {}
 /// confuse it, and then the range that follows is what decides.
 ///
 /// A range, not a month. Whether a caller will accept a range longer than one month is that
-/// caller's rule, not this function's — see [`charges_report`], which currently will not.
+/// caller's rule, not this function's — see [`charges_report`], which does not.
 ///
 /// Nothing about the file is inspected: not whether it exists, and not what is inside it.
 ///
@@ -494,7 +494,7 @@ pub fn charges_report(path: &Path) -> Result<ChargesReport, ChargesReportError> 
             cause,
         })?;
     let month_end = month.last_of_month();
-    // One month only, for now. The name states the whole range and the parser hands it over intact;
+    // One month only. The name states the whole range and the parser hands it over intact;
     // refusing a longer one is this reader's rule and is stated here so the parser stays reusable.
     if range_end != month_end {
         return Err(ChargesReportError::MultipleMonths {
@@ -1051,10 +1051,8 @@ Start_Date,End_Date,Bill_Status,kWh,Cost
 
     /// The extension is not part of the name, and a name carrying one is refused.
     ///
-    /// Every caller passes `file_stem`, so this is the contract rather than an oversight -- but
-    /// nothing pinned it, and the doc comment gave its worked example *with* the `.csv`, which is
-    /// a name this cannot read. `docs/Evolute_portal_alignment.md` copied that example and called
-    /// the function on it.
+    /// Every caller passes `file_stem`, so this is the contract rather than an oversight -- and a
+    /// worked example written *with* the `.csv` names something this cannot read.
     #[test]
     fn a_name_carrying_its_extension_is_refused() {
         let err =
@@ -1113,7 +1111,7 @@ Start_Date,End_Date,Bill_Status,kWh,Cost
     }
 
     /// A range longer than one month parses, and the reader refuses it. The parser reads what the
-    /// name says; the restriction belongs to the caller that cannot yet use a longer one.
+    /// name says; the restriction belongs to the caller that cannot use a longer one.
     #[test]
     fn a_multi_month_file_parses_but_is_refused_by_the_reader() {
         let (from, to) =

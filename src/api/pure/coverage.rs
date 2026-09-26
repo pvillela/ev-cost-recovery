@@ -256,8 +256,7 @@ mod test {
     ///
     /// The reimbursement reconciliation reaches this variant over a calendar month, and a message
     /// calling 1 June to 30 June a billing period names a period that does not exist -- the bill's
-    /// runs the 24th to the 23rd. Asserted on the wording, because the wording is the defect: the
-    /// variant was already right.
+    /// runs the 24th to the 23rd.
     #[test]
     fn a_refusal_names_the_calendar_its_dates_came_from() {
         let april = Path::new("Session_Report_April_1_2026-April_30_2026.csv");

@@ -235,9 +235,9 @@ mod test {
 
     /// Each way a name can fail says which way it failed.
     ///
-    /// The variants are argued for -- "the reasons are not interchangeable" -- and nothing asserted
-    /// them apart: the refusal test below reads only `is_none()`, which every variant satisfies.
-    /// `Inverted` was constructed and matched nowhere, while its Charges Report twin was pinned.
+    /// The variants are argued for -- "the reasons are not interchangeable" -- and this is what
+    /// asserts them apart: the refusal test below reads only `is_none()`, which every variant
+    /// satisfies.
     #[test]
     fn a_refusal_says_which_way_the_name_failed() {
         use SessionReportNameError as E;

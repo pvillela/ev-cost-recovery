@@ -312,9 +312,9 @@ mod test {
         );
     }
 
-    /// The hour the change was made for. During daylight saving, 00:00-01:00 on the closing day
-    /// reads as the 24th on a wall clock but is still the 23rd on the meter's, so it closes the
-    /// period rather than opening the next one.
+    /// The hour the standard-time boundary decides. During daylight saving, 00:00-01:00 on the
+    /// closing day reads as the 24th on a wall clock but is still the 23rd on the meter's, so it
+    /// closes the period rather than opening the next one.
     ///
     /// The boundary is standard-time midnight, not prevailing-local. Read it as local and this
     /// hour falls the other way, which is the whole of the discrepancy against the invoices.

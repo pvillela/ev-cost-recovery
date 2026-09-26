@@ -52,7 +52,7 @@ fn check(path: &Path) {
     // The reader refuses a file whose rows leave the month its name states, so reaching here
     // is already proof of it. Restated as an assertion because it is the property this whole
     // walk over the real files exists to confirm: that Evolute's own reports satisfy the rule
-    // the reader now enforces, and no genuine file is being turned away.
+    // the reader enforces, and no genuine file is being turned away.
     assert_eq!(
         report.month,
         report.from.first_of_month(),

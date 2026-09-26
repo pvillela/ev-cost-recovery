@@ -996,7 +996,7 @@ mod test {
             "{rendered}"
         );
 
-        // The widest line is a file name, not a row: the tables are no wider than before.
+        // The widest line is a file name, not a row: the headings widen no table.
         for line in rendered.lines() {
             assert!(
                 line.chars().count() <= 90,
@@ -1007,7 +1007,7 @@ mod test {
     }
 
     /// One source gets no heading. There is nothing to tell apart, and the section's `Source:` line
-    /// already names the file -- which is why the fixtures, all single-source, are unchanged.
+    /// already names the file -- which is why the fixtures, all single-source, carry no heading.
     #[test]
     fn a_single_source_is_tabled_without_a_heading() {
         let items = [("/data/June.csv", "9", "EXCESS")];

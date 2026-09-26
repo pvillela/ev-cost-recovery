@@ -152,13 +152,12 @@ pub(crate) fn two_report_sessions() -> Vec<RSession> {
     ]
 }
 
-/// A list of sessions as `io` now hands one over: a [`Sessions`], naming the files the sessions
+/// A list of sessions as `io` hands one over: a [`Sessions`], naming the files the sessions
 /// themselves came from.
 ///
 /// The `api::pure` entry points take a report rather than a list, and a test that builds a list to
 /// make one point about it should not have to say so twice. Sources are derived here rather than
-/// passed, which is what the pure side could do before the read began carrying them; a test whose
-/// point is a file that contributed nothing builds its own report instead.
+/// passed; a test whose point is a file that contributed nothing builds its own report instead.
 pub(crate) fn as_report(sessions: Vec<RSession>) -> Sessions {
     let mut sources: Vec<PathBuf> = Vec::new();
     for s in &sessions {

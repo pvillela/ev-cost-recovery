@@ -8,11 +8,11 @@
 //!                                                              (uom, powerOfTenMultiplier)
 //! ```
 //!
-//! The Python this replaces took a shortcut: it read the last path segment of each ReadingType's
-//! self-href as a key, and separately dug the same token out of each IntervalBlock's self-href.
-//! That works only because Toronto Hydro happens to give a MeterReading and its ReadingType the
-//! same identifier. Nothing in ESPI requires that, so this follows the links instead — a feed from
-//! another utility either resolves or says which link is missing.
+//! Reading the last path segment of each ReadingType's self-href as a key, and digging the same
+//! token out of each IntervalBlock's self-href, would work only because Toronto Hydro happens to
+//! give a MeterReading and its ReadingType the same identifier. Nothing in ESPI requires that, so
+//! this follows the links — a feed from another utility either resolves or says which link is
+//! missing.
 //!
 //! Series are told apart by `uom`, the unit of measure. `kind` is not usable: kWh and kVA both
 //! carry `kind=12` in this feed.
@@ -270,8 +270,8 @@ impl Feed {
     /// Assembles the three series into hourly rows.
     ///
     /// Rows come from the **union** of the three series' timestamps, not from the kWh series
-    /// alone. The Python iterated kWh and filled a missing companion with zero, which cannot raise
-    /// a maximum but does write a false `0.000` into the "kVA at interval" columns — and made a
+    /// alone. Iterating kWh and filling a missing companion with zero cannot raise a maximum but
+    /// would write a false `0.000` into the "kVA at interval" columns — and would make a
     /// timestamp carrying kW but no kWh invisible entirely.
     ///
     /// Hours that no series carried, but that fall inside the span the feed covers, become
@@ -528,9 +528,9 @@ mod test {
     /// A second meter, or a second ReadingType for a unit already seen, is rejected rather than
     /// folded into the first one's series.
     ///
-    /// Folding is what the code did before: `power_of_ten` came from whichever block was visited
-    /// first, so a second ReadingType declaring a different multiplier put one meter's readings
-    /// out by a power of ten with no error and no anomaly.
+    /// Folding would take `power_of_ten` from whichever block was visited first, so a second
+    /// ReadingType declaring a different multiplier would put one meter's readings out by a power
+    /// of ten with no error and no anomaly.
     #[test]
     fn a_second_reading_type_for_one_unit_is_rejected() {
         let extra = r#"
@@ -580,10 +580,10 @@ mod test {
     /// A hole too large to be an outage is left unfilled and flagged, rather than turned into
     /// millions of placeholder rows.
     ///
-    /// The reproducer is the real failure: one reading is moved far into the future, as a corrupt
-    /// `<espi:start>` would put it. Filling to it would need roughly 70 million rows — the tool
-    /// would be killed for memory or appear to hang, and neither outcome names the bad reading.
-    /// Here it costs nothing and the reading after the hole says what happened.
+    /// One reading is moved far into the future, as a corrupt `<espi:start>` would put it. Filling
+    /// to it would need roughly 70 million rows — the tool would be killed for memory or appear to
+    /// hang, and neither outcome names the bad reading. Here it costs nothing and the reading after
+    /// the hole says what happened.
     #[test]
     fn an_implausible_hole_is_flagged_rather_than_filled() {
         let mut feed = parse_espi_xml(&feed_xml("3600", "3600")).unwrap();
@@ -644,10 +644,10 @@ mod test {
 
     /// A feed with an intact link chain and no readings in it is an error, not an empty workbook.
     ///
-    /// This is the one failure here that was silent. Every check passed, `readings` returned no
-    /// rows, `period_values` returned no periods, and the tool wrote a workbook with headings and
-    /// nothing under them and exited 0. A download made for the wrong date range looks exactly
-    /// like this.
+    /// Without this check it would be the one silent failure here. Every check would pass,
+    /// `readings` would return no rows, `period_values` no periods, and the tool would write a
+    /// workbook with headings and nothing under them and exit 0. A download made for the wrong date
+    /// range looks exactly like this.
     #[test]
     fn a_feed_with_no_readings_at_all_is_rejected() {
         // The fixture with every `IntervalReading` element removed, leaving the blocks and the

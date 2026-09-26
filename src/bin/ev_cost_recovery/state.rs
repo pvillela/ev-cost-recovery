@@ -2041,7 +2041,7 @@ Top\n===\nabove the nested part\n\nNested\n------\nnested body\n\nNext Top\n====
         assert_eq!(sections[0].subsections[0].body, "nested body");
 
         // The nested section ends where the next top-level title begins, rather than swallowing
-        // it. Swallowing it is exactly what buried three sections before this was fixed.
+        // it. Swallowing it would bury every section after it.
         assert_eq!(sections[1].title, "Next Top");
         assert_eq!(sections[1].body, "second body");
         assert!(sections[1].subsections.is_empty());

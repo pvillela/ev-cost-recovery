@@ -678,8 +678,8 @@ mod test {
     /// The text-positioning operators each place a run where the PDF says.
     ///
     /// `Td` moves relative to the line, `TD` sets the leading as it moves, `T*` repeats that move,
-    /// `Tm` replaces the matrix outright and `'` is `T*` then `Tj`. Only the ignored real-bill test
-    /// reached any of these before, and it reads a whole page rather than one operator.
+    /// `Tm` replaces the matrix outright and `'` is `T*` then `Tj`. Otherwise only the ignored
+    /// real-bill test reaches any of these, and it reads a whole page rather than one operator.
     #[test]
     fn the_text_operators_place_each_run_where_the_content_stream_says() {
         let font = [(0x41u8, 'A'), (0x42, 'B'), (0x43, 'C'), (0x44, 'D')];
@@ -782,7 +782,7 @@ mod test {
 
     /// A font the page never shows anything in does not refuse the page.
     ///
-    /// Resolving every declared font's CMap up front refused a whole bill over a font that
+    /// Resolving every declared font's CMap up front would refuse a whole bill over a font that
     /// contributes no text to it. `UndeclaredFont` still fires for a font the content stream
     /// actually selects.
     #[test]

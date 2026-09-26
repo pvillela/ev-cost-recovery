@@ -27,11 +27,11 @@
 //! a single second moves a real record between the two groups, so a second is the right resolution
 //! to test at, and it is the whole width of the allowance.
 //!
-//! `INVERT1` is the inversion case: a record whose end precedes its start. It is not a separate
-//! check any more — an inverted span misses by a minute, far outside the tolerance — but it is
-//! still worth a row, because `Session::intersects` panics on an inverted span and names exclusion
-//! by this test as the reason it cannot reach one. It also carries `ZeroActiveChargeTime`, since
-//! the reporting forces the duration to zero.
+//! `INVERT1` is the inversion case: a record whose end precedes its start. An inverted span misses
+//! by a minute, far outside the tolerance, but it is worth a row of its own, because
+//! `Session::intersects` panics on an inverted span and names exclusion by this test as the reason
+//! it cannot reach one. It also carries `ZeroActiveChargeTime`, since the reporting forces the
+//! duration to zero.
 
 use super::{AnomalyKind, Sessions, csv::csv_sessions, estimates_from_sessions};
 use crate::{golden, time::Interval};
@@ -117,7 +117,7 @@ fn the_flag_and_the_exclusion_agree() {
         .expect("the inverted record is excluded");
     assert!(
         invert.conn_end < invert.conn_start,
-        "the fixture no longer inverts: {} to {}",
+        "the fixture does not invert: {} to {}",
         invert.conn_start,
         invert.conn_end
     );

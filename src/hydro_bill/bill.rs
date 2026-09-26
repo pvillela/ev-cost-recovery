@@ -100,8 +100,8 @@ impl HydroBill {
     ///
     /// Every EV cost is a proportion: a bill line over the demand or consumption it was levied on,
     /// or a charge over the total it forms part of. Each such division needs its divisor checked,
-    /// and checking them one at a time in each cost function is how one gets missed -- three of
-    /// them were, until the `Adj. kVA` of a bill with no demand made a rate of `inf` and carried it
+    /// and checking them one at a time in each cost function is how one gets missed -- and a
+    /// missed one turns the `Adj. kVA` of a bill with no demand into a rate of `inf` and carries it
     /// silently into a total.
     ///
     /// # Errors

@@ -13,7 +13,8 @@
 //! That is a separate question from what a demand charge is levied on, which is the highest
 //! 15-minute average within the interval -- one
 //! [`Segment`](crate::session::Segment), the length of which does not move with the feed. A
-//! `green_button::METER_INTERVAL` holds four of them today; a quarter-hourly feed would make it exactly one.
+//! `green_button::METER_INTERVAL` holds four of them; a quarter-hourly feed would make it exactly
+//! one.
 //!
 //! One module rather than two, because the cost is the estimate priced. Both read the same meter
 //! figures over the same intervals, both build one [`Sessions`] from the same records by the
@@ -279,8 +280,8 @@ impl Error for PeakPowerError {
 /// Each is one whole metering interval, because that is the resolution the feed states demand at.
 /// The estimate within it is still a 15-minute figure: an
 /// [`IntervalEstimates`](crate::session::IntervalEstimates) reports the highest of the interval's
-/// segments, which is the basis the demand charge is billed on. A `green_button::METER_INTERVAL` holds four of
-/// them today. See docs/session/README.md, "Interval of interest boundaries".
+/// segments, which is the basis the demand charge is billed on. A `green_button::METER_INTERVAL`
+/// holds four of them. See docs/session/README.md, "Interval of interest boundaries".
 ///
 /// The maxima used are the period's unrestricted ones — what an invoice bills as `Demand kW` and
 /// `Demand kVA` — not the 07:00-19:00 figures it reports as `Peak kW 7-7`.
@@ -747,7 +748,7 @@ mod test {
     use std::{path::PathBuf, rc::Rc};
 
     /// A bill figure of zero is refused rather than divided by. Every one of the four is checked,
-    /// because they are four separate divisions and three of them went unguarded until this test.
+    /// because they are four separate divisions and each needs its own guard.
     #[test]
     fn a_bill_figure_of_zero_is_refused() {
         let peaks =

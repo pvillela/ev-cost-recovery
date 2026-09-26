@@ -8,9 +8,10 @@
 //!   on/mid-peak and can shift a monthly peak.
 //! * The ESA's substitute-day entitlement is negotiated per employee within a three- or
 //!   twelve-month window. It is not a calendar rule and cannot be computed.
-//! * The `holidays` Python package this replaces never shifts Canada Day, even when July 1 falls
-//!   on a Sunday, and couples its `PUBLIC`/`OPTIONAL` categories such that dropping the Civic
-//!   Holiday also drops correct Boxing Day substitutes.
+//! * General-purpose holiday libraries do not follow these rules. The `holidays` Python package,
+//!   for one, never shifts Canada Day, even when July 1 falls on a Sunday, and couples its
+//!   `PUBLIC`/`OPTIONAL` categories such that dropping the Civic Holiday also drops correct Boxing
+//!   Day substitutes.
 //!
 //! The OEB's substitution rule, quoted verbatim from
 //! <https://www.oeb.ca/consumer-information-and-protection/electricity-rates/holiday-schedule-time-use-and-ultra-low>:
@@ -259,8 +260,8 @@ mod test {
         assert!(got.contains(&date(2027, 12, 28))); // Tue, Boxing Day observed
     }
 
-    /// Canada Day on a Saturday. The OEB rule substitutes the next weekday; the Python library this
-    /// replaces never shifted Canada Day at all, in either direction.
+    /// Canada Day on a Saturday. The OEB rule substitutes the next weekday, which a general-purpose
+    /// holiday library need not do: the `holidays` Python package never shifts Canada Day at all.
     #[test]
     fn canada_day_on_a_weekend_gets_a_substitute() {
         assert!(dates(2028).contains(&date(2028, 7, 3)));

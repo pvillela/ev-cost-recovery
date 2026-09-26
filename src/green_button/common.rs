@@ -1,7 +1,7 @@
 //! Domain types shared across the `green_button` module.
 //!
 //! The Excel serial-date arithmetic is in the crate-private `time::excel`, which both
-//! sheet writers now share.
+//! sheet writers share.
 //!
 //! The readings carry raw source integers rather than kilowatt figures. Green Button reports each
 //! value as an integer with a `powerOfTenMultiplier`, and every sum and maximum here runs on those
@@ -19,10 +19,8 @@ use std::{collections::BTreeMap, fmt, time::Duration};
 /// than `%`, so a pre-epoch instant answers the same way: `%` gives a negative remainder there,
 /// which would make a whole hour before 1970 read as off the grid.
 ///
-/// Here rather than in `time` because [`METER_INTERVAL`] is the only grid the crate has left, and
-/// a grid step belongs to the module with a reason for its value. The session reader had one too
-/// -- the resolution its timestamps were reported at -- until the portal confirmed they are stated
-/// to the second.
+/// Here rather than in `time` because [`METER_INTERVAL`] is the only grid the crate has, and a
+/// grid step belongs to the module with a reason for its value.
 ///
 /// # Panics
 ///
@@ -48,10 +46,9 @@ pub const METER_INTERVAL: Duration = Duration::from_secs(3600);
 /// One hour of metered data, keyed on the instant the hour starts.
 ///
 /// The three values are independent `Option`s rather than a single "reading is present" flag
-/// because the feed can and does carry a timestamp in one series and not another. The Python this
-/// replaces substituted zero for a missing companion, which cannot raise a maximum but does write
-/// a false `0.000` into the "kVA at interval" columns — a silent wrong number in a cell used to
-/// check a bill.
+/// because the feed can and does carry a timestamp in one series and not another. Substituting
+/// zero for a missing companion cannot raise a maximum but would write a false `0.000` into the
+/// "kVA at interval" columns — a silent wrong number in a cell used to check a bill.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Reading {
     pub start: Timestamp,
@@ -81,10 +78,11 @@ impl Reading {
 /// A row or period that needs review. Never fatal: the workbook is still written and the figures
 /// are still produced.
 ///
-/// The `as_str` tokens are a wire format, and should preferably stay stable. Preferably rather than
-/// must: nothing outside [`Self::from_token`]'s own round-trip test reads a token back, on this side
-/// or the session side. A rename leaves workbooks already written spelling the kind one way and the
-/// code spelling it another. Add variants freely; weigh a rename rather than ruling it out.
+/// The `as_str` tokens are written to the workbook's `anomalies` column, and each is the heading of
+/// its entry in `docs/ERRORS.md`. Keep them stable: a renamed token leaves earlier workbooks
+/// carrying a name the document no longer explains. Nothing but [`Self::from_token`]'s round-trip
+/// test reads a token back, so a rename breaks no code; `tests/docs_errors.rs` fails until the
+/// document follows. Add variants freely.
 ///
 /// There is deliberately no DST variant. The feed timestamps every reading as an absolute UTC
 /// epoch on a fixed grid, so neither the spring-forward gap nor the fall-back fold can produce an

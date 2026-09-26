@@ -2,8 +2,7 @@
 //!
 //! [`read_gb_for_billing_period`](super::read_gb_for_billing_period) is a convenience over
 //! [`read_gb_feed`] → `Feed::readings` → [`period_values`], picking one period out of the result.
-//! This asserts it really is that, rather than a second implementation that happens to agree
-//! today.
+//! This asserts it really is that, rather than a second implementation that happens to agree.
 //!
 //! A unit test rather than an integration test, for the reason [`super::invoice_tests`] gives:
 //! `period_values` is `pub(crate)`, so the long-hand half of the comparison is not reachable from

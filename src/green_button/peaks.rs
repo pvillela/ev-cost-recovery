@@ -207,7 +207,7 @@ impl MeterNotes {
 /// form and is not part of the API, and nothing outside this crate asks for every period as
 /// values: [`read_gb_for_billing_period`](super::read_gb_for_billing_period) gives a caller the
 /// one period an invoice concerns, and [`write_gb_workbook`](super::write_gb_workbook) puts all of
-/// them in a sheet. Exporting it so that a test could reach it would have been the wrong way
+/// them in a sheet. Exporting it so that a test could reach it would be the wrong way
 /// round; the tests that need it are `super::invoice_tests` and `super::pipeline_tests`.
 pub(crate) fn period_values(readings: &Readings, bill_end_day: i8) -> Vec<PeriodValues> {
     let mut grouped: BTreeMap<BillingPeriod, Vec<&Reading>> = BTreeMap::new();
@@ -387,7 +387,7 @@ mod test {
 
     /// A statutory holiday is off-peak all day, so its hours are outside the demand window.
     ///
-    /// The holiday half of the 7-7 rule had no check of its own: the weekend case above is a
+    /// The holiday half of the 7-7 rule needs a check of its own: the weekend case above is a
     /// different branch of `is_off_peak`, and the one invoice-backed period (23 May to 23 June
     /// 2026) contains no holiday. A wrong holiday calendar moves a demand figure the bill is built
     /// from, and it is otherwise invisible -- it just produces a slightly different number.

@@ -32,9 +32,9 @@ pub fn ui(ui: &mut egui::Ui, state: &mut ConvertState, working: &mut WorkingDir)
     ui.separator();
     ui.add_space(14.0);
 
-    // One at a time. Drawn one above the other, a long result for the first pushed the second's
-    // button off the screen, so reaching it meant scrolling past a report that had nothing to do
-    // with it.
+    // One at a time. Drawn one above the other, a long result for the first would push the
+    // second's button off the screen, so reaching it would mean scrolling past a report that has
+    // nothing to do with it.
     match state.which {
         Which::Sessions => {
             picker::<SessionConversion>(

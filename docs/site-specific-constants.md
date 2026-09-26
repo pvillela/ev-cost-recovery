@@ -52,7 +52,7 @@ Do not edit the derived values to a literal — `ev_pilot_current_a()`, `ev_appa
 - `src/time/tou.rs` — `SUMMER_WEEKDAY` and `WINTER_WEEKDAY`, the 07:00 / 11:00 / 17:00 / 19:00
   boundaries, and the May–October summer window. Ontario Energy Board policy, quoted in the module
   header. A utility whose demand window is not the complement of weekday off-peak also splits
-  `is_off_peak`, which currently serves both questions.
+  `is_off_peak`, which serves both questions.
 - `src/time/holidays.rs` — the OEB Time-of-Use holiday calendar, deliberately not the Employment
   Standards Act list. The August Civic Holiday is on it; leaving it out reclassifies a summer
   weekday's 07:00–19:00 block.

@@ -1,7 +1,7 @@
 // A type reachable through a public field, return or variant payload but with no public path is one
 // a caller can read and cannot name. Nothing else reports it: the crate compiles clean and `cargo
 // doc` raises only a warning. At the crate root these reach every module -- on a `mod.rs` they
-// would cover only the types defined beneath it, which is how five of them were missed.
+// would cover only the types defined beneath it.
 #![deny(private_interfaces, private_bounds, unnameable_types)]
 
 pub mod api;
@@ -15,10 +15,9 @@ pub mod csv;
 pub mod error;
 pub mod green_button;
 pub mod hydro_bill;
-// Not `session::log`, though the session readers were its only users when it was written. A run
-// log is a fact about reading *a* file, not about reading a session report, and `green_button`
-// now writes them too -- reaching into `crate::session` for the type would have `green_button`
-// depend on a module it shares nothing else with.
+// Not `session::log`. A run log is a fact about reading *a* file, not about reading a session
+// report, and `green_button` writes them too -- reaching into `crate::session` for the type would
+// have `green_button` depend on a module it shares nothing else with.
 pub mod log;
 pub mod rates;
 pub mod session;
