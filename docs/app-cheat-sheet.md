@@ -156,6 +156,62 @@ cp data/evolute/Session_Report_June_1_2026-June_30_2026-seconds.csv data/evolute
 
 Picking `data/evolute/sessions.csv` is refused at the picker, on its name alone, and **Work out the surplus** stays disabled until you replace it. Delete the copy afterwards.
 
+### A rate change within the billing period
+
+Pick the same five files as in the normal usage example, but choose
+`data/rates/EV_Cost_Recovery_Rates-change-in-period.xlsx` in the **Rates workbook** picker. Its
+`rates` sheet has three rows:
+
+| effective_date | on_peak | mid_peak | off_peak |
+|:---|---:|---:|---:|
+| `2026-04-01` | `0.1000` | `0.0800` | `0.0600` |
+| `2026-06-01` | `0.1200` | `0.1000` | `0.0800` |
+| `2026-09-01` | `0.5152` | `0.4740` | `0.4218` |
+
+The June period runs 24 May to 23 June, so it starts at the April rates and changes to the June
+rates on 1 June. The September row is not used.
+
+Press **Work out the surplus**. Expect:
+
+```
+Billing period ending 2026-06-23
+
+Cost recovery        124.46
+EV energy cost      -179.63
+EV delivery cost     -92.02
+Surplus             -147.19          (red)
+```
+
+The two costs are those of the normal usage example: only the recovery depends on the rates. The
+*EV Cost Recovery* section states the total first, then one table for each set of rates, each
+headed by its effective date and the dates of the period it priced:
+
+```
+| At rates effective 2026-04-01 |  17.10 |
+| At rates effective 2026-06-01 | 107.36 |
+| Cost recovery                 | 124.46 |
+
+EV rates effective 2026-04-01  (2026-05-24 - 2026-05-31)
+
+| TOU      |     kWh | EV rate | Recovery |
+| On-peak  |  70.516 | 0.10000 |     7.05 |
+| Mid-peak |  29.385 | 0.08000 |     2.35 |
+| Off-peak | 128.298 | 0.06000 |     7.70 |
+| Total    | 228.199 |         |    17.10 |
+
+EV rates effective 2026-06-01  (2026-06-01 - 2026-06-23)
+
+| TOU      |      kWh | EV rate | Recovery |
+| On-peak  |  309.411 | 0.12000 |    37.13 |
+| Mid-peak |  214.024 | 0.10000 |    21.40 |
+| Off-peak |  610.371 | 0.08000 |    48.83 |
+| Total    | 1133.806 |         |   107.36 |
+```
+
+The two tables' kWh add up to the `1362.005` kWh total of the *EV Energy Cost* section: each
+session's energy is cut at local midnight on 1 June, so nothing is counted twice and nothing is lost
+between them.
+
 ### Other, less common scenarios
 
 #### One file instead of two
