@@ -73,13 +73,13 @@ the app names.
 
 Five files:
 
-| Input                      | What it is                                                   |
-| :------------------------- | :----------------------------------------------------------- |
-| Toronto Hydro bill         | The PDF invoice for the billing period.                      |
-| Green Button export        | Toronto Hydro's ESPI XML feed of meter readings for a date range. The data must cover at least the full billing period. |
-| Session report 1           | An Evolute Session Report CSV. The reports given must cover the whole billing period between them, without a gap. |
-| Session report 2           | A second Session Report CSV, if one report does not cover the whole period. Optional. |
-| Rates workbook             | The Excel workbook of TOU EV cost-recovery rates, described in [docs/rates/README.md](docs/rates/README.md). The period is priced at the rates in effect on its first day, with at most one change within it. |
+| Input               | What it is                                                   |
+| :------------------ | :----------------------------------------------------------- |
+| Toronto Hydro bill  | The PDF invoice for the billing period.                      |
+| Green Button export | Toronto Hydro's ESPI XML feed of meter readings for a date range. The data must cover at least the full billing period. |
+| Session report 1    | An Evolute Session Report CSV. The reports given must cover the whole billing period between them, without a gap. |
+| Session report 2    | A second Session Report CSV, if one report does not cover the whole period. Optional. |
+| Rates workbook      | The Excel workbook of TOU EV cost-recovery rates, described in [docs/rates/README.md](docs/rates/README.md). The cost recovery is priced at the rates in effect during the period, with at most one change of rates within the period. |
 
 #### Outputs
 
