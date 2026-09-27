@@ -262,7 +262,7 @@ not need it.
 
 The command-line tools are listed below. Each prints its usage when run with no arguments.
 
--  `ev_csv_to_xlsx` -- session report to workbook.
+-  `session_csv_to_xlsx_cli` -- session report to workbook.
 - `gb_peak_values` -- Green Button feed to workbook.
 - `hydro_bill_dump` -- a bill PDF's figures.
 

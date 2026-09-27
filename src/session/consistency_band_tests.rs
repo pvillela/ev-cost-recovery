@@ -50,7 +50,7 @@ const UNSOUND: [&str; 3] = ["EARLYOUT", "INVERT1", "LATEOUT"];
 const SOUND: [&str; 3] = ["EARLYIN", "EXACT", "LATEIN"];
 
 fn fixture() -> PathBuf {
-    golden::fixture("sessions/Session_Report_Band.csv")
+    golden::fixture("session/Session_Report_Band.csv")
 }
 
 /// The fixture read straight from `tests/fixtures/`. Nothing is written: `csv_sessions` hands its
@@ -131,7 +131,7 @@ fn the_flag_and_the_exclusion_agree() {
 /// a second early. Exact equality would exclude a fifth of the file.
 #[test]
 fn the_real_portal_export_is_sound_throughout() {
-    let path = golden::fixture("sessions/Session_Report_August_1_2026-September_4_2026.csv");
+    let path = golden::fixture("session/Session_Report_August_1_2026-September_4_2026.csv");
     let report = csv_sessions(&path).expect("the portal export reads");
 
     assert!(

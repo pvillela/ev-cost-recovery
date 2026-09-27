@@ -15,7 +15,7 @@
 //! The documented copy is refreshed by hand, from the golden:
 //!
 //! ```sh
-//! cp tests/fixtures/sessions/site_load.report.txt docs/session/site-load-report-marcus.txt
+//! cp tests/fixtures/session/site_load.report.txt docs/session/site-load-report-marcus.txt
 //! ```
 //!
 //! No test writes to `docs/`. A document is something a person publishes, and a test run that
@@ -91,7 +91,7 @@ fn the_documented_site_load_table_matches_the_golden() {
         normalize_eol(&actual),
         normalize_eol(&expected),
         "{DOCUMENTED} differs from the golden it is a copy of. It is what a user is shown, so \
-         refresh it with `cp tests/fixtures/sessions/site_load.report.txt {DOCUMENTED}` rather \
+         refresh it with `cp tests/fixtures/session/site_load.report.txt {DOCUMENTED}` rather \
          than editing it."
     );
 }

@@ -80,7 +80,7 @@ fn hm(ts: Timestamp) -> String {
 /// cross the threads the test harness runs these on. Nothing is written, so there is no scratch
 /// directory to tear down.
 fn estimates() -> IntervalEstimates {
-    let path = golden::fixture("sessions/Session_Report_Diagram.csv");
+    let path = golden::fixture("session/Session_Report_Diagram.csv");
     let sessions = csv_sessions(&path).expect("the diagram fixture reads");
     let interval = Interval::from_start_end(LO.parse().unwrap(), HI.parse().unwrap());
     estimates_from_sessions(interval, sessions.sources.clone(), &sessions)

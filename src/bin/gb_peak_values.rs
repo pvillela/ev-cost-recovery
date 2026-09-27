@@ -73,7 +73,8 @@ fn run(input: &Path) -> Result<(), Box<dyn Error>> {
     // Through the API rather than `read_gb_feed` and `write_gb_workbook` directly. The API is
     // where the refusal to overwrite an existing workbook lives, and where the input's own
     // extension is checked so that a conversion cannot read and write one file. Doing either here
-    // would be a second copy of a rule the desktop app and `ev_csv_to_xlsx` already share.
+    // would be a second copy of a rule the desktop app and `session_csv_to_xlsx_cli` already
+    // share.
     let report = gb_xml_to_xlsx(input, OnExistingWorkbook::Refuse)?;
 
     report_holidays(&report);

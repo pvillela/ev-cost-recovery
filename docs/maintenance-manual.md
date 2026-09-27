@@ -68,9 +68,9 @@ Green Button form above names that binary and then filters by module path.
 
 Four files are pinned byte for byte:
 
-- `tests/fixtures/sessions/Session_Report_Diagram.report.md`
-- `tests/fixtures/sessions/Session_Report_Anomalies.report.md`
-- `tests/fixtures/sessions/site_load.report.txt` — the site-load table; `.txt` because it is
+- `tests/fixtures/session/Session_Report_Diagram.report.md`
+- `tests/fixtures/session/Session_Report_Anomalies.report.md`
+- `tests/fixtures/session/site_load.report.txt` — the site-load table; `.txt` because it is
   fixed-width plain text with no markdown in it, and naming it otherwise would invite someone to
   render it
 - `tests/fixtures/api/EV_Cost_Recovery_Surplus.report.md` — the whole surplus report, pinned from
@@ -83,7 +83,7 @@ chose in a file a reader is trusted to have read. So after regenerating the gold
 by hand:
 
 ```sh
-cp tests/fixtures/sessions/site_load.report.txt docs/session/site-load-report-marcus.txt
+cp tests/fixtures/session/site_load.report.txt docs/session/site-load-report-marcus.txt
 ```
 
 `the_documented_site_load_table_matches_the_golden`, in the same test file, holds the two together

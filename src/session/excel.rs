@@ -505,12 +505,12 @@ mod test {
         for stem in ["Session_Report_Diagram", "Session_Report_Anomalies"] {
             let dir = temp_dir(stem);
             let input = dir.join(format!("{stem}.csv"));
-            fs::copy(golden::fixture(&format!("sessions/{stem}.csv")), &input).unwrap();
+            fs::copy(golden::fixture(&format!("session/{stem}.csv")), &input).unwrap();
 
             let report =
                 session_csv_to_xlsx(&input).unwrap_or_else(|e| panic!("{stem} converts: {e}"));
             golden::check(
-                &format!("sessions/{stem}.workbook.txt"),
+                &format!("session/{stem}.workbook.txt"),
                 &dump_workbook(&report.output_path),
             );
         }

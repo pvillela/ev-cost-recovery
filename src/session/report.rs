@@ -1087,6 +1087,6 @@ mod test {
     /// here is the wording and the wrapping, and only a diff shows either.
     #[test]
     fn the_definitions_section_matches_its_golden() {
-        crate::golden::check("sessions/definitions.txt", &definitions());
+        crate::golden::check("session/definitions.txt", &definitions());
     }
 }

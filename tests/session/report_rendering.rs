@@ -1,4 +1,4 @@
-//! What the rendered reports in `tests/fixtures/sessions/` *are*, read as text.
+//! What the rendered reports in `tests/fixtures/session/` *are*, read as text.
 //!
 //! Nothing here renders anything. Every test below opens a committed `.report.md` and inspects it,
 //! which is why they live out here rather than beside the renderer: the constraint they pin is

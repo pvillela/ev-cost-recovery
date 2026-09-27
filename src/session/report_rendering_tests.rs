@@ -1,6 +1,6 @@
 //! Golden-file test for the rendered [`IntervalEstimates`](super::IntervalEstimates).
 //!
-//! Each case pairs an input CSV in `tests/fixtures/sessions/` with the report it must produce,
+//! Each case pairs an input CSV in `tests/fixtures/session/` with the report it must produce,
 //! checked byte for byte. Layout is the thing under test, and layout is only judged by looking at
 //! it — so the expectation is a file you can read rather than a list of assertions about
 //! substrings. A change in wrapping, padding or column order shows up as a diff in the golden
@@ -67,7 +67,7 @@ const CASES: [(&str, &str, &str); 2] = [
 /// The fixture is read where it sits. Nothing is written and no scratch directory is needed, so
 /// the `Source` line the report prints is the fixture's own name rather than a temporary path.
 fn render(stem: &str, lo: &str, hi: &str) -> String {
-    let path = golden::fixture(&format!("sessions/{stem}.csv"));
+    let path = golden::fixture(&format!("session/{stem}.csv"));
     let sessions = csv_sessions(&path).unwrap_or_else(|e| panic!("{stem} reads: {e}"));
 
     let (lo, hi): (Timestamp, Timestamp) = (lo.parse().unwrap(), hi.parse().unwrap());
@@ -82,6 +82,6 @@ fn render(stem: &str, lo: &str, hi: &str) -> String {
 #[test]
 fn rendered_reports_match_their_golden_files() {
     for (stem, lo, hi) in CASES {
-        golden::check(&format!("sessions/{stem}.report.md"), &render(stem, lo, hi));
+        golden::check(&format!("session/{stem}.report.md"), &render(stem, lo, hi));
     }
 }

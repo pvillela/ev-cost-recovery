@@ -24,7 +24,7 @@ use std::{
 /// `Conn_DateTime_End`.
 ///
 /// The portal states all three to the second and the invariant is meant to hold exactly, but it
-/// does not quite. `tests/fixtures/sessions/Session_Report_August_1_2026-September_4_2026.csv` is a
+/// does not quite. `tests/fixtures/session/Session_Report_August_1_2026-September_4_2026.csv` is a
 /// real export: four of its five rows agree exactly and one does not, `2026-08-30 16:57:00 +
 /// 2:03:50` being reported as ending at `19:00:49`, a second early. `Active_Charge_Time` shows the
 /// same jitter, sitting a second under `Conn_Duration` on three of the five. Something in the
