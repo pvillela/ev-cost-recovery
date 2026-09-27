@@ -57,9 +57,9 @@ enum Source {
     Duration(&'static str),
     /// The session id, verbatim from `Charge_Session_ID`.
     SessionId,
-    ConnStartLocal,
+    ConnStartReported,
     ConnStartUtc,
-    ConnEndLocal,
+    ConnEndReported,
     ConnEndUtc,
     /// Formula: `conn_end_utc - conn_start_utc`.
     ConnSpan,
@@ -85,8 +85,8 @@ const COLUMNS: &[(&str, Source)] = &[
     ("Station_Model", Source::Text("Station_Model")),
     ("Charge_Session_ID", Source::SessionId),
     ("User_ID", Source::Text("User_ID")),
-    ("Conn_DateTime_Start", Source::ConnStartLocal),
-    ("Conn_DateTime_End", Source::ConnEndLocal),
+    ("Conn_DateTime_Start", Source::ConnStartReported),
+    ("Conn_DateTime_End", Source::ConnEndReported),
     ("Conn_Duration", Source::Duration("Conn_Duration")),
     ("Charge_Duration", Source::Duration("Charge_Duration")),
     ("Active_Charge_Time", Source::Duration("Active_Charge_Time")),
@@ -113,9 +113,9 @@ const COLUMNS: &[(&str, Source)] = &[
 /// The parse is `csv::csv_session_rows`; nothing about the session report is interpreted here. The
 /// domain rules — the UTC conversion, the definition of `conn_span`, and the treatment of
 /// zero-`Energy_Use` sessions — are specified in
-/// `docs/time/README.md` under "Time zone" and in `docs/session/README.md` under "Excel workbook"
-/// and "Anomalies". They are shared with the peak power contribution logic and are not restated
-/// here.
+/// `docs/time/README.md` under "Evolute's session report is stated on standard time" and in
+/// `docs/session/README.md` under "Excel workbook" and "Anomalies". They are shared with the peak
+/// power contribution logic and are not restated here.
 ///
 /// What this function adds on top of those rules:
 ///
@@ -126,8 +126,8 @@ const COLUMNS: &[(&str, Source)] = &[
 ///   justified; duration columns are Excel durations formatted `[h]:mm:ss`, which does not wrap
 ///   past 24 hours, and are centered.
 /// - `conn_span` and `avg_kw` are live formulas. `conn_span` subtracts the two
-///   *UTC* columns rather than the local ones, so nothing about the zone can enter it; `avg_kw` is
-///   `=Energy_Use/(Active_Charge_Time*24)`, in kW, displayed to 3 decimal
+///   *UTC* columns rather than the reported ones, so nothing about the zone can enter it;
+///   `avg_kw` is `=Energy_Use/(Active_Charge_Time*24)`, in kW, displayed to 3 decimal
 ///   places, matching `Energy_Use`. The formula is written on every row, so a session with
 ///   zero `Active_Charge_Time` shows `#DIV/0!` rather than an empty cell:
 ///   it delivered energy in no time at all, and the sheet says so. `Total_Fee` is displayed to
@@ -293,11 +293,11 @@ fn write_sheet(
                         .cell_mut((col, excel_row))
                         .set_value_string(row.session.id.as_str());
                 }
-                Source::ConnStartLocal => {
-                    write_datetime(sheet, col, excel_row, serial_of_civil(row.start_local));
+                Source::ConnStartReported => {
+                    write_datetime(sheet, col, excel_row, serial_of_civil(row.start_reported));
                 }
-                Source::ConnEndLocal => {
-                    write_datetime(sheet, col, excel_row, serial_of_civil(row.end_local));
+                Source::ConnEndReported => {
+                    write_datetime(sheet, col, excel_row, serial_of_civil(row.end_reported));
                 }
                 Source::ConnStartUtc => {
                     write_datetime(
@@ -316,7 +316,7 @@ fn write_sheet(
                     );
                 }
                 Source::ConnSpan => {
-                    // Subtracting the UTC columns, not the local ones, so no zone enters the
+                    // Subtracting the UTC columns, not the reported ones, so no zone enters the
                     // arithmetic. The cell equals `Session::interval`'s width — the span the
                     // estimating logic places the session on, which is the point of showing it.
                     sheet.cell_mut((col, excel_row)).set_formula(format!(
@@ -464,9 +464,9 @@ fn set_widths(sheet: &mut Worksheet) {
     for (i, (header, source)) in COLUMNS.iter().enumerate() {
         let letters = column_letters(i + 1);
         let width = match source {
-            Source::ConnStartLocal
+            Source::ConnStartReported
             | Source::ConnStartUtc
-            | Source::ConnEndLocal
+            | Source::ConnEndReported
             | Source::ConnEndUtc => 24.0,
             Source::Duration(_) | Source::ConnSpan => 13.0,
             // Room for a couple of variant names side by side.
@@ -718,7 +718,7 @@ CKT-7,,Toronto,,Station-7,Evolute Inc.,FLO,G5,S13577,,2026-06-02 08:00:00,2026-0
         // Number formats.
         assert_eq!(
             sheet
-                .style((col(Source::ConnStartLocal), 2))
+                .style((col(Source::ConnStartReported), 2))
                 .number_format()
                 .unwrap()
                 .format_code(),
@@ -752,7 +752,7 @@ CKT-7,,Toronto,,Station-7,Evolute Inc.,FLO,G5,S13577,,2026-06-02 08:00:00,2026-0
         // Date/time values are left-justified, duration values are centered.
         assert_eq!(
             *sheet
-                .style((col(Source::ConnStartLocal), 2))
+                .style((col(Source::ConnStartReported), 2))
                 .alignment()
                 .unwrap()
                 .horizontal(),

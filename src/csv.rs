@@ -12,7 +12,7 @@
 //! What is *not* here is anything that depends on which document was opened. The value parsers
 //! belong to the format that writes the values — a Charges Report's `01-Jun-26` and a session
 //! report's `5:07:53` have nothing to share. Neither do the failures only one of the two can
-//! have: a Charges Report with no rows, a session report naming a wall time the calendar cannot
+//! have: a Charges Report with no rows, a session report stating a time the calendar cannot
 //! place. Each reader keeps an error type of its own, holding those and deferring to
 //! [`CsvReadError`] for the rest — see `session::csv::SessionCsvError` and
 //! [`ChargesReportError`](crate::charges_report::ChargesReportError).

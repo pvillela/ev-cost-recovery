@@ -1,114 +1,131 @@
 # `time` module
 
-The `time` module: everything about dates, times and zones that more than one part of this software
-needs. Module-specific date arithmetic stays in its own module.
+The `time` module holds the date, time and zone code that more than one part of this software uses.
+Date arithmetic that only one module needs stays in that module.
 
 `src/time/` holds the code — `base.rs` for the zones and intervals, `format.rs` for rendering an
-instant with the zone it is read in, `excel.rs` for serial-date conversion, `tou.rs` and
-`holidays.rs` for Ontario's time-of-use rules.
+instant with its offset, `excel.rs` for Excel serial dates, `tou.rs` and `holidays.rs` for
+Ontario's time-of-use rules.
 
 ## What lives here and what does not
 
 | Concern | Where |
 |---|---|
-| The zones, and converting a wall time to an instant or back | here |
-| Rendering an instant for a person, with the zone it is read in | here |
+| The zones, and converting a local time to an instant or back | here |
+| Rendering an instant as text, with its offset | here |
 | The standard-time clock billing periods are cut on | here |
-| Excel serial dates, writing only | here |
+| Excel serial dates | here |
 | Ontario time-of-use periods and the holiday calendar | here |
 | `METER_INTERVAL`, the interval a Toronto Hydro meter records, and `is_on_grid` | `green_button` |
+| `SESSION_OFFSET`, the offset Evolute's session report is stated in, and `session_instant` | `session::common` |
+| Whether a session's start, end and duration agree | `session::csv` |
 
-The meter interval and the predicate that tests against it live together, in the module with a
-reason for the value. Session times are stated to the second and are on no grid.
+`METER_INTERVAL` is a fact about Toronto Hydro's meters and `SESSION_OFFSET` is a fact about
+Evolute's exports, so each lives in the module that reads that source. `time` knows nothing about
+either source. It provides the general parts they use: `TZ_OFFSETS`, which `SESSION_OFFSET` is
+taken from, and the functions in the table above.
 
-## Two clocks, and which is which
+## UTC and two local clocks
 
-Almost everything here means **prevailing local time** — the clock a customer reads, which moves
-twice a year. `local_date`, `local_hour` and `local_midnight` are that clock, and Time-of-Use
-periods, the 07:00–19:00 demand window and the holiday calendar all run on it.
+A time in this software's inputs and outputs is stated in one of three ways:
 
-One thing does not. A Toronto Hydro **billing period** is cut on **standard time**, at 00:00 EST all
-year round, and does not move when the clocks do. `standard_date` and `standard_midnight` are that
-clock, `BILLING_OFFSET` is the offset, and `hydro_bill::BillingPeriod` is the only caller.
+- **UTC** — no offset and no daylight saving.
+- **Standard time** — EST, a fixed UTC−5 all year.
+- **Prevailing local time** — ET, `America/Toronto`, the clock a customer reads: EST (UTC−5) in
+  winter and EDT (UTC−4) in summer.
 
-The two coincide from November to March and differ by an hour from March to November, which is what
-makes the distinction easy to lose and expensive to get wrong: a summer period cut on the wrong
-clock is an hour out at each end, and a period containing a clock change is an hour out overall.
-Cutting on prevailing local time reproduces 6 of 19 invoices; cutting on standard time reproduces
-all 19 to the milli-kWh. The derivation is in
+Inside the software every instant is a UTC timestamp. A local clock is used only to convert between an
+instant and a time on that clock.
+
+| What | Stated in |
+|---|---|
+| Green Button timestamps (Unix epoch seconds) | UTC |
+| The workbooks' UTC columns | UTC |
+| `Conn_DateTime_Start` and `Conn_DateTime_End` in Evolute's session report | standard time |
+| A Toronto Hydro billing period's boundaries, and the two dates its bill states | standard time |
+| Time-of-Use periods, the 07:00–19:00 demand window, the holiday calendar | prevailing local time |
+| Calendar months, and the date a rate change takes effect | prevailing local time |
+| Times shown in a report | prevailing local time |
+| The Green Button workbook's local-time columns | prevailing local time |
+
+Standard time and prevailing local time agree from November to March and differ by an hour from
+March to November. So a time on the wrong clock is wrong only while daylight saving is in force,
+and only by an hour, which makes the mistake easy to miss.
+
+In `time`, "local" means prevailing local time: `local_date`, `local_hour`, `local_midnight` and
+`local_datetime`. The standard-time functions have "standard" in their names.
+
+## Billing periods are cut on standard time
+
+A Toronto Hydro **billing period** starts and ends at 00:00 EST, all year. `standard_date` and
+`standard_midnight` read that clock and `BILLING_OFFSET` is its offset. Only
+`hydro_bill::billing_period` calls them.
+
+Cut on prevailing local time, a summer period would start and end an hour early, and a period that
+contains a clock change would be an hour too long or too short. Cut that way, the periods reproduce
+6 of 19 invoices; cut on standard time, they reproduce all 19 to the milli-kWh. The on-peak and
+mid-peak energy on the bills is reproduced only with the Time-of-Use periods on prevailing local
+time. The analysis is in
 [`../archive/hydro_bill/dst-energy-anomaly-pre-fix.md`](../archive/hydro_bill/dst-energy-anomaly-pre-fix.md).
 
-Two consequences worth knowing:
+A standard-time day is always 24 hours, so a billing period is always a whole number of days and
+matches the `Number of Days` on its invoice.
 
-- A standard-time day is always 24 hours, so a billing period is always a whole number of days and
-  matches the `Number of Days` its invoice states. A prevailing-local boundary would give periods
-  of 671 and 745 hours.
-- `standard_midnight` cannot fail, where `local_midnight` can in principle: a fixed offset has no
-  gap for a wall time to fall into and no fold for it to be ambiguous in.
-
-The Green Button feed itself keeps the same standard-time day — its `IntervalBlock`s start at 05:00
-UTC year-round. See `../green_button/Toronto_Hydro_Object_Model.md`, "Fixed daily grid".
+The Green Button feed's timestamps are UTC. Its `IntervalBlock`s each hold one day and start at
+05:00 UTC all year, which is 00:00 EST, so the feed's days line up with billing-period days. See
+`../green_button/Toronto_Hydro_Object_Model.md`, "Fixed daily grid".
 
 ### What the bill's two dates mean
 
-A bill states its `Meter Reading Period` as two dates — `MAY 23 2026 TO JUN 23 2026`. **Those dates
-are in EST, and they name the two meter readings that bound the period, not the days it covers.**
-Read as days, `FROM` is exclusive and `TO` is inclusive: the period covers all of June 23rd and none
-of May 23rd.
+A bill states its `Meter Reading Period` as two dates, for example `MAY 23 2026 TO JUN 23 2026`.
+**Those dates are in EST, and they name the two meter readings that bound the period, not the days
+it covers.** Read as days, `FROM` is excluded and `TO` is included: the period covers all of June
+23rd and none of May 23rd.
 
-The label is easy to misread as "the 23rd to the 23rd", which no clock makes true:
-
-| Clock | Season | Days actually covered |
+| Clock | Season | Days covered |
 | :--- | :--- | :--- |
-| EST | either | 24 May 00:00:00 → 23 Jun 23:59:59 — the 24th to the 23rd |
+| EST | all year | 24 May 00:00:00 → 23 Jun 23:59:59 — the 24th to the 23rd |
 | EDT | summer | 24 May 01:00 → 24 Jun 00:59:59 — part of the 24th to part of the 24th |
 
-This is inferred rather than stated. The bill gives only the two dates and a `Number of Days` of
-`31`; counting both dates would give 32 and counting neither 30, so exactly one endpoint is
-included. Which one is settled by the reconciliation of 19 invoices with Green Button data, in
-[`../archive/hydro_bill/dst-energy-anomaly-pre-fix.md`](../archive/hydro_bill/dst-energy-anomaly-pre-fix.md).
+The bill does not say which endpoint is included. It gives the two dates and a `Number of Days` of
+`31`: counting both dates gives 32 and counting neither gives 30, so exactly one is included. The
+19-invoice reconciliation in the analysis linked above shows that it is `TO`.
 
-None of the arithmetic depends on the label. `BillingPeriod` works in instants and never parses it;
-the reading matters only when someone compares an invoice to the code and has to decide whether the
-two agree.
+The code does not read these dates. `BillingPeriod` works in instants. The meaning of the dates
+matters only when someone compares an invoice with the code.
 
-## Time zone
+## Evolute's session report is stated on standard time
 
-Two clocks are in play, and keeping them apart is the whole of this section.
+Evolute's `Conn_DateTime_Start` and `Conn_DateTime_End` are on standard time all year.
+`session::common::SESSION_OFFSET` is that offset, and `session::common::session_instant` converts a
+reported time to a UTC instant. Because the offset is fixed, no hour is repeated or skipped at a
+clock change, and every reported time names exactly one instant.
 
-**The session report is stated on standard time, all year.** Evolute's `Conn_DateTime_Start` and
-`Conn_DateTime_End` do not observe daylight saving. `session::common::SESSION_OFFSET` names that
-offset and `session::common::session_instant` does the conversion, which cannot fail: a fixed offset has no hour that
-occurs twice and none that is skipped, so every reported wall time names exactly one instant. There
-is nothing for the reader to infer, and no anomaly it can raise about placing a record.
+`SESSION_OFFSET` and `BILLING_OFFSET` have the same value for unrelated reasons. They are separate
+constants so that either can change without the other.
 
-**Everything shown to a person is on prevailing local time** — ET, `America/Toronto`, the clock a
-customer reads. Time-of-Use periods, the 07:00-19:00 demand window and the holiday calendar are all
-stated on it, and so is every rendered time.
+## What a person sees
 
-The consequence is that a session displays an hour later than the portal states it, right through
-the summer. A row the portal shows at `16:57` appears in a report as `17:57 EDT`. That is not a
-discrepancy — it is one instant on two clocks — but nothing on the page would say so, which is why
-every rendered time names its offset. `time::format` does that and nothing else does; see its own
-docs.
+**A time shown in a report is on prevailing local time and names its offset**:
+`2026-08-30 17:57 EDT`, or `18:40 EDT` when the date is not shown. `time::format` renders these.
 
-One report can carry both labels. The kW and kVA peaks of a billing period can fall on opposite
-sides of a transition, and then two headings in the same document differ by an hour of offset.
+The offset label matters most for sessions. While daylight saving is in force, the Peak power detail
+report shows a session an hour later than Evolute's session report states it: a session Evolute
+states at `16:57` shows as `17:57 EDT`. Both name the same instant, and the `EDT` label shows that.
 
-### Where the two meet
+One Peak power detail report can show both labels. It has three intervals of interest — the billing
+period's kW, 7-7 kW and kVA peaks — and they can fall on opposite sides of a clock change. Their
+`Interval` lines then show different offsets.
 
-The workbook could show both clocks in one row, so it shows only one. Its `Conn_DateTime_Start` and
-`Conn_DateTime_End` are the CSV's own text, copied verbatim, and it derives no local column of its
-own. Its UTC columns are instants. So nothing in the sheet is on prevailing time, and a workbook
-that carries no zone labels stays honest.
+The one exception is segment names in the Peak power detail report. They are bare local clock times
+such as `16:00`, with no date and no offset. Every segment falls inside its interval of interest,
+and that interval's `Interval` line names the offset.
 
-## Where the labour divides
+### The workbooks
 
-`time` owns the zone arithmetic and knows nothing about sessions. That is why `SESSION_OFFSET` and
-`session_instant` are in `session::common` and not here: the offset is a fact about Evolute's
-exports, and only `session` reads it. What `time` provides is the general machinery those are built
-on -- `TZ_OFFSETS`, the standard-time midnight a billing period is cut at, and `format`, which
-renders an instant for a reader.
+Excel date/time numbers carry no zone. Each date/time column is stated as follows:
 
-`session::csv` owns the policy — whether a record's own three fields agree, and which
-`AnomalyKind` to raise when they do not.
+- **Session workbook.** `Conn_DateTime_Start` and `Conn_DateTime_End` are Evolute's reported times:
+  standard time. `conn_start_utc` and `conn_end_utc` are UTC.
+- **Green Button workbook.** The columns headed `(local time)`, and the interval sheet's `interval`
+  column, are prevailing local time. The columns headed `(UTC)`, and `interval_utc`, are UTC.

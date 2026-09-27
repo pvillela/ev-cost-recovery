@@ -9,7 +9,7 @@ use std::{sync::LazyLock, time::Duration};
 // Date/time
 // ---------------------------------------------------------------------------
 
-/// Time zone the session report's timestamps are stated in. See docs/time/README.md, "Time zone".
+/// The zone prevailing local time is read in. See docs/time/README.md, "UTC and two local clocks".
 ///
 /// Referenced by the doc comments that say "in local time" — a reader who meets one needs
 /// somewhere to learn which zone that is — and resolved once, by `time_zone` below. Not exported

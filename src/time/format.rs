@@ -1,14 +1,17 @@
 //! Rendering an instant for a person to read, with the zone it is read in.
 //!
-//! Every displayed time in this crate is stated on prevailing local time -- the clock a customer
-//! reads -- and names its offset, `EST` or `EDT`. Naming it is not decoration here. A session
-//! report states its times on a fixed standard-time offset (`session::common::SESSION_OFFSET`),
-//! so a session shown at `17:57 EDT` is the one the portal displays as `16:57`. Without the label
-//! the two readings look like a disagreement rather than the same instant on two clocks.
+//! A time displayed by this crate is stated on prevailing local time -- the clock a customer
+//! reads -- and names its offset, `EST` or `EDT`. Segment names in the Peak power detail report are
+//! the one exception; see `docs/time/README.md`, "What a person sees".
 //!
-//! A single report can carry both labels. The kW and kVA peaks of one billing period can fall on
-//! opposite sides of a transition, and then the two headings differ by an hour of offset as well
-//! as by their times.
+//! Naming the offset is not decoration here. A session report states its times on a fixed
+//! standard-time offset (`session::common::SESSION_OFFSET`), so a session shown at `17:57 EDT` is
+//! the one the portal displays as `16:57`. Without the label the two readings look like a
+//! disagreement rather than the same instant on two clocks.
+//!
+//! A single report can carry both labels. The kW, 7-7 kW and kVA peaks of one billing period can
+//! fall on opposite sides of a transition, and then their `Interval` lines differ by an hour of
+//! offset as well as by their times.
 //!
 //! The abbreviation comes from `jiff`'s `%Z`, read off the `Zoned` being printed, so it cannot
 //! disagree with the instant beside it. Deriving it from `TZ_OFFSETS` instead would be a second

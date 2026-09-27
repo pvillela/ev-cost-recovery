@@ -90,7 +90,7 @@ pub(crate) fn duration_is_consistent(
 // ---------------------------------------------------------------------------
 //
 // Evolute states `Conn_DateTime_Start` and `Conn_DateTime_End` on a clock that does not observe
-// daylight saving. A reported wall time therefore names exactly one instant, all year: there is no
+// daylight saving. A reported time therefore names exactly one instant, all year: there is no
 // hour that occurs twice and none that is skipped, so nothing has to be inferred from
 // `Conn_Duration` to place a session on a timeline.
 //
@@ -109,30 +109,24 @@ pub(crate) fn duration_is_consistent(
 /// constants share an index, which the block above says they need not.
 pub const SESSION_OFFSET: (&str, i8) = TZ_OFFSETS[0];
 
-/// The zone a session report's wall times are read in: a fixed offset, with no daylight-saving rule.
+/// The zone a session report's times are read in: a fixed offset, with no daylight-saving rule.
 ///
 /// Built on the spot rather than resolved once, for the reason `time::base::billing_zone` gives.
 const fn session_zone() -> TimeZone {
     TimeZone::fixed(Offset::constant(SESSION_OFFSET.1))
 }
 
-/// The instant a session report's reported wall time names.
-///
-/// Cannot fail, and that is the point of the fixed offset: there is no gap for a wall time to fall
-/// into and no fold for it to be ambiguous in, so every reported time places exactly one session.
+/// The instant a time in Evolute's session report names, read in EST.
 pub(crate) fn session_instant(dt: DateTime) -> Timestamp {
     dt.to_zoned(session_zone())
         .expect("a fixed offset has neither gaps nor folds")
         .timestamp()
 }
 
-/// The wall time a session report would state for an instant: the inverse of [`session_instant`].
-///
-/// Test-only. The workbook writes the CSV's own text for its two local columns and derives none of
-/// its own, so nothing in a release build converts back. A test that checks what the reader did
-/// with a reported time has to speak in reported time, and this is how.
+/// The time Evolute's session report states for an instant, in EST: the inverse of
+/// [`session_instant`].
 #[cfg(test)]
-pub(crate) fn session_wall_time(ts: Timestamp) -> DateTime {
+pub(crate) fn session_reported_time(ts: Timestamp) -> DateTime {
     ts.to_zoned(session_zone()).datetime()
 }
 

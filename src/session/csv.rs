@@ -1,7 +1,7 @@
 //! Reading a session report CSV, as Evolute exports it.
 //!
 //! This is where the session report becomes [`Session`]s: the CSV is parsed, each record's
-//! reported wall time is converted to a UTC instant, and every judgement call is recorded as an
+//! reported time is converted to a UTC instant, and every judgement call is recorded as an
 //! [`AnomalyKind`]. Nothing here knows about workbooks.
 //!
 //! The zone arithmetic itself is [`super::common`]'s — a report states its times at
@@ -18,7 +18,7 @@
 //!   `super::excel::session_csv_to_xlsx` needs to render them.
 //!
 //! Bucketing is lossy — it sorts sessions into three vectors and drops report order, the link back
-//! to the CSV record, and the reported wall times — so the writer cannot be built on
+//! to the CSV record, and the reported times — so the writer cannot be built on
 //! [`csv_sessions`]. Both sit on `csv_session_rows` instead.
 //!
 //! Opening the file, finding the columns by name and refusing one that has no `Energy_Use` are
@@ -64,8 +64,8 @@ const REQUIRED_HEADERS: &[&str] = &[
 ///
 /// Only whole-file failures are here. A per-row *judgement* call is not an error: it is carried on
 /// [`Session::anomalies`] and summarised in the log, because the row still yields a session.
-/// Resolving a wall time is not among them, and cannot fail: Evolute states its times on a fixed
-/// offset that does not observe daylight saving, so a reported wall time names exactly one instant
+/// Resolving a reported time is not among them, and cannot fail: Evolute states its times on a
+/// fixed offset that does not observe daylight saving, so a reported time names exactly one instant
 /// all year — there is no skipped hour to refuse and no repeated one to choose between.
 #[derive(Debug)]
 pub(crate) enum SessionCsvError {
@@ -106,8 +106,8 @@ impl Error for SessionCsvError {
 /// never read back.
 ///
 /// The domain rules — the UTC conversion, and the treatment of zero-`Energy_Use` sessions — are
-/// specified in `docs/time/README.md` under "Time zone" and in `docs/session/README.md` under
-/// "Anomalies".
+/// specified in `docs/time/README.md` under "Evolute's session report is stated on standard time"
+/// and in `docs/session/README.md` under "Anomalies".
 ///
 /// The records are sorted into the three buckets of [`Sessions`] by
 /// `Sessions::from_session_lists`, which carries the rules. Every session in the file reaches one
@@ -151,7 +151,7 @@ fn read_sessions(path: &Path) -> Result<Sessions, SessionCsvError> {
 ///
 /// The unbucketed form of [`csv_sessions`], for a caller that has to render the report rather than
 /// estimate from it. It keeps what bucketing discards: report order, the pass-through CSV fields,
-/// and the reported wall times as the CSV wrote them.
+/// and the reported times as the CSV states them.
 ///
 /// The `table` is held rather than copied out because the pass-through columns are not part of
 /// a [`Session`] and should not become part of one — a `Session` is what the arithmetic needs, not
@@ -252,9 +252,9 @@ fn bad_value(
     CsvReadError::bad_value(Document::SessionReport, path, row, column, s, cause)
 }
 
-/// Local time as `YYYY-MM-DD HH:MM`, or with seconds appended so a finer-grained report still
-/// parses.
-fn parse_local(
+/// A reported time as `YYYY-MM-DD HH:MM`, or with seconds appended so a finer-grained report
+/// still parses.
+fn parse_reported(
     s: &str,
     path: &Path,
     row: usize,
@@ -339,8 +339,8 @@ fn parse_energy(s: &str, path: &Path, row: usize) -> Result<f64, CsvReadError> {
 /// power contribution logic.
 struct CsvSession {
     id: String,
-    start_local: civil::DateTime,
-    end_local: civil::DateTime,
+    start_reported: civil::DateTime,
+    end_reported: civil::DateTime,
     conn_duration: Duration,
     active_charge_time: Duration,
     /// Parsed here so that a non-numeric `Energy_Use` invalidates the row, and read by
@@ -361,9 +361,10 @@ pub(super) struct Row {
     /// Read through [`SessionRows::field`], which is what holds the table.
     record: usize,
     pub session: RSession,
-    /// The two reported wall times, kept as written rather than re-derived from the instants.
-    pub start_local: civil::DateTime,
-    pub end_local: civil::DateTime,
+    /// The two reported times, kept as the CSV states them rather than re-derived from the
+    /// instants.
+    pub start_reported: civil::DateTime,
+    pub end_reported: civil::DateTime,
 }
 
 impl CsvSession {
@@ -383,13 +384,13 @@ impl CsvSession {
         let energy_raw = table.cell(index, "Energy_Use");
         Ok(Self {
             id: table.cell(index, "Charge_Session_ID").to_owned(),
-            start_local: parse_local(
+            start_reported: parse_reported(
                 table.cell(index, "Conn_DateTime_Start"),
                 path,
                 row,
                 "Conn_DateTime_Start",
             )?,
-            end_local: parse_local(
+            end_reported: parse_reported(
                 table.cell(index, "Conn_DateTime_End"),
                 path,
                 row,
@@ -411,10 +412,10 @@ impl CsvSession {
         })
     }
 
-    /// Resolves this session's reported wall times to UTC instants.
+    /// Resolves this session's reported times to UTC instants.
     ///
     /// Evolute states its times on a clock that does not observe daylight saving —
-    /// `common::SESSION_OFFSET` — so a reported wall time names exactly one instant, all year.
+    /// `common::SESSION_OFFSET` — so a reported time names exactly one instant, all year.
     /// There is no repeated hour to choose between and no skipped hour to refuse, which is why
     /// nothing here consults `Conn_Duration` to place the record. That value is still checked, by
     /// [`duration_is_consistent`], but it is evidence about the record's own consistency rather
@@ -438,8 +439,8 @@ impl CsvSession {
             }
         }
 
-        let conn_start = session_instant(self.start_local);
-        let conn_end = session_instant(self.end_local);
+        let conn_start = session_instant(self.start_reported);
+        let conn_end = session_instant(self.end_reported);
         if !duration_is_consistent(conn_start, conn_end, self.conn_duration) {
             anomalies.push(AnomalyKind::InconsistentDuration);
         }
@@ -468,8 +469,8 @@ impl CsvSession {
                 energy_use: self.energy_use,
                 anomalies,
             }),
-            start_local: self.start_local,
-            end_local: self.end_local,
+            start_reported: self.start_reported,
+            end_reported: self.end_reported,
         }
     }
 }
@@ -478,11 +479,11 @@ impl CsvSession {
 // cargo test --lib -- session::csv::test --nocapture
 mod test {
     use super::*;
-    use crate::session::{common::session_wall_time, test_support::timing_anomalies};
+    use crate::session::{common::session_reported_time, test_support::timing_anomalies};
     use jiff::{SignedDuration, tz::TimeZone};
     use std::{env, fs, path::PathBuf, process};
 
-    /// Both forms the reader itself accepts, in the same order — see `parse_local`. The portal
+    /// Both forms the reader itself accepts, in the same order — see `parse_reported`. The portal
     /// states seconds.
     fn dt(s: &str) -> civil::DateTime {
         civil::DateTime::strptime("%Y-%m-%d %H:%M:%S", s)
@@ -502,8 +503,8 @@ mod test {
         let active_charge_time = parse_duration(conn, &src, 1, "Active_Charge_Time").unwrap();
         CsvSession {
             id: "S1".to_owned(),
-            start_local: dt(start),
-            end_local: dt(end),
+            start_reported: dt(start),
+            end_reported: dt(end),
             conn_duration: parse_duration(conn, &src, 1, "Conn_Duration").unwrap(),
             active_charge_time,
             // 6 kW, under the breaker rating, so a record built here carries only the anomaly the
@@ -511,14 +512,6 @@ mod test {
             // the shorter durations and pick up `ExcessiveAvgKw` throughout.
             energy_use: 6.0 * active_charge_time.as_secs_f64() / 3600.0,
         }
-    }
-
-    /// The wall time a session report would state for an instant.
-    ///
-    /// Not prevailing local time, which runs an hour ahead of this through the summer. A test about
-    /// what the reader did with a reported time has to speak in reported time.
-    fn reported_of(ts: Timestamp) -> civil::DateTime {
-        session_wall_time(ts)
     }
 
     /// A scratch directory of its own per test, since these run in parallel within one process.
@@ -569,7 +562,7 @@ mod test {
         let row = session("2026-08-27 12:52:56", "2026-08-27 13:07:36", "0:14:40")
             .resolve(&test_source(), 2);
         assert_eq!(
-            reported_of(row.session.conn_end),
+            session_reported_time(row.session.conn_end),
             civil::date(2026, 8, 27).at(13, 7, 36, 0)
         );
         assert!(timing_anomalies(&row.session.anomalies).is_empty());
@@ -577,7 +570,7 @@ mod test {
         let row = session("2026-08-27 13:09:03", "2026-08-27 15:05:06", "1:56:03")
             .resolve(&test_source(), 2);
         assert_eq!(
-            reported_of(row.session.conn_end),
+            session_reported_time(row.session.conn_end),
             civil::date(2026, 8, 27).at(15, 5, 6, 0)
         );
         assert!(timing_anomalies(&row.session.anomalies).is_empty());
@@ -596,7 +589,7 @@ mod test {
         );
     }
 
-    /// A reported wall time is read at the fixed offset in every month, so a June record lands five
+    /// A reported time is read at the fixed offset in every month, so a June record lands five
     /// hours behind UTC and not four — not the prevailing four that the date would suggest.
     #[test]
     fn utc_conversion_uses_the_fixed_offset_in_june() {
@@ -634,10 +627,10 @@ mod test {
         );
     }
 
-    /// The zone has no fold. A wall time in what would be the repeated hour names exactly one
-    /// instant, and the record is never duplicated.
+    /// The zone has no fold. A reported time in the hour the prevailing clock repeats names exactly
+    /// one instant, and the record is never duplicated.
     #[test]
-    fn a_wall_time_in_the_former_fold_names_one_instant() {
+    fn a_time_in_the_fall_back_hour_names_one_instant() {
         let row =
             session("2026-11-01 01:10", "2026-11-01 01:40", "0:30:00").resolve(&test_source(), 2);
         assert_eq!(row.session.id, "S1");
@@ -649,10 +642,10 @@ mod test {
         assert!(timing_anomalies(&row.session.anomalies).is_empty());
     }
 
-    /// The zone has no gap either. A wall time the prevailing clock skips is an ordinary reading
-    /// here, so the record keeps its instants and carries no anomaly.
+    /// The zone has no gap either. A reported time in the hour the prevailing clock skips is an
+    /// ordinary reading here, so the record keeps its instants and carries no anomaly.
     #[test]
-    fn a_wall_time_in_the_former_gap_is_ordinary() {
+    fn a_time_in_the_spring_forward_hour_is_ordinary() {
         let row =
             session("2026-03-08 02:10", "2026-03-08 02:40", "0:30:00").resolve(&test_source(), 2);
         assert_eq!(
@@ -692,14 +685,14 @@ mod test {
         );
     }
 
-    /// The reported wall times survive on the row alongside the resolved instants. They are what
-    /// the workbook's local columns show, verbatim as the report stated them.
+    /// The reported times survive on the row alongside the resolved instants. They are what the
+    /// session workbook's `Conn_DateTime_Start` and `Conn_DateTime_End` columns show.
     #[test]
-    fn a_row_keeps_the_wall_times_the_report_stated() {
+    fn a_row_keeps_the_times_the_report_stated() {
         let row =
             session("2026-03-08 02:30", "2026-03-08 04:00", "1:30:00").resolve(&test_source(), 2);
-        assert_eq!(row.start_local, dt("2026-03-08 02:30"));
-        assert_eq!(row.end_local, dt("2026-03-08 04:00"));
+        assert_eq!(row.start_reported, dt("2026-03-08 02:30"));
+        assert_eq!(row.end_reported, dt("2026-03-08 04:00"));
     }
 
     /// Zero `Active_Charge_Time` is flagged whatever the energy: the `avg_kw` cell shows `#DIV/0!`

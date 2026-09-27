@@ -391,7 +391,7 @@ local-time column and nothing more.
 The session side has no DST kind either. `AnomalyKind` has four variants — `ZeroActiveChargeTime`,
 `InconsistentDuration`, `ExcessiveAvgKw`, `DuplicateId` — and none of them is about daylight saving.
 Evolute states its times on a clock that does not observe it (`README.md`, "Times"), so a reported
-wall time names exactly one instant all year: there is no repeated hour to choose between and no
+time names exactly one instant all year: there is no repeated hour to choose between and no
 skipped hour to refuse.
 
 ## Invariants nothing enforces
