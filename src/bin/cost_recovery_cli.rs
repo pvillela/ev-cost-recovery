@@ -87,10 +87,6 @@ fn run(ending: &str, rates_xlsx: &Path, session_csvs: &[&Path]) -> Result<(), Bo
     })?;
 
     let recovery = cost_recovery(billing_period_ending, session_csvs, rates_xlsx)?;
-
-    // Written before the report is printed, so a failure to write one is not buried under it.
-    recovery.notes.write_logs()?;
-
     print!("{recovery}");
     Ok(())
 }

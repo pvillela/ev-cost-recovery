@@ -23,7 +23,6 @@
 
 use crate::{
     csv::{CsvReadError, Document, Table},
-    log::{RunLog, SourceLog},
     markdown::{h2, wrap},
     number::commas_group_thousands,
 };
@@ -245,55 +244,11 @@ impl ChargesReport {
         self.partial_spans.is_empty()
     }
 
-    /// One line per finding, for the run log.
-    ///
-    /// Shared with [`Self::to_markdown`] so the log and the report cannot say different things
-    /// about one file.
-    fn findings(&self) -> Vec<String> {
-        self.partial_spans
-            .iter()
-            .map(|((from, to), rows)| {
-                format!(
-                    "{} row(s) are billed for {from} to {to} rather than the whole month: {}. \
-                     Their kWh and dollars are counted in the totals in full.",
-                    rows.len(),
-                    row_list(rows)
-                )
-            })
-            .collect()
-    }
-
-    /// The run log for this report, unwritten.
-    ///
-    /// Unlike the session and meter logs, this one has no per-row anomalies to carry: the Charges
-    /// Report is read all-or-nothing, and everything that can go wrong with a row stops the read
-    /// instead. What it records is the one finding that leaves the figures standing.
-    pub fn log(&self) -> SourceLog {
-        let mut log = RunLog::new();
-        for line in self.findings() {
-            log.note(line);
-        }
-        SourceLog {
-            source: self.path.clone(),
-            suffix: "charges.csv.read",
-            operation: "Read Charges Report",
-            log,
-        }
-    }
-
-    /// Writes the run log beside the report, returning where it went.
-    ///
-    /// For a binary, as [`SessionNotes::write_logs`](crate::session::SessionNotes::write_logs) and
-    /// [`MeterNotes::write_log`](crate::green_button::MeterNotes::write_log) are.
-    ///
-    /// # Errors
-    ///
-    /// Whatever the write failed with, returned rather than swallowed.
-    pub fn write_log(&self) -> Result<PathBuf, Box<dyn Error>> {
-        self.log().write()
-    }
-
     /// Renders the Charges Report side as markdown that also reads as plain text.
+    ///
+    /// There are no per-row anomalies to carry: the Charges Report is read all-or-nothing, and
+    /// everything that can go wrong with a row stops the read instead. What is said beyond the file
+    /// name is the one finding that leaves the figures standing, one line per partial span.
     pub fn to_markdown(&self) -> String {
         let mut out: Vec<String> = Vec::new();
         out.push(h2("Charges Report"));
@@ -302,7 +257,13 @@ impl ChargesReport {
         out.push(String::new());
 
         if !self.is_clean() {
-            for line in self.findings() {
+            for ((from, to), rows) in &self.partial_spans {
+                let line = format!(
+                    "{} row(s) are billed for {from} to {to} rather than the whole month: {}. \
+                     Their kWh and dollars are counted in the totals in full.",
+                    rows.len(),
+                    row_list(rows)
+                );
                 out.push(wrap(&format!("- {line}"), "  "));
             }
             out.push(String::new());
@@ -313,9 +274,9 @@ impl ChargesReport {
 
 /// `rows 2, 3, 4`, or `rows 2, 3, 4, 5, and 12 more` past the fourth.
 ///
-/// Capped for the reason the Green Button log caps its hours: a subscription change touches one
-/// breaker, but a misread date column touches every row, and forty row numbers on one line is a
-/// line nobody reads.
+/// Capped for the reason the Green Button conversion report caps its hours: a subscription change
+/// touches one breaker, but a misread date column touches every row, and forty row numbers on one
+/// line is a line nobody reads.
 ///
 /// Shared with `ReimbursementError::ChargesReportRowsOutsideMonth`, which lists the same rows in
 /// the refusal, so the note and the refusal cannot cap differently.

@@ -31,7 +31,6 @@ use super::{
 };
 use crate::{
     csv::{CsvReadError, Document, Table},
-    log::{RunLog, SourceLog},
     session::common::session_instant,
 };
 use jiff::{Timestamp, civil};
@@ -63,8 +62,7 @@ const REQUIRED_HEADERS: &[&str] = &[
 /// [`BillError`](crate::hydro_bill::BillError).
 ///
 /// Only whole-file failures are here. A per-row *judgement* call is not an error: it is carried on
-/// [`Session::anomalies`] and summarised in the log, because the row still yields a session.
-/// Resolving a reported time is not among them, and cannot fail: Evolute states its times on a
+/// [`Session::anomalies`], because the row still yields a session. Resolving a reported time is not among them, and cannot fail: Evolute states its times on a
 /// fixed offset that does not observe daylight saving, so a reported time names exactly one instant
 /// all year — there is no skipped hour to refuse and no repeated one to choose between.
 #[derive(Debug)]
@@ -113,37 +111,25 @@ impl Error for SessionCsvError {
 /// `Sessions::from_session_lists`, which carries the rules. Every session in the file reaches one
 /// of them; none is dropped.
 ///
-/// The anomalies found are returned on [`Sessions::logs`] as a `session.csv.read` log — the same
-/// content [`super::excel::session_csv_to_xlsx`] puts in its `session.convert` log, because the two
-/// run the same parse. Nothing is written here. [`Sessions::write_logs`] is what puts it beside the
-/// input, and only a binary calls it.
-///
 /// # Errors
 ///
 /// Returns `Err` only for conditions that invalidate the whole file: it cannot be read, a required
 /// header from the private `REQUIRED_HEADERS` is missing, or a timestamp, duration or energy figure
 /// does not parse — including an energy figure that is negative or not finite, which no row of a
 /// session report means. Per-row judgement calls do not abort the read; they are carried on each
-/// [`Session::anomalies`] and summarised in the log.
+/// [`Session::anomalies`].
 pub(crate) fn csv_sessions(path: &Path) -> Result<Sessions, SessionCsvError> {
     read_sessions(path)
 }
 
 fn read_sessions(path: &Path) -> Result<Sessions, SessionCsvError> {
     let rows = csv_session_rows(path)?;
-    let log = SourceLog {
-        source: path.to_path_buf(),
-        suffix: "session.csv.read",
-        operation: "Read Session Report",
-        log: rows.log,
-    };
     // One list, and it still goes through the merge: a file can state a record twice as readily as
     // two files can, and the merge is also where a shared `Charge_Session_ID` is noticed.
     let sessions: Vec<RSession> = rows.rows.into_iter().map(|row| row.session).collect();
     Ok(Sessions::from_session_lists(
         vec![sessions],
         vec![path.to_path_buf()],
-        vec![log],
     ))
 }
 
@@ -167,8 +153,6 @@ pub(super) struct SessionRows {
     pub rows: Vec<Row>,
     /// Every judgement call made, numbered by output row rather than by CSV record.
     pub anomalies: Vec<Anomaly>,
-    /// Unwritten. The caller writes it beside its own output file, under its own suffix.
-    pub log: RunLog,
 }
 
 impl SessionRows {
@@ -219,19 +203,10 @@ pub(super) fn csv_session_rows(path: &Path) -> Result<SessionRows, SessionCsvErr
         rows.push(row);
     }
 
-    // Anomalies only: there is nothing to compare against on this side, since this is what
-    // produces the values in the first place. See `crate::log` for why discrepancies are a
-    // separate channel.
-    let mut log = RunLog::new();
-    for anomaly in &anomalies {
-        log.note(anomaly.to_string());
-    }
-
     Ok(SessionRows {
         table,
         rows,
         anomalies,
-        log,
     })
 }
 
@@ -802,17 +777,16 @@ S3,2026-06-03 09:00:00,2026-06-03 09:00:00,0:00:00,0:00:00,4.2
         assert_eq!(report.spikes.len(), 1);
         assert_eq!(report.spikes[0].id, "S3");
 
-        // Beside the CSV, under its own suffix, so it cannot collide with the workbook's logs. The
-        // suffix leads with the kind of document, as the error messages do.
-        assert_eq!(
-            report.logs[0].path(),
-            dir.join("Session_Report_Test.session.csv.read.log")
-        );
-        // The log's text, not a file: the reader writes none. See `Sessions::logs`.
-        let log = report.logs[0].render();
+        // The excluded row's anomaly reaches the report's overall anomalies, whatever the figure.
+        let notes = report.notes(|_| false);
+        let overall: Vec<(&str, AnomalyKind)> = notes
+            .overall_anomalies
+            .iter()
+            .map(|a| (a.session.id.as_str(), a.kind))
+            .collect();
         assert!(
-            log.contains("InconsistentDuration") || log.contains("contradict"),
-            "{log}"
+            overall.contains(&("S2", AnomalyKind::InconsistentDuration)),
+            "{overall:?}"
         );
 
         fs::remove_dir_all(&dir).ok();

@@ -165,7 +165,7 @@ pub(crate) fn as_report(sessions: Vec<RSession>) -> Sessions {
             sources.push(s.path.as_ref().clone());
         }
     }
-    Sessions::from_session_lists(vec![sessions], sources, Vec::new())
+    Sessions::from_session_lists(vec![sessions], sources)
 }
 
 /// Money, to the cent.

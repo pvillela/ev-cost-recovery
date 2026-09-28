@@ -1,6 +1,6 @@
 # Errors and anomalies
 
-This document contains every error and anomaly the `ev_cost_recovery` app reports on screen or writes to a log, what each one means, and what to do about it.
+This document contains every error and anomaly the `ev_cost_recovery` app reports, what each one means, and what to do about it.
 
 To look one up, find the words you can see on screen in the contents below. Messages are quoted as
 the app builds them, with `<the varying part>` in angle brackets where your own file names, dates
@@ -89,9 +89,7 @@ that of the libraries that read CSV, XML and PDF files. Those entries say so and
 **Worth knowing**
 
 - [a breaker billed for part of the month](#a-breaker-billed-for-part-of-the-month)
-- [periods that do not hold a full billing period's intervals](#periods-that-do-not-hold-a-full-billing-periods-intervals)
-- [the run's log was not written](#the-runs-log-was-not-written)
-- [the workbook was written, but its run log was not](#the-workbook-was-written-but-its-run-log-was-not)
+- [billing periods that hold fewer hours than a complete period](#billing-periods-that-hold-fewer-hours-than-a-complete-period)
 - Session report: [`ExcessiveAvgKw`](#excessiveavgkw)
 
 ---
@@ -517,15 +515,14 @@ Correct the cell named.
 
 > `<file name>`: `<why not>`
 
-**Where** Cost recovery, Peak power detail, Evolute reimbursement — when saving a report. Convert to
-workbook — when writing the workbook.
+**Where** Cost recovery, Peak power detail, Evolute reimbursement, Convert to workbook — when saving
+a report. Convert to workbook — when writing the workbook.
 
 Everything after the file name is the operating system's wording, such as `Permission denied (os
 error 13)`. The report is still on screen and can be saved again somewhere else; nothing has been
 lost. Choose a folder you can write to, or free some space.
 
-`src/bin/ev_cost_recovery/surplus.rs`: `export_row`, `detail.rs`: `export_row`,
-`reimbursement.rs`: `export_row`,
+`src/bin/ev_cost_recovery/widgets.rs`: `export_row`,
 `src/error.rs`: `ConversionError::Display`
 
 ### Session Report — missing required column
@@ -668,9 +665,13 @@ figure as zero leaves no share to take.
 The result is there, and something in the data moved it or was left out of it. Nothing here needs
 you to do anything; it is here so the figures can be read knowing what is behind them.
 
-These appear in three places: the run log beside the file, the *Sessions needing a look* and
-*Sessions left out* sections of the report on screen, and the `Anomalies` column of a converted
-workbook. The token is the same in all three.
+These appear in three places, under the same token in each:
+
+- The Cost recovery and Evolute reimbursement reports, under *Session data* in their *Source Data*
+  section. Each is counted under *Overall anomalies*, and listed under *Sessions needing a look* or
+  *Sessions left out* where it bears on the figures.
+- The report of a session report conversion.
+- The `anomalies` column of the converted workbook.
 
 ## Session report anomalies
 
@@ -686,10 +687,10 @@ sessions a week apart — so both are counted as separate sessions, which is wha
 something says otherwise. Worth a look because the alternative, one session written twice, would
 count its energy twice.
 
-Where two records share an id *and* every compared field, one copy is dropped instead and the run log
-says so.
+Where two records share an id *and* every compared field, one copy is dropped instead. The Cost
+recovery and Evolute reimbursement reports count the records dropped that way under *Session data*.
 
-`src/session/common.rs`: `Sessions::note_collapsed`
+`src/session/common.rs`: `AnomalyKind::Display`, `MergedSessions::merge_sessions`
 
 ### `InconsistentDuration`
 
@@ -728,7 +729,8 @@ because a number had to be invented.
 What each of these means for the meter data is in
 [docs/green_button/README.md](green_button/README.md).
 
-These are counted in the run log and, on the Convert tab, listed as `<token> x<count>`. In a
+The report of a conversion groups these by token, naming the first few hours that carry each. The
+Cost recovery report lists those in the billing period it prices, hour by hour, under *Meter data*. In a
 generated workbook they are highlighted against the readings they concern.
 
 ### `DuplicateInterval`
@@ -796,8 +798,7 @@ The session anomalies in this group are listed after the messages, under
 > `<number>` row(s) are billed for `<date>` to `<date>` rather than the whole month: rows
 > `<numbers>`. Their kWh and dollars are counted in the totals in full.
 
-**Where** Evolute reimbursement — in the report's *Charges Report* section, and in the Charges
-Report's run log.
+**Where** Evolute reimbursement — in the report's *Charges Report* section.
 
 A breaker billed for part of the month rather than all of it. Under one reading of Evolute's two
 date columns this is an ordinary mid-month join or leave; under another it should not happen. It is
@@ -807,16 +808,13 @@ reported because the two readings have not been told apart — see
 Rows billed for dates *outside* the month are a different matter and refuse the file; see
 [Charges Report — rows billed for dates outside the month](#charges-report--rows-billed-for-dates-outside-the-month).
 
-`src/charges_report.rs`: `ChargesReport::findings`
+`src/charges_report.rs`: `ChargesReport::to_markdown`
 
-### periods that do not hold a full billing period's intervals
+### billing periods that hold fewer hours than a complete period
 
-> `<number>` period(s) do not hold a full billing period's intervals
-
-with, beneath it:
-
-> Highlighted in the sheet. The export's own coverage decides this: the first and last periods it
-> reaches are ordinarily partial.
+> `<number>` of `<number>` billing period(s) hold fewer hours than a complete period should. The
+> Peak_values sheet marks them in red on nbr_of_intervals. The export's own coverage decides this:
+> the first and last periods it reaches are ordinarily partial.
 
 **Where** Convert to workbook.
 
@@ -827,38 +825,7 @@ last billing periods it touches are normally cut short. The workbook marks them 
 The case that would matter to a figure is caught separately and stops the run; see
 [the meter data covers only part of the period](#the-meter-data-covers-only-part-of-the-period).
 
-`src/bin/ev_cost_recovery/convert.rs`: `gb_outcome`, `src/bin/ev_cost_recovery/convert.rs`: `gb_outcome`
-
-### the run's log was not written
-
-> The figures were worked out, but this run's log was not written.
-> `<log file name>`: `<why not>`
-> Check that the folder can be written to and that the disk is not full.
-
-**Where** Cost recovery, Evolute reimbursement — in red, above the report.
-
-Every run writes a log beside each file it read. The figures below the message are complete and
-correct; what is missing is the record of the run on disk. Nothing else in these two functions
-writes anything, so there is nothing else to check.
-
-Shown in red because it is easy to walk away from a report believing a log was kept. Fix the folder
-and run again if you want the log.
-
-`src/bin/ev_cost_recovery/state.rs`: `SurplusState::report_note`
-
-### the workbook was written, but its run log was not
-
-> The workbook was written, but its run log was not.
-> `<log file name>`: `<why not>`
-> Check that the folder can be written to and that the disk is not full.
-
-**Where** Convert to workbook — in red, beneath the workbook's path.
-
-The `.xlsx` is complete. Only its log is missing. Whatever the conversion found is still listed on
-screen beneath this message; it just has no copy on disk.
-
-`src/bin/ev_cost_recovery/state.rs`: `Conversion::run`, in both the `SessionConversion` and
-`GbConversion` implementations
+`src/green_button/excel.rs`: `GbWriteReport::to_markdown`
 
 ## Session report anomalies that leave the figures standing
 
@@ -875,45 +842,3 @@ the reported energy or the reported charge time is wrong — and nothing in the 
 the session is counted as it stands.
 
 `src/session/common.rs`: `AnomalyKind::Display`
-
-
----
-
-# The run logs
-
-Every run writes a log beside each file it read or wrote:
-
-- **Named** `<the file's name>.<what was read>.log` — for instance
-  `Session_Report_June_1_2026-June_30_2026.session.csv.read.log`.
-- **Placed** in the same folder as the file it is about.
-- **Overwritten** on every run. A log is not a history: run the same thing twice and the first log
-  is gone.
-
-A log always says one of two things, so a run that found nothing is never confused with a run that
-was never made:
-
-```
-Read Session Report: /data/Session_Report_June_1_2026-June_30_2026.csv
-
-Nothing to report. No errors, warnings or anomalies.
-```
-
-```
-Read Session Report: /data/Session_Report_June_1_2026-June_30_2026.csv
-
-2 item(s) to review, in the order found:
-
-  row 42 (S37487) DuplicateId: another session in the report carries the same ...
-  row 91 (S37502) ExcessiveAvgKw: average kilowatts above the Evolute breaker ...
-```
-
-## Which logs each tab writes
-
-| Tab | Logs |
-| --- | --- |
-| Cost recovery | `<name>.session.csv.read.log` beside each session report; `<name>.meter.xml.read.log` beside the Green Button export |
-| Peak power detail | none of its own; it reads what the Cost recovery run produced |
-| Evolute reimbursement | `<name>.session.csv.read.log` beside the session report; `<name>.charges.csv.read.log` beside the Charges Report |
-| Convert to workbook | `<name>.session.convert.log` or `<name>.meter.convert.log`, beside the workbook |
-
-The meter log covers the billing period that was priced, not the whole export.

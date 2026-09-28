@@ -244,7 +244,7 @@ impl Table {
     /// The CSV row number of the record at `index`, counting the header, so it is the number a
     /// spreadsheet shows.
     ///
-    /// Every error and every log line numbers rows this way, which is the only way a reader can
+    /// Every error and every report line numbers rows this way, which is the only way a reader can
     /// find the row being complained about.
     pub fn row_number(index: usize) -> usize {
         index + 2

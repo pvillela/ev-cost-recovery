@@ -1,7 +1,7 @@
 //! `docs/ERRORS.md` names every anomaly the app can report.
 //!
 //! The document is the only place a user can look a message up, and prose is not compiled: an
-//! anomaly added to either vocabulary would otherwise reach a workbook column, a run log and the
+//! anomaly added to either vocabulary would otherwise reach a workbook column, the reports and the
 //! Convert tab while the document that explains it says nothing.
 //!
 //! The anomalies are checked two ways: that each token has an entry, and that the entry's block
@@ -95,8 +95,8 @@ fn has_entry(doc: &str, token: &str) -> bool {
 ///
 /// Two differences are expected and are not drift. The document wraps its quote across several `>`
 /// lines where the software holds it as one string, so both sides are joined on single spaces. And
-/// the document marks up column names -- `` `Active_Charge_Time` `` -- which a message written to a
-/// log file or a terminal cannot carry, so the backticks come off. Everything else has to match.
+/// the document marks up column names -- `` `Active_Charge_Time` `` -- which a message read as plain
+/// text in a terminal cannot carry, so the backticks come off. Everything else has to match.
 fn quoted_description(doc: &str, token: &str) -> Option<String> {
     let heading = format!("### `{token}`");
     let mut lines = doc.lines().skip_while(|line| line.trim() != heading);

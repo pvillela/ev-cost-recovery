@@ -1,5 +1,5 @@
 use super::{Anomaly, AnomalyKind, RSegment, RSession, SEGMENT_DURATION, Segment, Sessions};
-use crate::{log::SourceLog, time::Interval};
+use crate::time::Interval;
 use std::{path::PathBuf, rc::Rc};
 
 /// Estimates for an interval of interest.
@@ -52,12 +52,6 @@ pub struct IntervalEstimates {
     /// the kept row is flagged `DuplicateId` and the excluded one is not — with nothing to say the
     /// two are about each other.
     pub excluded_report_anomalies: Vec<Anomaly>,
-    /// The run logs of the files the sessions were read from, unwritten.
-    ///
-    /// Carried for the same reason [`Self::sources`] is: so the report is self-describing, and so
-    /// a binary handed one has everything it needs to put a log where a user can read it. Nothing
-    /// in the report renders them. See [`Sessions::logs`].
-    pub logs: Vec<SourceLog>,
 }
 
 /// The four estimates for one [`Segment`].
@@ -191,7 +185,6 @@ pub(crate) fn estimates_from_sessions(
             })
             .cloned()
             .collect(),
-        logs: sessions.logs.clone(),
     }
 }
 
@@ -277,7 +270,7 @@ pub(crate) fn maximal_segment_estimate(
 
 /// Every anomaly on every session that intersects the interval of interest.
 ///
-/// Deliberately blind to [`AnomalyKind`](crate::session::AnomalyKind): it matches on nothing, so
+/// Deliberately blind to [`AnomalyKind`]: it matches on nothing, so
 /// a kind added later
 /// surfaces here without anyone having to remember to wire it up.
 fn collect_session_anomalies(
@@ -641,7 +634,7 @@ mod test {
                     kind: AnomalyKind::DuplicateId,
                 },
             ],
-            logs: Vec::new(),
+            collapsed: 0,
         };
 
         let report = estimates_from_sessions(hour(), sessions.sources.clone(), &sessions);

@@ -15,7 +15,7 @@ use super::{
 };
 use crate::{
     error::ConversionError,
-    log::SourceLog,
+    markdown::{field, h1, h2, wrap},
     time::{serial_of_civil, serial_of_duration, serial_of_instant},
 };
 use std::{
@@ -39,11 +39,41 @@ pub struct SessionWriteReport {
     pub output_path: PathBuf,
     /// Rows that needed a judgement call. Empty for a clean conversion.
     pub anomalies: Vec<Anomaly>,
-    /// The run log, which says either that nothing was found or what was.
+}
+
+impl SessionWriteReport {
+    /// Renders what the conversion wrote and found as markdown that also reads as plain text.
     ///
-    /// Held rather than written, for the reason [`Sessions::logs`](super::Sessions::logs) gives.
-    /// Write it with [`SourceLog::write`].
-    pub log: SourceLog,
+    /// Every row that needed a judgement call is listed, token and prose together, so a reader who
+    /// meets a bare token in the workbook's `anomalies` column can find what it means here.
+    pub fn to_markdown(&self) -> String {
+        let mut out = vec![h1("Session Report Conversion"), String::new()];
+        out.push(field("Workbook", &self.output_path.display().to_string()));
+        out.push(String::new());
+
+        out.push(h2("Anomalies"));
+        out.push(String::new());
+        if self.anomalies.is_empty() {
+            out.push("No row needed a judgement call.".to_owned());
+            out.push(String::new());
+            return out.join("\n");
+        }
+        out.push(wrap(
+            &format!(
+                "{} row(s) needed a judgement call. They do not stop the conversion. Each is \
+                 recorded in the anomalies column of the workbook. Row numbers are rows of the \
+                 CSV, counting the header.",
+                self.anomalies.len()
+            ),
+            "",
+        ));
+        out.push(String::new());
+        for anomaly in &self.anomalies {
+            out.push(wrap(&format!("- {anomaly}"), "  "));
+        }
+        out.push(String::new());
+        out.join("\n")
+    }
 }
 
 /// How an output column is populated.
@@ -184,18 +214,9 @@ fn write_session_xlsx(
 
     umya_spreadsheet::writer::xlsx::write(&book, &output_path)?;
 
-    let log = SourceLog {
-        // Beside the workbook rather than the CSV, because that is what this run produced.
-        source: output_path.clone(),
-        suffix: "session.convert",
-        operation: "Converted Session Report",
-        log: rows.log,
-    };
-
     Ok(SessionWriteReport {
         output_path,
         anomalies: rows.anomalies,
-        log,
     })
 }
 

@@ -5,7 +5,8 @@
 //!
 //! - **Setext headings** (`====`, `----`) rather than `#`, so a heading looks underlined instead of
 //!   prefixed with punctuation. That allows two heading levels, which is why the sub-labels in the
-//!   estimates section are sentences rather than a third level.
+//!   estimates section are sentences. The one third level, the parts of "Session data", is
+//!   written `###`, since nothing can be underlined a third way.
 //! - **Every table cell padded** to its column's width, numerics right-aligned. A renderer ignores
 //!   the padding; a plain reader depends on it entirely.
 //! - **No four-space indentation anywhere**, since markdown would turn it into a code block. Wrapped
@@ -33,7 +34,7 @@ use super::{
     },
 };
 use crate::{
-    markdown::{Align, Left, Right, field, h1, h2, table, wrap},
+    markdown::{Align, Left, Right, field, h1, h2, h3, table, wrap},
     time::{Interval, time_zone, zoned_minute, zoned_span, zoned_span_end},
 };
 use jiff::{Timestamp, Zoned, civil::Date};
@@ -131,9 +132,10 @@ fn glossary(kinds: impl IntoIterator<Item = AnomalyKind>, out: &mut Vec<String>)
 impl SessionNotes {
     /// Renders what a figure was drawn from as markdown that also reads as plain text.
     ///
-    /// Three parts, and each is omitted when it has nothing to say — except the sources, which are
-    /// always named. A period's figures rest on two monthly reports, and which two is the first
-    /// thing a reader checking a number wants to know.
+    /// The sources, then three sub-sections, each omitted when it has nothing to say: the sessions
+    /// left out, the sessions needing a look, and the overall anomalies. The sources are always
+    /// named. A period's figures rest on two monthly reports, and which two is the first thing a
+    /// reader checking a number wants to know.
     ///
     /// Grouped by source file throughout. A row number means nothing without the file it is a row
     /// of, and a reader who has spotted something goes to one file to look it up.
@@ -169,10 +171,78 @@ impl SessionNotes {
             ));
             out.push(String::new());
         }
+        if self.collapsed > 0 {
+            out.push(wrap(
+                &format!(
+                    "{} record(s) repeated a session already read, with every compared field \
+                     equal, and were counted once.",
+                    self.collapsed
+                ),
+                "",
+            ));
+            out.push(String::new());
+        }
 
         self.push_excluded(&mut out);
         self.push_anomalies(&mut out);
+        self.push_overall_anomalies(&mut out);
         out.join("\n")
+    }
+
+    /// Every anomaly in each file read, counted by kind, whatever the figure and wherever the
+    /// session falls.
+    ///
+    /// Counted rather than listed. The sections above list what bears on the figures; this says how
+    /// much else the files hold, so a reader can judge whether converting a file to see the rest is
+    /// worth doing.
+    fn push_overall_anomalies(&self, out: &mut Vec<String>) {
+        if self.overall_anomalies.is_empty() {
+            return;
+        }
+        out.push(h3("Overall anomalies"));
+        out.push(String::new());
+        out.push(wrap(
+            "Every anomaly in the files read, counted by kind, including those listed above.",
+            "",
+        ));
+        out.push(String::new());
+        // A table, as the other parts of this section have, for the reason `file_name` gives: a
+        // bullet carrying a full path runs past the wrap width and breaks its own line.
+        let mut rows: Vec<Vec<String>> = Vec::new();
+        for source in chronological(&self.sources) {
+            let mut counts: Vec<(AnomalyKind, usize)> = Vec::new();
+            for anomaly in &self.overall_anomalies {
+                if anomaly.session.path.as_path() != source.as_path() {
+                    continue;
+                }
+                match counts.iter_mut().find(|(kind, _)| *kind == anomaly.kind) {
+                    Some((_, count)) => *count += 1,
+                    None => counts.push((anomaly.kind, 1)),
+                }
+            }
+            for (kind, count) in counts {
+                rows.push(vec![
+                    file_name_of(source),
+                    kind.as_str().to_owned(),
+                    count.to_string(),
+                ]);
+            }
+        }
+        out.push(table(
+            &["File", "Anomaly", "Count"],
+            &rows,
+            &[Left, Left, Right],
+        ));
+        out.push(String::new());
+        // Every kind counted, whether or not the list above explained it too: this section is read
+        // on its own as often as after the others.
+        glossary(self.overall_anomalies.iter().map(|a| a.kind), out);
+        out.push(String::new());
+        out.push(wrap(
+            "Convert a session report to a workbook to see every anomaly in it with its row.",
+            "",
+        ));
+        out.push(String::new());
     }
 
     /// The sessions left out of the figures entirely, listed in full.
@@ -184,7 +254,7 @@ impl SessionNotes {
         if self.excluded.is_empty() {
             return;
         }
-        out.push(h2("Sessions left out"));
+        out.push(h3("Sessions left out"));
         out.push(String::new());
         out.push(wrap(
             "These records cannot be placed on a timeline, so they take no part in any figure \
@@ -205,7 +275,7 @@ impl SessionNotes {
         if self.anomalies.is_empty() {
             return;
         }
-        out.push(h2("Sessions needing a look"));
+        out.push(h3("Sessions needing a look"));
         out.push(String::new());
         out.push(wrap(
             "These sessions count towards the figures above, and something about them needed a \
@@ -855,7 +925,8 @@ pub fn site_load_report() -> String {
 mod test {
     use super::*;
     use crate::session::{
-        SEGMENT_DURATION, Segment, common::RSegment, peak::EstimateSet, test_support::session,
+        SEGMENT_DURATION, Segment, Sessions, common::RSegment, peak::EstimateSet,
+        test_support::session,
     };
 
     fn ordered(names: &[&str]) -> Vec<String> {
@@ -922,7 +993,6 @@ mod test {
                 session_anomalies: Vec::new(),
                 excluded_sessions,
                 excluded_report_anomalies: Vec::new(),
-                logs: Vec::new(),
             }
             .to_markdown("kW", Estimate::EnergyBasedKw)
         };
@@ -1088,5 +1158,64 @@ mod test {
     #[test]
     fn the_definitions_section_matches_its_golden() {
         crate::golden::check("session/definitions.txt", &definitions());
+    }
+
+    /// The session data section says how many records were counted once, and counts every anomaly
+    /// in the file under "Overall anomalies", explaining a kind the list above did not.
+    #[test]
+    fn the_session_data_section_counts_repeats_and_overall_anomalies() {
+        let june = "/data/Session_Report_June_1_2026-June_30_2026.csv";
+        let mut hot = session(june, 2, "HOT", "2026-06-10T20:00:00Z", 60, 20.0);
+        Rc::get_mut(&mut hot)
+            .expect("sole owner")
+            .anomalies
+            .push(AnomalyKind::ExcessiveAvgKw);
+        let first = session(june, 3, "S1", "2026-06-11T20:00:00Z", 60, 5.0);
+        let repeat = session(june, 4, "S1", "2026-06-11T20:00:00Z", 60, 5.0);
+        let sessions =
+            Sessions::from_session_lists(vec![vec![hot, first, repeat]], vec![PathBuf::from(june)]);
+
+        // The energy side: power above the breaker rating is not listed as needing a look.
+        let text = sessions.notes(AnomalyKind::bears_on_energy).to_markdown();
+        assert!(!text.contains("Sessions needing a look"), "{text}");
+        assert!(
+            text.contains("1 record(s) repeated a session already read"),
+            "{text}"
+        );
+        assert!(text.contains("### Overall anomalies"), "{text}");
+        // The file's name alone, in a table cell: a full path in a bullet runs past the wrap width.
+        assert!(
+            text.contains(
+                "| Session_Report_June_1_2026-June_30_2026.csv | ExcessiveAvgKw |     1 |"
+            ),
+            "{text}"
+        );
+        assert!(text.contains("- ExcessiveAvgKw - "), "{text}");
+
+        // A kind the list above explains is explained again here, so this part reads on its own.
+        let text = sessions.notes(|_| true).to_markdown();
+        assert!(text.contains("Sessions needing a look"), "{text}");
+        assert_eq!(text.matches("- ExcessiveAvgKw - ").count(), 2, "{text}");
+        assert!(text.contains("Convert a session report"), "{text}");
+    }
+
+    /// A file with no anomaly at all has no "Overall anomalies" section.
+    #[test]
+    fn a_clean_file_has_no_overall_anomalies_section() {
+        let june = "/data/Session_Report_June_1_2026-June_30_2026.csv";
+        let sessions = Sessions::from_session_lists(
+            vec![vec![session(
+                june,
+                2,
+                "S1",
+                "2026-06-11T20:00:00Z",
+                60,
+                5.0,
+            )]],
+            vec![PathBuf::from(june)],
+        );
+        let text = sessions.notes(|_| true).to_markdown();
+        assert!(!text.contains("Overall anomalies"), "{text}");
+        assert!(!text.contains("repeated a session"), "{text}");
     }
 }

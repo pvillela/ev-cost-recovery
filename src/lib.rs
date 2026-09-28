@@ -15,10 +15,6 @@ pub mod csv;
 pub mod error;
 pub mod green_button;
 pub mod hydro_bill;
-// Not `session::log`. A run log is a fact about reading *a* file, not about reading a session
-// report, and `green_button` writes them too -- reaching into `crate::session` for the type would
-// have `green_button` depend on a module it shares nothing else with.
-pub mod log;
 pub mod rates;
 pub mod session;
 pub mod time;

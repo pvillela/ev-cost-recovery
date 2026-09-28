@@ -1,6 +1,6 @@
 //! The half of the API that touches the filesystem.
 //!
-//! Most of it reads: a function turns paths into values and then delegates to [`pure`](super::pure),
+//! Most of it reads: a function turns paths into values and then delegates to [`pure`],
 //! which is where the arithmetic and the judgement live. Keeping that half thin is the point — what
 //! a figure rests on can then be exercised without a filesystem in the way, and the two halves
 //! cannot drift apart because there is only one of each calculation.
@@ -8,8 +8,8 @@
 //! Two functions also write, and they are the exceptions that prove the rule rather than a
 //! loosening of it: [`session_csv_to_xlsx`] and [`gb_xml_to_xlsx`] are file-to-file conversions,
 //! whose whole product *is* a file. There is no figure in either for a pure function to return, so
-//! neither has a counterpart in [`pure`](super::pure). Every other function here leaves the disk as
-//! it found it, and the run logs they carry back are written by the caller.
+//! neither has a counterpart in [`pure`]. Every other function here leaves the disk as
+//! it found it.
 //!
 //! # How this file is laid out
 //!
@@ -27,7 +27,7 @@
 //!
 //! # The seam, if a pure conversion is ever wanted
 //!
-//! [`write_gb_workbook`](crate::green_button::write_gb_workbook) builds the workbook
+//! [`write_gb_workbook`] builds the workbook
 //! *and* writes it. Splitting those two is where a pure version would begin — to assert on cell
 //! contents without a temp file, say. Not worth doing speculatively, since the only thing any
 //! caller does with a workbook is write it, but that is the place.
@@ -91,9 +91,7 @@ pub use crate::{
 /// What is refused is a gap. The order they are given in makes no difference either; the names say
 /// what each holds.
 ///
-/// Nothing here writes, as the module docs state: each read's log comes back unwritten on the
-/// result's `notes`, for
-/// [`SessionNotes::write_logs`](crate::session::SessionNotes::write_logs) to put beside its input.
+/// Nothing here writes, as the module docs state.
 ///
 /// # Errors
 ///
@@ -141,9 +139,7 @@ pub fn peak_power(
 /// They must cover the billing period completely between them, checked from their file names. How
 /// many there are is not a rule, and nor is the order; the names say what each holds.
 ///
-/// Nothing here writes, as the module docs state: each read's log comes back unwritten on the
-/// result's `notes`, for
-/// [`SessionNotes::write_logs`](crate::session::SessionNotes::write_logs) to put beside its input.
+/// Nothing here writes, as the module docs state.
 ///
 /// # Errors
 ///
@@ -195,9 +191,7 @@ pub fn peak_power_cost(
 /// [`pure::energy`](fn@super::pure::energy) sums whatever it is given, so a month's report missing
 /// from the call yields a total that is simply too low, with nothing in the figures to say so.
 ///
-/// Nothing here writes, as the module docs state: each read's log comes back unwritten on the
-/// result's `notes`, for
-/// [`SessionNotes::write_logs`](crate::session::SessionNotes::write_logs) to put beside its input.
+/// Nothing here writes, as the module docs state.
 ///
 /// # Errors
 ///
@@ -231,9 +225,7 @@ pub fn energy(billing_period_ending: Date, session_csvs: &[&Path]) -> Result<Ene
 /// They must cover the billing period completely between them, checked from their file names. How
 /// many there are is not a rule, and nor is the order; the names say what each holds.
 ///
-/// Nothing here writes, as the module docs state: each read's log comes back unwritten on the
-/// result's `notes`, for
-/// [`SessionNotes::write_logs`](crate::session::SessionNotes::write_logs) to put beside its input.
+/// Nothing here writes, as the module docs state.
 ///
 /// # Errors
 ///
@@ -278,9 +270,7 @@ pub fn energy_cost(bill_pdf: &Path, session_csvs: &[&Path]) -> Result<EnergyCost
 /// month's report missing from the call yields a figure that is simply too low, with nothing in it
 /// to say so.
 ///
-/// Nothing here writes, as the module docs state: each read's log comes back unwritten on the
-/// result's `notes`, for
-/// [`SessionNotes::write_logs`](crate::session::SessionNotes::write_logs) to put beside its input.
+/// Nothing here writes, as the module docs state.
 ///
 /// # Errors
 ///
@@ -328,9 +318,7 @@ pub fn cost_recovery(
 /// They must cover the billing period completely between them, checked from their file names. How
 /// many there are is not a rule, and nor is the order; the names say what each holds.
 ///
-/// Nothing here writes, as the module docs state: each read's log comes back unwritten on the
-/// result's `notes`, for
-/// [`SessionNotes::write_logs`](crate::session::SessionNotes::write_logs) to put beside its input.
+/// Nothing here writes, as the module docs state.
 ///
 /// # Errors
 ///
@@ -407,10 +395,7 @@ pub fn cost_recovery_surplus(
 /// in one file and a file need not be a month. What matters is that the names between them reach
 /// across the whole month without a gap.
 ///
-/// Nothing here writes. The report's `session.csv.read` log comes back unwritten on the result's `notes` --
-/// see the private `session::csv::csv_sessions` -- and
-/// [`SessionNotes::write_logs`](crate::session::SessionNotes::write_logs) is what a binary calls to
-/// put it beside its input.
+/// Nothing here writes, as the module docs state.
 ///
 /// # Errors
 ///
@@ -489,9 +474,8 @@ pub enum OnExistingWorkbook {
 /// The workbook's name is not an argument. It is the input's with the extension replaced, so the
 /// two sit side by side and the workbook says which report it came from.
 ///
-/// Nothing else here writes. The conversion's run log comes back unwritten on the result's `log` --
-/// see [`SessionWriteReport`] -- and [`SourceLog::write`](crate::log::SourceLog::write) is what
-/// a binary calls to put it beside the workbook.
+/// Nothing else is written. What the conversion found comes back on the result, and
+/// [`SessionWriteReport::to_markdown`] renders it for a reader.
 ///
 /// # Errors
 ///
@@ -513,7 +497,7 @@ pub fn session_csv_to_xlsx(
 
 /// Converts a Toronto Hydro Green Button export into the peak-values workbook beside it.
 ///
-/// Two sheets, as [`write_gb_workbook`](crate::green_button::write_gb_workbook) builds them:
+/// Two sheets, as [`write_gb_workbook`] builds them:
 /// `Peak_values` carries one row per
 /// billing period — the energy used, the highest kW and kVA over the period and within the 7-7
 /// demand window, when each occurred and in which Time-of-Use period — and `Interval_values` carries
@@ -531,6 +515,9 @@ pub fn session_csv_to_xlsx(
 ///
 /// The feed must carry hourly readings for all three of kWh, kW and kVA. Anything else is an error
 /// naming what was missing, rather than a workbook with a hole in it.
+///
+/// Nothing else is written. What the conversion found comes back on the result, and
+/// [`GbWriteReport::to_markdown`] renders it for a reader.
 ///
 /// # Errors
 ///
@@ -683,7 +670,7 @@ fn rates_read_error(rates_xlsx: &Path, cause: RatesWorkbookError) -> ReadError {
 ///
 /// Merged rather than flattened, and merged as reports rather than as lists of sessions. What each
 /// file contributed — the anomalies that are relations between its records, the path it was read
-/// from, the log written beside it — is context that belongs to the read, and flattening the
+/// from, the records it repeated — is context that belongs to the read, and flattening the
 /// buckets into a bare `Vec` would throw all of it away at the one point in the program that has
 /// it.
 ///

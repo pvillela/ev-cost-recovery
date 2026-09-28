@@ -61,9 +61,6 @@ fn main() -> ExitCode {
 
 fn run(bill_pdf: &Path, session_csvs: &[&Path]) -> Result<(), Box<dyn Error>> {
     let cost = energy_cost(bill_pdf, session_csvs)?;
-    // Written before the report is printed, so a failure to write one is not buried under it.
-    cost.notes.write_logs()?;
-
     print!("{cost}");
     Ok(())
 }

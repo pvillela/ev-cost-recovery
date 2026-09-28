@@ -26,11 +26,11 @@
 //! default, and machine names are `lower_snake_case` throughout so that reading a sheet back by
 //! column name cannot be defeated by a capitalisation difference.
 
-use super::{Anomaly, Feed, Peak, PeriodValues, Reading, note_anomalies, period_values};
+use super::{Anomaly, Feed, Peak, PeriodValues, Reading, period_values};
 use crate::{
     error::ConversionError,
-    log::{RunLog, SourceLog},
-    time::{local_date, serial_of_date, serial_of_instant, serial_of_local},
+    markdown::{field, h1, h2, wrap},
+    time::{local_date, serial_of_date, serial_of_instant, serial_of_local, zoned_minute},
 };
 use jiff::{Timestamp, civil::Date};
 use std::{
@@ -261,10 +261,9 @@ impl Out {
     }
 }
 
-/// What was written, for the CLI to report.
+/// What was written, rendered for a reader by [`Self::to_markdown`].
 ///
-/// No `Default`: a report with an empty `path` and a log naming no file is not a report of
-/// anything.
+/// No `Default`: a report with an empty `path` names no workbook, and is not a report of anything.
 #[derive(Debug, Clone)]
 pub struct GbWriteReport {
     pub path: PathBuf,
@@ -273,6 +272,9 @@ pub struct GbWriteReport {
     /// Periods whose interval count is not what a complete period should hold.
     pub incomplete_periods: usize,
     pub anomaly_counts: BTreeMap<Anomaly, usize>,
+    /// The same anomalies as `anomaly_counts`, kept hour by hour. Ascending by hour, one entry per
+    /// hour and kind.
+    pub anomalies: Vec<(Timestamp, Anomaly)>,
 
     /// The first and last local dates the export covers, if it covered any.
     ///
@@ -280,13 +282,91 @@ pub struct GbWriteReport {
     /// 18 MB export to find out. Which days count as holidays decides which hours are off-peak,
     /// and therefore the demand figures a bill is built from, so it is worth being able to print.
     pub covered: Option<(Date, Date)>,
+}
 
-    /// The run log, unwritten: what the conversion found, or that it found nothing.
+/// How many offending hours a line of the report names before it stops and gives a count instead.
+///
+/// Three, because an export that lost a month names 744 hours under `MissingInterval`, and a list
+/// that long is one nobody reads. Three is enough to go and look at one; the workbook marks every
+/// one.
+const EXAMPLE_HOURS: usize = 3;
+
+impl GbWriteReport {
+    /// Renders what the conversion wrote and found as markdown that also reads as plain text.
     ///
-    /// Held rather than written, for the reason [`SourceLog`] gives — a library returns what it
-    /// found and a binary decides whether it reaches a file. The counterpart on the session side
-    /// is [`SessionWriteReport::log`](crate::session::SessionWriteReport).
-    pub log: SourceLog,
+    /// The anomalies are grouped by kind rather than listed by hour, because the failure that
+    /// matters is nearly always systematic: a meter that stopped reporting kVA does not produce one
+    /// anomalous hour, it produces every hour. Each kind's line names its first few hours, in local
+    /// time, and says what the kind means.
+    pub fn to_markdown(&self) -> String {
+        let mut out = vec![h1("Green Button Export Conversion"), String::new()];
+        out.push(field("Workbook", &self.path.display().to_string()));
+        out.push(String::new());
+        out.push(field("Billing periods", &self.period_rows.to_string()));
+        out.push(String::new());
+        out.push(field("Intervals", &self.interval_rows.to_string()));
+        out.push(String::new());
+
+        // A period short of its hours is a fact about the workbook rather than about any one hour,
+        // so it is not an `Anomaly` and is said on its own.
+        if self.incomplete_periods > 0 {
+            out.push(wrap(
+                &format!(
+                    "{} of {} billing period(s) hold fewer hours than a complete period should. \
+                     The Peak_values sheet marks them in red on nbr_of_intervals. The export's own \
+                     coverage decides this: the first and last periods it reaches are ordinarily \
+                     partial.",
+                    self.incomplete_periods, self.period_rows
+                ),
+                "",
+            ));
+            out.push(String::new());
+        }
+
+        out.push(h2("Anomalies"));
+        out.push(String::new());
+        if self.anomalies.is_empty() {
+            out.push("No hour needed a judgement call.".to_owned());
+            out.push(String::new());
+            return out.join("\n");
+        }
+        out.push(wrap(
+            "These hours needed a judgement call. They do not stop the conversion. Every one is \
+             listed in the anomalies column of the workbook's Interval_values sheet, against the \
+             reading it concerns, and counted in the anomalies column of Peak_values.",
+            "",
+        ));
+        out.push(String::new());
+
+        let mut by_kind: BTreeMap<Anomaly, Vec<Timestamp>> = BTreeMap::new();
+        for (at, kind) in &self.anomalies {
+            by_kind.entry(*kind).or_default().push(*at);
+        }
+        for (kind, hours) in by_kind {
+            let examples: Vec<String> = hours
+                .iter()
+                .take(EXAMPLE_HOURS)
+                .map(|at| zoned_minute(*at))
+                .collect();
+            let more = hours.len() - examples.len();
+            let and_more = if more == 0 {
+                String::new()
+            } else {
+                format!(", and {more} more")
+            };
+            out.push(wrap(
+                &format!(
+                    "- {} hour(s) carry {kind}: {}{and_more}. {}.",
+                    hours.len(),
+                    examples.join(", "),
+                    kind.description()
+                ),
+                "  ",
+            ));
+        }
+        out.push(String::new());
+        out.join("\n")
+    }
 }
 
 /// Builds the workbook and writes it to `path`.
@@ -312,29 +392,16 @@ pub fn write_gb_workbook(
 
     let incomplete_periods = periods.iter().filter(|p| !p.is_complete()).count();
 
-    // The log and the counts come off the same walk, so the cell and the log file cannot disagree
-    // about what was found. `note_anomalies` wants pairs; `readings.anomalies` holds a set of
-    // kinds per hour, so it is flattened once here and counted on the way past.
+    // The counts and the hours come off the same walk, so the two cannot disagree about what was
+    // found. `readings.anomalies` holds a set of kinds per hour, so it is flattened once here and
+    // counted on the way past.
     let mut anomaly_counts: BTreeMap<Anomaly, usize> = BTreeMap::new();
-    let mut pairs: Vec<(Timestamp, Anomaly)> = Vec::new();
+    let mut anomalies: Vec<(Timestamp, Anomaly)> = Vec::new();
     for (at, kinds) in &readings.anomalies {
         for kind in kinds {
             *anomaly_counts.entry(*kind).or_default() += 1;
-            pairs.push((*at, *kind));
+            anomalies.push((*at, *kind));
         }
-    }
-
-    let mut run_log = RunLog::new();
-    note_anomalies(pairs, &mut run_log);
-    // A period short of its hours is a fact about the workbook rather than about any one hour, so
-    // it is not an `Anomaly` and has to be said separately. It is what the red fill on
-    // `nbr_of_intervals` marks, and a reader who has only the log should learn it too.
-    if incomplete_periods > 0 {
-        run_log.note(format!(
-            "{incomplete_periods} of {} billing period(s) hold fewer hours than a complete period \
-             should. The Peak_values sheet marks them in red on `nbr_of_intervals`.",
-            periods.len()
-        ));
     }
 
     let report = GbWriteReport {
@@ -343,20 +410,13 @@ pub fn write_gb_workbook(
         period_rows: periods.len(),
         incomplete_periods,
         anomaly_counts,
+        anomalies,
         covered: match (
             feed.kwh.values.first_key_value(),
             feed.kwh.values.last_key_value(),
         ) {
             (Some((first, _)), Some((last, _))) => Some((local_date(*first), local_date(*last))),
             _ => None,
-        },
-        log: SourceLog {
-            // Beside the workbook rather than the export, because that is what this run produced.
-            // The session conversion puts its log in the same place for the same reason.
-            source: path.to_path_buf(),
-            suffix: "meter.convert",
-            operation: "Converted Green Button Export",
-            log: run_log,
         },
     };
 
@@ -775,23 +835,28 @@ mod test {
         }
     }
 
-    /// The conversion's log sits beside the workbook it produced, under the meter suffix, and
-    /// groups the anomalies by kind rather than writing one line per hour.
+    /// The conversion report names its workbook, groups the anomalies by kind rather than writing
+    /// one line per hour, and points to the column that holds every one.
     #[test]
-    fn the_conversion_log_sits_beside_the_workbook_and_groups_by_kind() {
-        let dir = temp_dir("convert_log");
+    fn the_conversion_report_groups_anomalies_by_kind() {
+        let dir = temp_dir("convert_report");
         let output = dir.join("Usage.xlsx");
         let start = local_hour(date(2026, 6, 15), 0);
 
         let report = write_gb_workbook(&output, &feed_missing_kva(start, 4), BILL_END_DAY).unwrap();
 
-        assert_eq!(report.log.path(), dir.join("Usage.meter.convert.log"));
-
-        let text = report.log.render();
-        assert!(text.contains("Converted Green Button Export"), "{text}");
-        // One line for the kind, carrying the count, not four lines for four hours.
+        let text = report.to_markdown();
+        assert!(text.contains(&output.display().to_string()), "{text}");
+        // One line for the kind, carrying the count, not four lines for four hours: three named,
+        // the fourth counted.
         assert!(text.contains("4 hour(s) carry MissingKva"), "{text}");
         assert!(text.contains("2026-06-15 00:00"), "{text}");
+        assert!(text.contains("and 1 more"), "{text}");
+        assert!(
+            text.contains("no kVA"),
+            "the description is missing:\n{text}"
+        );
+        assert!(text.contains("anomalies column"), "{text}");
         // Four hours is not a billing period, so the incompleteness is said too.
         assert!(
             text.contains("fewer hours than a complete period"),
@@ -799,6 +864,23 @@ mod test {
         );
 
         fs::remove_dir_all(&dir).ok();
+    }
+
+    /// A clean export says so, rather than leaving the section to be read as missing.
+    #[test]
+    fn a_clean_conversion_report_says_nothing_needed_a_judgement_call() {
+        let report = GbWriteReport {
+            path: PathBuf::from("/data/Usage.xlsx"),
+            interval_rows: 744,
+            period_rows: 1,
+            incomplete_periods: 0,
+            anomaly_counts: BTreeMap::new(),
+            anomalies: Vec::new(),
+            covered: None,
+        };
+        let text = report.to_markdown();
+        assert!(text.contains("No hour needed a judgement call."), "{text}");
+        assert!(!text.contains("fewer hours"), "{text}");
     }
 
     #[test]

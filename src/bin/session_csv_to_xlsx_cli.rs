@@ -11,11 +11,11 @@ where the workbook would go is refused, not overwritten: move or delete it first
 
 Rows needing a judgement call — a session with no charge time, one drawing more power than the
 breaker should allow, one whose reported start, end and duration contradict each other — are
-reported on stderr and recorded in the workbook's Anomalies column; they do not stop the
-conversion. Row numbers are rows of the CSV, counting the header.
+recorded in the workbook's anomalies column; they do not stop the conversion.
 
-A .session.convert.log is written beside the workbook. It lists the same findings, or says there
-were none.";
+A report of each conversion is written to stdout as markdown that also reads as plain text: the
+workbook written, and every row that needed a judgement call, or that none did. Row numbers are rows
+of the CSV, counting the header.";
 
 fn main() -> ExitCode {
     let args: Vec<PathBuf> = env::args_os().skip(1).map(PathBuf::from).collect();
@@ -32,23 +32,19 @@ fn main() -> ExitCode {
     }
 
     let mut failed = false;
+    let mut first = true;
     for path in &args {
         // Through the API rather than `session::session_csv_to_xlsx`, which takes no policy and
         // writes unconditionally. This is where the refusal to overwrite an existing workbook
         // lives, and it is the same one the desktop app gets.
         match session_csv_to_xlsx(path, OnExistingWorkbook::Refuse) {
             Ok(report) => {
-                println!("{}", report.output_path.display());
-                // A binary is the end of the line: there is nowhere left to return a finding to.
-                // Reported, not fatal. The workbook is on disk and its figures are right; exiting
-                // non-zero would tell a script the conversion failed when only its log did.
-                // `gb_peak_values` and the desktop app treat it the same way.
-                if let Err(e) = report.log.write() {
-                    eprintln!("{}: {e}", report.log.path().display());
+                // A blank line between reports, so each heading stands clear of the one before.
+                if !first {
+                    println!();
                 }
-                for anomaly in &report.anomalies {
-                    eprintln!("{}: {anomaly}", path.display());
-                }
+                first = false;
+                print!("{}", report.to_markdown());
             }
             // `error: ` as the other nine binaries write it; no path prefix beyond that, because
             // `session_csv_to_xlsx` names the file in every error it returns.

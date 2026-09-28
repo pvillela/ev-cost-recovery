@@ -136,8 +136,7 @@ A billing period runs from the 24th of one month to the 23rd of the next, so
 it takes as many session reports as it takes to reach across those dates.
 They are listed above in the order their names say they begin.
 
-Sessions needing a look
------------------------
+### Sessions needing a look
 
 These sessions count towards the figures above, and something about them
 needed a judgement call. Only what bears on the above figures is listed.
@@ -149,6 +148,22 @@ needed a judgement call. Only what bears on the above figures is listed.
 - ExcessiveAvgKw - average kilowatts above the Evolute breaker rating at the
   top of the normal voltage band, which the hardware should not allow; the
   session still counts towards every estimate.
+
+### Overall anomalies
+
+Every anomaly in the files read, counted by kind, including those listed
+above.
+
+| File     | Anomaly        | Count |
+|:---------|:---------------|------:|
+| June.csv | ExcessiveAvgKw |     1 |
+
+- ExcessiveAvgKw - average kilowatts above the Evolute breaker rating at the
+  top of the normal voltage band, which the hardware should not allow; the
+  session still counts towards every estimate.
+
+Convert a session report to a workbook to see every anomaly in it with its
+row.
 
 Meter data
 ----------

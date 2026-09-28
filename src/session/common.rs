@@ -2,10 +2,7 @@ use super::site_model::{
     Load, NORMAL_VOLTAGE_FLUCTUATION_FACTOR, PANEL_COUNT, PANEL_MAX_ACTIVE_BREAKERS,
     ev_real_power_kw, single_panel_load,
 };
-use crate::{
-    log::SourceLog,
-    time::{Interval, TZ_OFFSETS, time_zone},
-};
+use crate::time::{Interval, TZ_OFFSETS, time_zone};
 use jiff::{
     Timestamp, Zoned,
     civil::DateTime,
@@ -13,7 +10,6 @@ use jiff::{
 };
 use std::{
     collections::BTreeMap,
-    error::Error,
     fmt::{self, Debug},
     path::PathBuf,
     rc::Rc,
@@ -323,20 +319,14 @@ struct MergedSessions {
     /// Anomalies that are not properties of any single record and so are not on
     /// [`Session::anomalies`]: [`AnomalyKind::DuplicateId`].
     anomalies: Vec<Anomaly>,
-    /// Records dropped as identical copies of one already kept, for the log.
-    collapsed: Vec<Collapse>,
-}
-
-/// One record dropped because another already kept says the same thing.
-///
-/// Logged rather than flagged. A collapse is not a fault in either record — it is what a session
-/// reported in two overlapping files looks like, and the surviving row is the whole of the answer
-/// — so there is no session left to hang an [`AnomalyKind`] on. It is still worth a line: a
-/// reader counting rows in the source files and rows in the estimate needs to know where the
-/// difference went.
-struct Collapse {
-    dropped: RSession,
-    kept: RSession,
+    /// How many records were dropped as identical copies of one already kept.
+    ///
+    /// Counted rather than flagged. A collapse is not a fault in either record — it is what a
+    /// session reported in two overlapping files looks like, and the surviving row is the whole of
+    /// the answer — so there is no session left to hang an [`AnomalyKind`] on. It is still worth
+    /// saying: a reader counting rows in the source files and rows in the estimate needs to know
+    /// where the difference went.
+    collapsed: usize,
 }
 
 impl MergedSessions {
@@ -346,10 +336,9 @@ impl MergedSessions {
     /// Two rules, and the distinction between them is the whole of this function:
     ///
     /// - Same `id` and every compared field equal — see [`Session::is_inconsistent_duplicate`] —
-    ///   is one session reported twice. One copy is kept, and the drop is noted on the log of the
-    ///   file the dropped copy came from. Counting both would inflate every figure derived from
-    ///   it, which is why a billing period spanning two monthly reports cannot simply concatenate
-    ///   them.
+    ///   is one session reported twice. One copy is kept, and the drop is counted. Counting both
+    ///   would inflate every figure derived from it, which is why a billing period spanning two
+    ///   monthly reports cannot simply concatenate them.
     /// - Same `id` with any field differing is *not* one session. `Charge_Session_ID` is not unique
     ///   in Evolute's reports — the June 2026 report carries `S37487` on two sessions a week apart
     ///   — so such records are kept and estimated from, and flagged
@@ -358,26 +347,24 @@ impl MergedSessions {
     ///   the same from here, and both are worth seeing.
     ///
     /// Which list a record arrived in makes no difference to either rule. Two identical rows in one
-    /// file collapse exactly as two identical rows in two files do, and are logged the same way:
+    /// file collapse exactly as two identical rows in two files do, and are counted the same way:
     /// the comparison never looks at where a record came from, so a single-file read and a
     /// two-file one are one code path rather than two.
     fn merge_sessions(session_lists: Vec<Vec<RSession>>) -> Self {
         let mut sessions: Vec<RSession> = Vec::new();
-        let mut collapsed = Vec::new();
+        let mut collapsed = 0;
         for list in session_lists {
             for session in list {
                 // Linear against what is already kept. The comparison is on the compared fields,
                 // not on the id, so no map keyed by id would serve: an id may legitimately name
                 // several distinct sessions, which is the case this function exists for.
-                let already_kept = sessions.iter().find(|kept| {
-                    kept.id == session.id && !kept.is_inconsistent_duplicate(&session)
-                });
-                match already_kept {
-                    Some(kept) => collapsed.push(Collapse {
-                        dropped: session,
-                        kept: kept.clone(),
-                    }),
-                    None => sessions.push(session),
+                let already_kept = sessions
+                    .iter()
+                    .any(|kept| kept.id == session.id && !kept.is_inconsistent_duplicate(&session));
+                if already_kept {
+                    collapsed += 1;
+                } else {
+                    sessions.push(session);
                 }
             }
         }
@@ -701,8 +688,8 @@ impl fmt::Display for Anomaly {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // The token as well as the prose, in the order the report's glossary uses. A reader who
         // meets a bare token in the workbook's `anomalies` column has no way back to the prose
-        // otherwise: the two surfaces this renders -- the run log and the Convert tab's list --
-        // are where that connection has to be made.
+        // otherwise: the conversion report, which this renders every line of, is where that
+        // connection has to be made.
         write!(
             f,
             "row {} ({}) {}: {}",
@@ -772,17 +759,10 @@ pub struct Sessions {
     /// nothing" is exactly what a reader checking a period against two monthly exports needs to be
     /// able to see.
     pub sources: Vec<PathBuf>,
-    /// The run logs, one per file read, each saying either that nothing was found or what was.
-    /// What they hold depends on which reader produced this report — see their docs.
-    ///
-    /// Held rather than written. A reader returns what it found and leaves writing it to whoever
-    /// asked, which a `Vec<PathBuf>` of already-written files cannot do: by the time the caller
-    /// sees the paths the files are there. [`Sessions::write_logs`] is how a binary puts
-    /// them where a user can read them.
-    ///
-    /// A vector because a report can be built from several files at once — see
-    /// [`Sessions::merge`] — and each source file has a log of its own.
-    pub logs: Vec<SourceLog>,
+    /// How many records were dropped as identical copies of a session already held, so that the
+    /// session is counted once. Records sharing an id that differ anywhere are all kept, and are
+    /// flagged [`AnomalyKind::DuplicateId`] instead.
+    pub collapsed: usize,
 }
 
 impl Sessions {
@@ -811,11 +791,7 @@ impl Sessions {
     ///
     /// Public because the `api::pure` entry points take a [`Sessions`] rather than a list, and a
     /// caller outside this crate with sessions of its own needs a way to make one.
-    pub fn from_session_lists(
-        session_lists: Vec<Vec<RSession>>,
-        sources: Vec<PathBuf>,
-        logs: Vec<SourceLog>,
-    ) -> Self {
+    pub fn from_session_lists(session_lists: Vec<Vec<RSession>>, sources: Vec<PathBuf>) -> Self {
         let MergedSessions {
             sessions,
             anomalies,
@@ -827,9 +803,8 @@ impl Sessions {
             excluded: Vec::new(),
             anomalies,
             sources,
-            logs,
+            collapsed,
         };
-        report.note_collapsed(&collapsed);
         for session in sessions {
             if session.anomalies.iter().any(AnomalyKind::excludes_session) {
                 report.excluded.push(session);
@@ -840,38 +815,6 @@ impl Sessions {
             }
         }
         report
-    }
-
-    /// Writes one line per collapsed record onto the log of the file that record came from.
-    ///
-    /// That file rather than the one holding the surviving copy: a reader who opens a log has the
-    /// matching source file in front of them, and the row named in the line has to be a row of it.
-    /// A collapse whose file has no log among `logs` is not recorded — the caller that supplied no
-    /// log for a file it read has nowhere to put it.
-    ///
-    /// The wording says the fields are equal, because the other kind of repeated id says the
-    /// opposite: records sharing a `Charge_Session_ID` that differ anywhere are all kept, and are
-    /// flagged [`AnomalyKind::DuplicateId`] instead of collapsed.
-    fn note_collapsed(&mut self, collapsed: &[Collapse]) {
-        for Collapse { dropped, kept } in collapsed {
-            let Some(log) = self
-                .logs
-                .iter_mut()
-                .find(|log| log.source.as_path() == dropped.path.as_path())
-            else {
-                continue;
-            };
-            log.log.note(format!(
-                "row {}: session {} repeats {} row {}, with every compared field equal; this copy \
-                 was dropped so the session is counted once. Records sharing an id that differ \
-                 are kept and flagged {} instead.",
-                dropped.row,
-                dropped.id,
-                kept.path.display(),
-                kept.row,
-                AnomalyKind::DuplicateId.as_str(),
-            ));
-        }
     }
 
     /// One report from several, each read from its own file.
@@ -889,34 +832,24 @@ impl Sessions {
     ///
     /// It is also the only kind on [`Self::anomalies`], so nothing else has to survive a merge.
     ///
-    /// `sources` and `logs` are concatenated in the order given.
+    /// `sources` are concatenated in the order given. `collapsed` is the sum of the reports' own
+    /// and what the merge collapses across them: a record dropped by an earlier read is no longer
+    /// among the sessions to be found again.
     pub fn merge(reports: Vec<Self>) -> Self {
         let mut session_lists = Vec::with_capacity(reports.len());
         let mut sources = Vec::new();
-        let mut logs = Vec::new();
+        let mut collapsed = 0;
         for mut report in reports {
             sources.append(&mut report.sources);
-            logs.append(&mut report.logs);
+            collapsed += report.collapsed;
             let mut all = report.sessions;
             all.extend(report.spikes);
             all.extend(report.excluded);
             session_lists.push(all);
         }
-        Self::from_session_lists(session_lists, sources, logs)
-    }
-
-    /// Writes each source's log beside it, returning where they went in the same order.
-    ///
-    /// For a binary, which has nowhere to return what it found. Nothing in the library calls this:
-    /// a reader returns its logs and a computation never has any.
-    ///
-    /// # Errors
-    ///
-    /// The first write that fails, with none of the later ones attempted. A log the user believes
-    /// exists and does not is worse than no log at all, so the failure is reported rather than
-    /// passed over.
-    pub fn write_logs(&self) -> Result<Vec<PathBuf>, Box<dyn Error>> {
-        self.logs.iter().map(SourceLog::write).collect()
+        let mut merged = Self::from_session_lists(session_lists, sources);
+        merged.collapsed += collapsed;
+        merged
     }
 
     /// The sessions whose energy may be placed on a timeline: [`Self::sessions`] and
@@ -940,12 +873,13 @@ impl Sessions {
     /// demand side. Both the sessions' own anomalies and this report's are put through it, since a
     /// duplicate id bears on a figure whichever list it was found in.
     ///
-    /// Excluded sessions and sources are not filtered. A session left out of the figures is left
-    /// out whatever the figure is, and every file read is worth naming even when it contributed
-    /// nothing — that is the case a reader cannot tell from a wrong file otherwise.
+    /// Excluded sessions, sources, the overall anomalies and the collapse count are not filtered. A
+    /// session left out of the figures is left out whatever the figure is, and every file read is
+    /// worth naming even when it contributed nothing — that is the case a reader cannot tell from
+    /// a wrong file otherwise.
     pub fn notes(&self, relevant: fn(&AnomalyKind) -> bool) -> SessionNotes {
         let excluded = self.excluded.clone();
-        let own = self
+        let overall_anomalies: Vec<Anomaly> = self
             .sessions
             .iter()
             .chain(&self.spikes)
@@ -955,11 +889,13 @@ impl Sessions {
                     session: session.clone(),
                     kind: *kind,
                 })
-            });
+            })
+            .chain(self.anomalies.iter().cloned())
+            .collect();
         SessionNotes {
             sources: self.sources.clone(),
-            anomalies: own
-                .chain(self.anomalies.iter().cloned())
+            anomalies: overall_anomalies
+                .iter()
                 .filter(|a| relevant(&a.kind))
                 // A left-out session is not one "needing a look": that section says its rows count
                 // towards the figures, and these do not. Its anomalies are listed with the session
@@ -968,9 +904,11 @@ impl Sessions {
                 // By identity, not by kind: the two lists hold the same `Rc` when a record is in
                 // both, and a session's duplicate-id flag matters only if the session counts.
                 .filter(|a| !excluded.iter().any(|e| Rc::ptr_eq(e, &a.session)))
+                .cloned()
                 .collect(),
             excluded,
-            logs: self.logs.clone(),
+            overall_anomalies,
+            collapsed: self.collapsed,
         }
     }
 }
@@ -996,8 +934,11 @@ pub struct SessionNotes {
     /// Listed rather than counted. Such a record either contradicts itself or names no instant at
     /// all, so nothing short of the row itself lets a reader judge what happened.
     pub excluded: Vec<RSession>,
-    /// The run logs of the files read, unwritten. See [`Sessions::logs`].
-    pub logs: Vec<SourceLog>,
+    /// Every anomaly in the files read, whatever the figure and wherever the session falls: the
+    /// sessions' own, those of the excluded sessions, and the relations between sessions.
+    pub overall_anomalies: Vec<Anomaly>,
+    /// How many records were counted once as copies of another. See [`Sessions::collapsed`].
+    pub collapsed: usize,
 }
 
 impl SessionNotes {
@@ -1029,20 +970,12 @@ impl SessionNotes {
             }
         }
     }
-
-    /// Writes each source's log beside it, returning where they went.
-    ///
-    /// For a binary. See [`Sessions::write_logs`], which this is the result-side counterpart of.
-    pub fn write_logs(&self) -> Result<Vec<PathBuf>, Box<dyn Error>> {
-        self.logs.iter().map(SourceLog::write).collect()
-    }
 }
 
 // cargo test --lib -- session::common::test
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::log::RunLog;
 
     fn session(path: &str, row: usize, id: &str, start: &str, energy_use: f64) -> RSession {
         let conn_start: Timestamp = start.parse().expect("an RFC 3339 timestamp");
@@ -1057,16 +990,6 @@ mod test {
             energy_use,
             anomalies: Vec::new(),
         })
-    }
-
-    /// An empty log for one source file, as a reader would hand one back.
-    fn source_log(path: &str) -> SourceLog {
-        SourceLog {
-            source: PathBuf::from(path),
-            suffix: "session.csv.read",
-            operation: "Read Session Report",
-            log: RunLog::new(),
-        }
     }
 
     fn ids(sessions: &[RSession]) -> Vec<&str> {
@@ -1160,36 +1083,67 @@ mod test {
             merged.anomalies.is_empty(),
             "one session stated twice is not a duplicate id"
         );
-        assert_eq!(merged.collapsed.len(), 1);
-        assert_eq!(merged.collapsed[0].dropped.row, 3);
-        assert_eq!(merged.collapsed[0].kept.row, 2);
+        assert_eq!(merged.collapsed, 1);
     }
 
-    /// A collapse is not silent. The line goes on the log of the file the dropped copy came from,
-    /// and says the fields were equal — which is what tells it from the reused-id flag.
+    /// A collapse is not silent: it is counted, and the count reaches the notes a report renders.
+    ///
+    /// Across a merge as well. A copy one file repeats within itself is dropped when that file is
+    /// read, so it is no longer among the sessions the merge sees; the count has to carry it.
     #[test]
-    fn a_collapsed_record_is_logged_against_its_own_file() {
-        let may = vec![session("May.csv", 2, "S1", "2026-05-30T12:00:00Z", 4.0)];
-        let june = vec![session("June.csv", 7, "S1", "2026-05-30T12:00:00Z", 4.0)];
-        let logs = vec![source_log("May.csv"), source_log("June.csv")];
-
-        let report = Sessions::from_session_lists(
-            vec![may, june],
-            vec![PathBuf::from("May.csv"), PathBuf::from("June.csv")],
-            logs,
+    fn a_collapsed_record_is_counted_through_a_merge() {
+        let may = Sessions::from_session_lists(
+            vec![vec![
+                session("May.csv", 2, "S1", "2026-05-30T12:00:00Z", 4.0),
+                session("May.csv", 3, "S1", "2026-05-30T12:00:00Z", 4.0),
+            ]],
+            vec![PathBuf::from("May.csv")],
+        );
+        assert_eq!(may.collapsed, 1);
+        let june = Sessions::from_session_lists(
+            vec![vec![session(
+                "June.csv",
+                7,
+                "S1",
+                "2026-05-30T12:00:00Z",
+                4.0,
+            )]],
+            vec![PathBuf::from("June.csv")],
         );
 
-        assert!(
-            report.logs[0].log.is_empty(),
-            "the kept copy's file is quiet"
+        let merged = Sessions::merge(vec![may, june]);
+        assert_eq!(ids(&merged.sessions), ["S1"]);
+        assert_eq!(merged.collapsed, 2);
+        assert_eq!(merged.notes(|_| true).collapsed, 2);
+    }
+
+    /// The overall anomalies are every anomaly in the files, whatever the figure: what
+    /// `relevant` filters out of the list needing a look, and what is excluded, are both there.
+    #[test]
+    fn overall_anomalies_are_not_filtered() {
+        let mut over = session("June.csv", 2, "HOT", "2026-06-01T12:00:00Z", 4.0);
+        Rc::get_mut(&mut over)
+            .expect("sole owner")
+            .anomalies
+            .push(AnomalyKind::ExcessiveAvgKw);
+        let mut broken = session("June.csv", 3, "BAD", "2026-06-02T12:00:00Z", 4.0);
+        Rc::get_mut(&mut broken)
+            .expect("sole owner")
+            .anomalies
+            .push(AnomalyKind::InconsistentDuration);
+        let report =
+            Sessions::from_session_lists(vec![vec![over, broken]], vec![PathBuf::from("June.csv")]);
+
+        let notes = report.notes(AnomalyKind::bears_on_energy);
+        assert!(notes.anomalies.is_empty(), "{:?}", notes.anomalies);
+        let kinds: Vec<AnomalyKind> = notes.overall_anomalies.iter().map(|a| a.kind).collect();
+        assert_eq!(
+            kinds,
+            [
+                AnomalyKind::ExcessiveAvgKw,
+                AnomalyKind::InconsistentDuration
+            ]
         );
-        let text = report.logs[1]
-            .log
-            .render(report.logs[1].operation, &report.logs[1].source);
-        assert!(text.contains("row 7"), "{text}");
-        assert!(text.contains("May.csv row 2"), "{text}");
-        assert!(text.contains("every compared field equal"), "{text}");
-        assert!(text.contains("DuplicateId"), "{text}");
     }
 
     /// A single list is merged like any other -- see
@@ -1223,13 +1177,8 @@ mod test {
                 4.0,
             )]],
             vec![PathBuf::from("June.csv")],
-            Vec::new(),
         );
-        let quiet = Sessions::from_session_lists(
-            vec![Vec::new()],
-            vec![PathBuf::from("May.csv")],
-            Vec::new(),
-        );
+        let quiet = Sessions::from_session_lists(vec![Vec::new()], vec![PathBuf::from("May.csv")]);
 
         let merged = Sessions::merge(vec![quiet, june]);
         assert_eq!(ids(&merged.sessions), ["S1"]);
@@ -1247,7 +1196,6 @@ mod test {
             Sessions::from_session_lists(
                 vec![vec![session(file, row, id, start, 4.0)]],
                 vec![PathBuf::from(file)],
-                Vec::new(),
             )
         };
         // The same id on two different sessions, a day apart, one in each file. Neither report can
@@ -1269,11 +1217,8 @@ mod test {
             .expect("sole owner")
             .anomalies
             .push(AnomalyKind::ExcessiveAvgKw);
-        let report = Sessions::from_session_lists(
-            vec![vec![over]],
-            vec![PathBuf::from("June.csv")],
-            Vec::new(),
-        );
+        let report =
+            Sessions::from_session_lists(vec![vec![over]], vec![PathBuf::from("June.csv")]);
 
         assert!(
             report
@@ -1294,11 +1239,8 @@ mod test {
             .expect("sole owner")
             .anomalies
             .push(AnomalyKind::InconsistentDuration);
-        let report = Sessions::from_session_lists(
-            vec![vec![broken]],
-            vec![PathBuf::from("June.csv")],
-            Vec::new(),
-        );
+        let report =
+            Sessions::from_session_lists(vec![vec![broken]], vec![PathBuf::from("June.csv")]);
 
         for notes in [
             report.notes(AnomalyKind::bears_on_energy),
@@ -1322,11 +1264,8 @@ mod test {
             .expect("sole owner")
             .anomalies
             .push(AnomalyKind::InconsistentDuration);
-        let report = Sessions::from_session_lists(
-            vec![vec![broken]],
-            vec![PathBuf::from("June.csv")],
-            Vec::new(),
-        );
+        let report =
+            Sessions::from_session_lists(vec![vec![broken]], vec![PathBuf::from("June.csv")]);
 
         for notes in [
             report.notes(AnomalyKind::bears_on_energy),

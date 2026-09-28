@@ -127,6 +127,14 @@ pub(crate) fn h2(s: &str) -> String {
     format!("{s}\n{}", "-".repeat(s.chars().count()))
 }
 
+/// The third heading level, for a part of an [`h2`] section.
+///
+/// Prefixed with `###`, where the two levels above are underlined: an underlined heading has only
+/// two levels, `=` and `-`.
+pub(crate) fn h3(s: &str) -> String {
+    format!("### {s}")
+}
+
 /// A label and its value on one line, as `Label: value`.
 ///
 /// What sits above a report's tables. A two-column table would render the same pairs, but reads as

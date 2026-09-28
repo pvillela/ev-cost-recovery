@@ -39,11 +39,17 @@ A data feed contains readings for a full billing period when the number of hourl
 
 (See also [docs/ERRORS.md](../ERRORS.md) -- contains the error messages associated with this module's functionality and where they appear.)
 
-None of these is fatal. A generated workbook is still written and the figures are still produced; an anomaly
-says a reading needed review, not that the run failed.
+An anomaly is an irregularity in the export's readings, recorded against the hour it concerns.
+Anomalies are found when the export is read, whichever function reads it, and none of them is
+fatal: the function still produces its result.
 
-Each is recorded three ways: counted in the run log, listed on the Convert tab as `<token> x<count>`,
-and highlighted in the generated workbook against the reading it concerns.
+Where they are reported depends on the function that read the export:
+
+- **Cost recovery** reads the export for one billing period. Its report lists every anomaly in that
+  period, hour by hour, under *Meter data*.
+- **Convert to workbook** reads the whole export. Its report groups the anomalies by token, with the
+  first few hours that carry each, and the workbook it writes highlights every one against the
+  reading it concerns.
 
 | Token | What it says |
 | --- | --- |
@@ -55,8 +61,8 @@ and highlighted in the generated workbook against the reading it concerns.
 | `MisalignedInterval` | The hour does not start on a whole hour, so it is left out of peak selection and can never be a reported maximum. |
 | `ImplausibleGap` | The hole before this hour was too large to be an outage, so it was left unfilled rather than expanded into placeholder rows. |
 
-The three `Missing…` kinds are about a reading present in some series and absent from others.
-`MissingInterval` is about an hour absent from all three.
+`MissingKwh`, `MissingKw` and `MissingKva` are about a reading present in some series and absent
+from others. `MissingInterval` is about an hour absent from all three.
 
 ### Why an implausible gap is not filled
 

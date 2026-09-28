@@ -51,12 +51,20 @@ EV delivery cost     -92.02
 Surplus             -156.24          (red)
 ```
 
-The report shown runs to 140 lines.
+The whole report, as saved, runs to 165 lines.
 
 #### What to look at
 
-Collapse and expand the sections of the on-screen report. *Session data* should name both CSVs, in the order their names begin — May before June, whichever picker each went into. *Sessions needing a look* lists four rows, all `DuplicateId`: `S83723` twice in May and `S37487` twice in June, with a glossary beneath. There
-is no *Sessions left out* section: nothing in these files is left out.
+Collapse and expand the sections of the on-screen report. What the input files held is at the end,
+under **Source Data**, in two parts: *Session data*, with three sub-sections, and *Meter data*.
+
+| Section | What to check |
+|:---|:---|
+| *Session data* | Both CSVs, in the order their names begin — May before June, whichever picker each went into. Beneath them, `2 record(s) repeated a session already read …`: the two sessions that run past midnight on 31 May appear in both months' reports, and each is counted once |
+| *Sessions left out* | Absent: nothing in these files is left out |
+| *Sessions needing a look* | Four rows, all `DuplicateId`: `S83723` twice in May and `S37487` twice in June, with a glossary beneath |
+| *Overall anomalies* | Every anomaly in each file, whether or not it bears on the figures: 25 `ExcessiveAvgKw` and 2 `DuplicateId` for each of May and June, with a glossary of both |
+| *Meter data* | The Green Button export, and nothing more: no hour in the billing period needed a judgement call |
 
 #### The session report pickers
 
@@ -217,7 +225,9 @@ between them.
 #### One file instead of two
 
 `Session_Report_May_1_2026-June_30_2026-seconds.csv` covers the whole period on its own. Put it in
-**Session report 1** and leave **Session report 2** empty. The four amounts are the same as the ones from the first scenario above, to the cent: the same sessions, read from one file. The report runs to 135 lines, and *Session data* names the one file.
+**Session report 1** and leave **Session report 2** empty. The four amounts are the same as the ones from the first scenario above, to the cent: the same sessions, read from one file. The whole report, as saved, runs to 158 lines. *Session data* names the one file and reports the same 2 repeated
+records, this time repeated within the file itself; *Overall anomalies* counts 50 `ExcessiveAvgKw`
+and 4 `DuplicateId`.
 
 #### Invalid bill file
 
@@ -306,7 +316,9 @@ Below the headline, in the sections:
 | Section | What to check |
 |:---|:---|
 | *Energy variance* | `1330.30` kWh on the Charges Report against `1309.97` priced, a variance of `20.33` — the two come from different documents and are not expected to agree exactly |
+| *Session data* | The one CSV. No line about repeated records: the file repeats none |
 | *Sessions needing a look* | Two rows, both `DuplicateId`, both session `S37487` |
+| *Overall anomalies* | 25 `ExcessiveAvgKw` and 2 `DuplicateId` |
 | *Charges Report* | The file it was read from, and nothing more |
 
 Worth trying:
@@ -339,33 +351,18 @@ An existing workbook is never overwritten silently, in either conversion.
 
 ## What it writes
 
-Converted workbooks are, of course, written to the file system. In addition, reports can be optionally saved and logs are automatically written.
+Converted workbooks are, of course, written to the file system. Nothing else is written unless you
+save a report.
 
 ### Saving reports
 
-Three tabs carry a **Save…** button beside a **Copy** button, under the report they show. The
-Convert tab has neither: it writes a workbook rather than a report.
+Every tab carries a **Save…** button beside a **Copy** button, under the report it shows.
 
 | Tab | Offered as |
 |---|---|
 | Cost recovery | `EV_Cost_Recovery_Surplus_<period ending>.report.md` |
 | Peak power detail | `EV_Peak_Power_Detail_<period ending>.report.md` |
 | Evolute reimbursement | `Evolute_Reimbursement_<YYYY-MM>.report.md` |
+| Convert to workbook | `<workbook name>.conversion.report.md` |
 
-The name is a suggestion the file dialog opens with; you can save under any name you like. What is
-written is byte-for-byte what the corresponding command-line tool prints.
-
-### Logs
-
-Each run rewrites a log beside each file it reads. Which tab writes which log, what a log holds, and
-how it is named are in [ERRORS.md](ERRORS.md#the-run-logs).
-
-What to check here is that the timestamps move: every log a tab writes should be rewritten on the
-run that reads the file, whether or not you save anything.
-
-With the sample data, a session report's log holds `ExcessiveAvgKw` rows and dropped session duplicates, and nothing else. On the two-file run: 25 items for May, all `ExcessiveAvgKw`, and 27 for
-June — the same 25 plus two records dropped as copies of May's rows 32 and 121. Those two are the
-sessions that run past midnight on 31 May, so both months' reports carry them and the merge counts
-each once; the log names the file and row each repeats. Reading the single May-June file instead
-gives one log of 52: 50 `ExcessiveAvgKw` and the same two copies, this time repeating rows of the
-file itself.
+The name is a suggestion the file dialog opens with; you can save under any name you like.

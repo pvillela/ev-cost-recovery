@@ -99,15 +99,6 @@ pub fn monospace_block(ui: &mut egui::Ui, text: &str) {
     );
 }
 
-/// A monospaced list whose lines are sentences rather than columns, so they wrap.
-///
-/// The counterpart to [`monospace_block`], and the difference is the whole point of having two:
-/// report text is laid out to a fixed width and must not be re-wrapped, while an anomaly is a
-/// sentence of no particular length and is simply lost off the right-hand edge if it is not.
-pub fn monospace_lines(ui: &mut egui::Ui, text: &str) {
-    ui.add(egui::Label::new(egui::RichText::new(text).monospace()).wrap());
-}
-
 /// The rates workbook's picker, the same on both tabs that price with it.
 ///
 /// `salt` keeps the grid's id apart from the other grids on the tab. `label_width` lines the label
@@ -207,7 +198,7 @@ pub fn section_ui(ui: &mut egui::Ui, section: &Section) {
 
 /// The Copy and Save… row every report sits under.
 ///
-/// One definition rather than one per tab: three tabs offer the same two buttons, and the only
+/// One definition rather than one per tab: every tab offers the same two buttons, and the only
 /// thing that differs is the sentence beside them.
 ///
 /// `save_error` is where a failed write is left, for the caller to draw *on the tab the save was

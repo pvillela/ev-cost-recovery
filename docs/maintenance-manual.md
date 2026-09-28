@@ -362,7 +362,7 @@ and `docs/ERRORS.md` carries one entry per kind.
 
 **The wire format.** `as_str` and `from_token`, spelled identically. The token is what marks the
 reading wherever it is carried out of the module — the `anomalies` column of a generated workbook,
-the run log, the Convert tab.
+the conversion report, the Meter data section of the Cost recovery report.
 
 Add variants freely. Keep tokens stable: each is the heading of its entry in `docs/ERRORS.md`, so
 a renamed token leaves earlier workbooks carrying a name the document no longer explains. Nothing

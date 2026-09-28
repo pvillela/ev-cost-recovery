@@ -31,6 +31,10 @@ work gets lost.
 An interval count that is not what a complete billing period should hold is highlighted in light
 red, as is any cell reporting an anomaly.
 
+A report of the conversion is written to stdout as markdown that also reads as plain text: the
+workbook written, how many periods and intervals it holds, and the hours that needed a judgement
+call, grouped by kind. The holiday calendar applied is written to stderr.
+
 Usage:
     gb_peak_values <XML>
     gb_peak_values --help
@@ -78,26 +82,7 @@ fn run(input: &Path) -> Result<(), Box<dyn Error>> {
     let report = gb_xml_to_xlsx(input, OnExistingWorkbook::Refuse)?;
 
     report_holidays(&report);
-
-    println!("{}", report.path.display());
-    // Reported rather than fatal — the workbook is already on disk, and failing here would claim it
-    // was not.
-    if let Err(e) = report.log.write() {
-        eprintln!("{}: {e}", report.log.path().display());
-    }
-    eprintln!(
-        "{} billing periods, {} intervals",
-        report.period_rows, report.interval_rows
-    );
-    if report.incomplete_periods > 0 {
-        eprintln!(
-            "{} period(s) do not hold a full billing period's intervals; highlighted in the sheet",
-            report.incomplete_periods
-        );
-    }
-    for (kind, count) in &report.anomaly_counts {
-        eprintln!("anomaly: {kind} x{count}");
-    }
+    print!("{}", report.to_markdown());
     Ok(())
 }
 

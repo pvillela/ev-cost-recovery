@@ -7,16 +7,16 @@
 
 use ev_cost_recovery::{
     api::{
-        CostRecoverySurplus, GbWriteReport, OnExistingWorkbook, ReimbursementReconciliation,
+        CostRecoverySurplus, OnExistingWorkbook, ReimbursementReconciliation,
         cost_recovery_surplus, gb_xml_to_xlsx, pure::check_reports_cover_period,
         reconcile_evolute_reimbursement, session_csv_to_xlsx,
     },
     hydro_bill::{billing_period_dates, hydro_bill_from_pdf},
-    log::SourceLog,
     session::{parse_session_report_name, report_coverage},
 };
 use jiff::civil;
 use std::{
+    marker::PhantomData,
     mem,
     path::{Path, PathBuf},
 };
@@ -257,19 +257,12 @@ pub struct SurplusState {
     pub error: Option<String>,
     /// Why a report could not be saved, if a save was tried and failed.
     ///
-    /// Separate from [`Self::error`] for the same reason [`Self::log_failures`] is: by the time a
-    /// save is attempted the figures are worked out, and a failed save reported as the run's error
-    /// would say no result was produced when one was. It is also drawn on two tabs -- the Cost
-    /// recovery and Peak power detail tabs are two views of one state -- so a save that failed on
-    /// one would otherwise appear under the other's "Work out the surplus" button.
+    /// Separate from [`Self::error`]: by the time a save is attempted the figures are worked out,
+    /// and a failed save reported as the run's error would say no result was produced when one
+    /// was. It is also drawn on two tabs -- the Cost recovery and Peak power detail tabs are two
+    /// views of one state -- so a save that failed on one would otherwise appear under the other's
+    /// "Work out the surplus" button.
     pub save_error: Option<String>,
-    /// Why the run's logs could not be written, if they could not.
-    ///
-    /// Separate from [`Self::error`], and for the same reason [`SessionWorkbook::log_failure`] is
-    /// separate from a conversion's: by the time a log is written the figures are worked out, and
-    /// reporting a missing log as the run's error would say no result was produced when one was.
-    /// One entry per log that failed, since a run writes two.
-    pub log_failures: Vec<String>,
     /// What a picked file was refused for, against the picker it was chosen at. Reported where the
     /// choice was made rather than at the foot of the form.
     pub input_notes: Vec<(Input, String)>,
@@ -643,16 +636,6 @@ impl SurplusState {
 
         match cost_recovery_surplus(&bill, &meter, &session_csvs, rates) {
             Ok(surplus) => {
-                // The meter export has notes of its own, kept apart from the session side because
-                // the two are checked against different things. Its log covers the billing period
-                // priced, not the whole export; `MeterNotes::log` says why.
-                //
-                // A log that could not be written is reported above the report rather than in place
-                // of it. Nothing else here touches the disk, so the figures below are the same
-                // figures either way, and withholding them would report a failure that did not
-                // happen.
-                let meter_log = surplus.meter.log();
-                self.log_failures = write_logs(surplus.notes.logs.iter().chain(&meter_log));
                 self.outcome = Some(SurplusOutcome {
                     text: surplus.to_string(),
                     surplus,
@@ -689,26 +672,7 @@ impl SurplusState {
         self.outcome = None;
         self.error = None;
         self.save_error = None;
-        self.log_failures.clear();
     }
-}
-
-/// Writes each of a run's logs, collecting a message for every one that did not reach disk.
-///
-/// Per log rather than through `SessionNotes::write_logs`, which stops at the first failure and
-/// returns an error naming no file. A run writes several logs into whatever folders its inputs came
-/// from, and a message that cannot say which one is missing sends the reader to check all of them.
-fn write_logs<'a>(logs: impl IntoIterator<Item = &'a SourceLog>) -> Vec<String> {
-    logs.into_iter()
-        .filter_map(|log| {
-            let e = log.write().err()?;
-            Some(format!(
-                "The figures were worked out, but this run's log was not written.\n{}: {e}\nCheck \
-                 that the folder can be written to and that the disk is not full.",
-                log.path().display()
-            ))
-        })
-        .collect()
 }
 
 fn file_stem(path: &Path) -> String {
@@ -752,9 +716,6 @@ pub struct ReimbursementState {
     /// Why a report could not be saved, if a save was tried and failed. See
     /// [`SurplusState::save_error`].
     pub save_error: Option<String>,
-    /// Why the run's logs could not be written, if they could not. See
-    /// [`SurplusState::log_failures`].
-    pub log_failures: Vec<String>,
     /// What the picked session report was refused for, shown against its picker rather than at the
     /// foot of the form.
     pub input_note: Option<String>,
@@ -847,16 +808,6 @@ impl ReimbursementState {
 
         match reconcile_evolute_reimbursement(&[&csv], &charges, reimbursed, rates) {
             Ok(reconciliation) => {
-                // The Charges Report has a log of its own. It carries no per-row anomalies -- it
-                // is read all-or-nothing -- so its log holds only what leaves the figures standing.
-                // Always `Some` on this path, which reads the file; the `None` case is a
-                // reconciliation built from bare figures.
-                //
-                // As for a surplus, an unwritten log is reported alongside the reconciliation
-                // rather than instead of it.
-                let charges_log = reconciliation.charges.as_ref().map(|c| c.log());
-                self.log_failures =
-                    write_logs(reconciliation.notes.logs.iter().chain(&charges_log));
                 self.outcome = Some(ReimbursementOutcome {
                     text: reconciliation.to_string(),
                     reconciliation,
@@ -883,7 +834,6 @@ impl ReimbursementState {
         self.outcome = None;
         self.error = None;
         self.save_error = None;
-        self.log_failures.clear();
     }
 }
 
@@ -896,60 +846,47 @@ impl ReimbursementState {
 /// conversion — pick a file, work out what would be overwritten, ask, run, report — is the same
 /// for both, and only the three lines here differ.
 pub trait Conversion {
-    /// What a finished conversion has to show for itself.
-    type Outcome;
-
     /// Where the workbook goes. Asked before the conversion runs, to find out whether anything is
     /// already there.
     fn workbook(input: &Path) -> PathBuf;
 
     /// Converts, and returns either the outcome or a message to put in front of the user.
-    fn run(input: &Path, on_existing: OnExistingWorkbook) -> Result<Self::Outcome, String>;
+    fn run(input: &Path, on_existing: OnExistingWorkbook) -> Result<Converted, String>;
+}
+
+/// What a finished conversion produced: the workbook, and the report of it.
+pub struct Converted {
+    pub workbook: PathBuf,
+    /// The report, as the command line prints it, kept verbatim so that a saved report and a piped
+    /// one are the same file.
+    pub text: String,
+}
+
+impl Converted {
+    /// The name a saved conversion report is offered under: the workbook's own, so the two sort
+    /// together in the folder they share.
+    pub fn default_save_name(&self) -> String {
+        format!("{}.conversion.report.md", file_stem(&self.workbook))
+    }
 }
 
 /// The Evolute session report conversion.
 pub struct SessionConversion;
 
-/// What one produced.
-pub struct SessionWorkbook {
-    pub workbook: PathBuf,
-    /// The rows that needed a judgement call, as the command line prints them. Empty for a clean
-    /// conversion.
-    pub anomalies: Vec<String>,
-    /// Why the run log could not be written, if it could not.
-    ///
-    /// Carried on the outcome rather than raised as the conversion's error, because by the time
-    /// the log is written the workbook is already on disk. Failing the whole conversion over it
-    /// would report that nothing was produced, when in fact the file the user asked for is there
-    /// and only its log is missing. Both are said, in that order.
-    pub log_failure: Option<String>,
-}
-
 impl Conversion for SessionConversion {
-    type Outcome = SessionWorkbook;
-
     fn workbook(input: &Path) -> PathBuf {
         input.with_extension("xlsx")
     }
 
-    fn run(input: &Path, on_existing: OnExistingWorkbook) -> Result<SessionWorkbook, String> {
+    fn run(input: &Path, on_existing: OnExistingWorkbook) -> Result<Converted, String> {
         // No path prefix. Every way this can fail names the file already: the two refusals carry
         // it in `ConversionError`, a write failure carries the workbook's, and a read failure is a
         // `SessionCsvError` that names the CSV from a field of its own. Adding it here printed it
         // twice.
         let report = session_csv_to_xlsx(input, on_existing).map_err(|e| e.to_string())?;
-        // See `Sessions::logs`.
-        let log_failure = report.log.write().err().map(|e| {
-            format!(
-                "The workbook was written, but its run log was not.\n{}: {e}\nCheck that the \
-                 folder can be written to and that the disk is not full.",
-                report.log.path().display()
-            )
-        });
-        Ok(SessionWorkbook {
+        Ok(Converted {
+            text: report.to_markdown(),
             workbook: report.output_path,
-            anomalies: report.anomalies.iter().map(|a| a.to_string()).collect(),
-            log_failure,
         })
     }
 }
@@ -957,40 +894,18 @@ impl Conversion for SessionConversion {
 /// The Green Button meter export conversion.
 pub struct GbConversion;
 
-/// What a Green Button conversion produced, and whether its log reached disk.
-///
-/// The meter-side counterpart of [`SessionWorkbook`], and it exists for the same reason: the
-/// library's own report has nowhere to say that the log failed, because the library does not write
-/// the log.
-pub struct GbWorkbook {
-    pub report: GbWriteReport,
-    /// Why the run log could not be written, if it could not. See [`SessionWorkbook::log_failure`]
-    /// for why this is carried rather than raised.
-    pub log_failure: Option<String>,
-}
-
 impl Conversion for GbConversion {
-    type Outcome = GbWorkbook;
-
     fn workbook(input: &Path) -> PathBuf {
         input.with_extension("xlsx")
     }
 
-    fn run(input: &Path, on_existing: OnExistingWorkbook) -> Result<GbWorkbook, String> {
+    fn run(input: &Path, on_existing: OnExistingWorkbook) -> Result<Converted, String> {
         // No path prefix, for the reason `SessionConversion::run` gives: a read failure here is a
         // `GbReadError`, which names the export itself.
         let report = gb_xml_to_xlsx(input, on_existing).map_err(|e| e.to_string())?;
-        // As for a session report.
-        let log_failure = report.log.write().err().map(|e| {
-            format!(
-                "The workbook was written, but its run log was not.\n{}: {e}\nCheck that the \
-                 folder can be written to and that the disk is not full.",
-                report.log.path().display()
-            )
-        });
-        Ok(GbWorkbook {
-            report,
-            log_failure,
+        Ok(Converted {
+            text: report.to_markdown(),
+            workbook: report.path,
         })
     }
 }
@@ -998,8 +913,11 @@ impl Conversion for GbConversion {
 /// One conversion's file, its result and its one question.
 pub struct ConversionSlot<C: Conversion> {
     pub input: Option<PathBuf>,
-    pub outcome: Option<C::Outcome>,
+    pub outcome: Option<Converted>,
     pub error: Option<String>,
+    /// Why the report could not be saved, if a save was tried and failed. See
+    /// [`SurplusState::save_error`].
+    pub save_error: Option<String>,
     /// The workbook a conversion is about to replace, while the user is being asked about it.
     ///
     /// The api refuses an existing workbook unless told otherwise, and this is where being told
@@ -1007,17 +925,20 @@ pub struct ConversionSlot<C: Conversion> {
     /// corrected is an ordinary thing to want, and asked rather than done quietly because the
     /// workbook may have been reconciled against an invoice by hand.
     pub confirm_replace: Option<PathBuf>,
+    /// Which conversion this slot runs. Nothing is held for it: the conversion is its functions.
+    conversion: PhantomData<C>,
 }
 
-// Derived `Default` would demand `C::Outcome: Default`, which neither outcome is and neither needs
-// to be.
+// Derived `Default` would demand `C: Default`, which neither conversion is and neither needs to be.
 impl<C: Conversion> Default for ConversionSlot<C> {
     fn default() -> Self {
         Self {
             input: None,
             outcome: None,
             error: None,
+            save_error: None,
             confirm_replace: None,
+            conversion: PhantomData,
         }
     }
 }
@@ -1029,6 +950,7 @@ impl<C: Conversion> ConversionSlot<C> {
         self.input = Some(input);
         self.outcome = None;
         self.error = None;
+        self.save_error = None;
         self.confirm_replace = None;
     }
 
@@ -1036,6 +958,7 @@ impl<C: Conversion> ConversionSlot<C> {
     pub fn start(&mut self) {
         self.error = None;
         self.outcome = None;
+        self.save_error = None;
         let Some(input) = self.input.as_deref() else {
             return;
         };
@@ -1096,13 +1019,14 @@ pub struct Section {
 /// Splits the report text into its sections, so each can be given its own collapsible heading.
 ///
 /// The report is written to read as plain text, so a title there is a line underlined to its own
-/// length: `=` for a section and `-` for one nested inside it. A table's `|:---|` separator row is
-/// neither, so tables stay inside the section they belong to. The preamble before the first title
-/// is dropped: what it states is shown above these sections as headings in their own right.
+/// length: `=` for a section and `-` for one nested inside it. A third level, nested in a `-`
+/// section, is a line beginning `### `. A table's `|:---|` separator row is none of these, so
+/// tables stay inside the section they belong to. The preamble before the first title is dropped:
+/// what it states is shown above these sections as headings in their own right.
 pub fn report_sections(text: &str) -> Vec<Section> {
     let lines: Vec<&str> = text.lines().collect();
 
-    // The depth of the title starting at `i`, or `None` where no title starts there.
+    // The depth of the underlined title starting at `i`, or `None` where none starts there.
     //
     // Measured in characters, which is what `markdown::h1` and `h2` repeat the rule to. In bytes, a
     // title carrying any character outside ASCII — an em dash, an accented letter — would never
@@ -1115,7 +1039,7 @@ pub fn report_sections(text: &str) -> Vec<Section> {
             _ => false,
         }
     };
-    let level = |i: usize| -> Option<u8> {
+    let underlined = |i: usize| -> Option<u8> {
         let (title, rule) = (lines.get(i)?, lines.get(i + 1)?);
         // A rule is not a title, however well it matches the line under it. Without this, the
         // second of two consecutive rules of the same length reads as a title of its own, and its
@@ -1136,44 +1060,58 @@ pub fn report_sections(text: &str) -> Vec<Section> {
         }
     };
 
-    let heads: Vec<(usize, u8)> = (0..lines.len())
-        .filter_map(|i| level(i).map(|depth| (i, depth)))
+    // Every title: the line it starts on, its depth, its text, and the line its body starts on.
+    let heads: Vec<(usize, u8, &str, usize)> = (0..lines.len())
+        .filter_map(|i| {
+            if let Some(title) = lines[i].strip_prefix("### ")
+                && !title.trim().is_empty()
+            {
+                return Some((i, 3, title.trim(), i + 1));
+            }
+            underlined(i).map(|depth| (i, depth, lines[i], i + 2))
+        })
         .collect();
 
     let mut roots: Vec<Section> = Vec::new();
-    // The depth each root was found at. The sections do not carry it: it decides where the next
-    // title goes and is of no use to a caller rendering them.
-    let mut root_depths: Vec<u8> = Vec::new();
+    // The sections still open to a nested title, outermost first, each with its depth. The
+    // sections do not carry the depth: it decides where the next title goes and is of no use to a
+    // caller rendering them.
+    let mut open: Vec<(Section, u8)> = Vec::new();
 
-    for (k, &(start, depth)) in heads.iter().enumerate() {
+    for (k, &(_, depth, title, body_start)) in heads.iter().enumerate() {
         // A section runs to the next title of any depth, so one that nests others keeps only the
         // text above the first of them.
-        let end = heads.get(k + 1).map_or(lines.len(), |&(next, _)| next);
+        let end = heads.get(k + 1).map_or(lines.len(), |&(next, ..)| next);
         let section = Section {
-            title: lines[start].to_owned(),
-            body: lines[start + 2..end]
+            title: title.to_owned(),
+            body: lines[body_start..end]
                 .join("\n")
                 .trim_matches('\n')
                 .to_owned(),
             subsections: Vec::new(),
         };
 
-        // A nested title belongs to the section above it, and only where there is one to belong
-        // to. A report of nested titles alone yields them all as sections, rather than burying
-        // each one in the one before it.
-        if depth == 2 && root_depths.last() == Some(&1) {
-            roots
-                .last_mut()
-                .expect("a depth is recorded for every root")
-                .subsections
-                .push(section);
-        } else {
-            roots.push(section);
-            root_depths.push(depth);
-        }
+        // A nested title belongs to the nearest open section above it that is shallower, and only
+        // where there is one to belong to. A report of nested titles alone yields them all as
+        // sections, rather than burying each one in the one before it.
+        close_sections(&mut open, &mut roots, depth);
+        open.push((section, depth));
     }
+    close_sections(&mut open, &mut roots, 0);
 
     roots
+}
+
+/// Closes every open section at `depth` or deeper, each into the one it is nested in, or into
+/// `roots` when nothing encloses it.
+fn close_sections(open: &mut Vec<(Section, u8)>, roots: &mut Vec<Section>, depth: u8) {
+    while open.last().is_some_and(|(_, d)| *d >= depth) {
+        let (section, _) = open.pop().expect("checked above");
+        match open.last_mut() {
+            Some((parent, _)) => parent.subsections.push(section),
+            None => roots.push(section),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -2045,5 +1983,35 @@ Top\n===\nabove the nested part\n\nNested\n------\nnested body\n\nNext Top\n====
         assert_eq!(sections[1].title, "Next Top");
         assert_eq!(sections[1].body, "second body");
         assert!(sections[1].subsections.is_empty());
+    }
+
+    /// A `###` title nests under the `-` title above it, and the next `-` title closes it. This is
+    /// the shape "Source Data" has: "Session data" holding its parts, then "Meter data".
+    #[test]
+    fn a_hash_title_nests_under_the_dashed_title_above_it() {
+        let text = "\
+Source Data\n===========\n\nSession data\n------------\n- June.csv\n\n### Sessions left out\n\
+left out\n\n### Overall anomalies\noverall\n\nMeter data\n----------\n- Usage.XML\n";
+        let sections = report_sections(text);
+        assert_eq!(sections.len(), 1);
+        let data = &sections[0].subsections;
+        let titles: Vec<&str> = data.iter().map(|s| s.title.as_str()).collect();
+        assert_eq!(titles, ["Session data", "Meter data"]);
+
+        assert_eq!(data[0].body, "- June.csv");
+        let parts: Vec<(&str, &str)> = data[0]
+            .subsections
+            .iter()
+            .map(|s| (s.title.as_str(), s.body.as_str()))
+            .collect();
+        assert_eq!(
+            parts,
+            [
+                ("Sessions left out", "left out"),
+                ("Overall anomalies", "overall")
+            ]
+        );
+        assert_eq!(data[1].body, "- Usage.XML");
+        assert!(data[1].subsections.is_empty());
     }
 }

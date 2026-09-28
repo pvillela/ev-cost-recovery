@@ -53,8 +53,7 @@ fn fixture() -> PathBuf {
     golden::fixture("session/Session_Report_Band.csv")
 }
 
-/// The fixture read straight from `tests/fixtures/`. Nothing is written: `csv_sessions` hands its
-/// log back on the result rather than putting it beside the file it read.
+/// The fixture read straight from `tests/fixtures/`. `csv_sessions` writes nothing.
 fn band() -> Sessions {
     csv_sessions(&fixture()).expect("the band fixture reads")
 }

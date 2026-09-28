@@ -8,7 +8,7 @@ This software supports the calculation of the impact of EV charging activity on 
 - [What the software does](#what-the-software-does)
 - [Getting and running the software](#getting-and-running-the-software)
 - [Software inputs and outputs](#software-inputs-and-outputs)
-- [Error reporting and logging](#error-reporting-and-logging)
+- [Error reporting](#error-reporting)
 - [License](#license)
 - [Additional documentation](#additional-documentation)
 - [Appendix](#appendix)
@@ -122,17 +122,19 @@ When converting a Green Button export:
 
 Converted files are written to the same folder as the input files. Each converted file has the same name as its input file, but with the ".xlsx" file type.
 
-## Error reporting and logging
+An on-screen report of the conversion: the workbook written, and what in the input needed a judgement call. The report can be saved and/or copied to the clipboard.
+
+## Error reporting
 
 The software checks for problems when reading the inputs. 
 
-When an input file is ingested by the software, any problems are reported on-screen and a log file is created in the same folder as the input file. If no problems are detected when reading the input file, the log file will say so. Otherwise, the log file will contain a description of problems.
+When an input file is ingested by the software, any problems are reported on-screen, in the report the function produces. The reports of the Cost recovery and Evolute reimbursement functions end with a "Source Data" section that names every input file and says what was found in it. The Convert to workbook function reports what it found in the file it converted. Every report can be copied or saved.
 
 Some problems are temporary, e.g., due to an oversight by the user. Such cases may just merit an on-screen message.
 
-Serious errors block the performance of the desired function. Less severe anomalies do not block function execution, but must still be reported on-screen and logged for the user's awareness. Some of those anomalies change the figures a function produces -- by leaving a session out of them, for instance -- while others do not impact the calculations. Certain anomalies are additionally included in the functional reports produced by the software functions.
+Serious errors block the performance of the desired function. Less severe anomalies do not block function execution, but are still reported for the user's awareness. Some of those anomalies change the figures a function produces -- by leaving a session out of them, for instance -- while others do not impact the calculations.
 
-Every message the app can show or log is described in [docs/ERRORS.md](docs/ERRORS.md), grouped by what happened to your work, with what each one means and what to do about it.
+Every message the app can show is described in [docs/ERRORS.md](docs/ERRORS.md), grouped by what happened to your work, with what each one means and what to do about it.
 
 ## License
 
@@ -160,7 +162,7 @@ Unless you explicitly state otherwise, any contribution intentionally submitted 
 Much, but not all, of this documentation pertains to software structure or electrotechnical concerns. Some portions are useful to end-users and administrators.
 
 - [docs/app-cheat-sheet.md](docs/app-cheat-sheet.md) -- Steps for trying the app against data files in `data/` directory (not available in the repo): which to pick, what to expect, and the errors worth provoking.
-- [docs/ERRORS.md](docs/ERRORS.md) -- Every error and anomaly the app reports on-screen or logs: what each message means, and what to do about it.
+- [docs/ERRORS.md](docs/ERRORS.md) -- Every error and anomaly the app reports: what each message means, and what to do about it.
 - [docs/maintenance-manual.md](docs/maintenance-manual.md) -- What to check before changing a constant, how to regenerate the golden files, the invariants nothing enforces.
 - [docs/site-specific-constants.md](docs/site-specific-constants.md) -- Constants specific to this site at the present time. Other sites using this repo's code will likely need to change some of them.
 - [docs/session/Rough_kW_kVA_Table.xlsx](docs/session/Rough_kW_kVA_Table.xlsx) -- Spreadsheet comparing rough kW and kVA estimates per charger with the values resulting from the electrotechnical site model (see also [docs/session/site-model-marcus.md](docs/session/site-model-marcus.md)).
@@ -243,7 +245,6 @@ meets them.
 | `csv`            | Common CSV reading logic.                                    |
 | `error`          | Error types used by multiple other modules.                  |
 | `golden` (private, test-only) | A consistent mechanism for **unit** tests to check their output against a golden file. Integration tests use `fixtures_dir_in` in `tests/common` instead, and nothing under `tests/` reaches this. |
-| `log`            | Common functionality to produce read logs.                   |
 | `markdown` (private) | Common functionality to produce markdown reports.        |
 | `number` (private) | What a number written for a person looks like: the rule both document readers apply before stripping thousands separators. |
 

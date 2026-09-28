@@ -31,7 +31,7 @@ use crate::error::ConversionError;
 /// Here rather than in [`crate::error`], which holds what the library modules raise: nothing
 /// outside the API's `io` half ever builds one of these. Each variant wraps what the corresponding
 /// reader returned, so this is the API's own vocabulary for "an input could not be read", not a
-/// type any reader knows about. [`ConversionError`](crate::error::ConversionError) is in
+/// type any reader knows about. [`ConversionError`] is in
 /// [`crate::error`], because the two workbook writers raise it.
 ///
 /// `path` is held for a caller that wants to act on which file failed rather than print it, and is

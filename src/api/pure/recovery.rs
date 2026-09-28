@@ -1,7 +1,7 @@
 //! What the EV drivers are charged for a billing period, at the rates we set.
 //!
-//! The other side of the ledger from [`energy_cost`](super::energy::energy_cost) and
-//! [`peak_power_cost`](super::peak_power::peak_power_cost), which say what the chargers cost against
+//! The other side of the ledger from [`energy_cost`] and
+//! [`peak_power_cost`], which say what the chargers cost against
 //! the bill. This says what is recovered from the people who drew that energy, and it is not derived
 //! from the bill at all: the rates are ours, and setting them is a decision rather than a
 //! calculation.
@@ -449,8 +449,8 @@ pub fn cost_recovery(
 ///
 /// # How the figure is arrived at
 ///
-/// The three parts are [`cost_recovery`], [`peak_power_cost`](super::peak_power::peak_power_cost)
-/// and [`energy_cost`](super::energy::energy_cost), each computed exactly as it is on its own and
+/// The three parts are [`cost_recovery`], [`peak_power_cost`]
+/// and [`energy_cost`], each computed exactly as it is on its own and
 /// each returned whole. Nothing is recomputed here and no figure is adjusted to make the three
 /// agree: this function subtracts, and the parts are kept so that the subtraction can be checked.
 ///
@@ -469,7 +469,7 @@ pub fn cost_recovery(
 /// - `bill` - the Toronto Hydro bill for the period, which supplies the period and every rate the
 ///   two costs use.
 /// - `gb_period_values` - the meter export's figures for the period, as
-///   [`peak_power_cost`](super::peak_power::peak_power_cost) takes them.
+///   [`peak_power_cost`] takes them.
 /// - `sessions` - every session from every report covering the period, as
 ///   [`energy`](super::energy::energy) takes them.
 /// - `recovery_rates_at_start` - the rates in effect on the period's first day.
@@ -1488,12 +1488,7 @@ mod test {
         );
     }
 
-    /// The kept intervals describe the same read as the summary does: the same files, and the same
-    /// run logs.
-    ///
-    /// Which is why a binary writes [`SessionNotes::write_logs`] once and loses nothing. The
-    /// fixture builds its sessions in memory and so carries no logs; what it can show is that the
-    /// two lists agree rather than diverge.
+    /// The kept intervals describe the same read as the summary does: the same files.
     #[test]
     fn the_kept_intervals_describe_the_same_read_as_the_summary() {
         let s = cost_recovery_surplus(
@@ -1512,12 +1507,6 @@ mod test {
         );
         for kept in &s.delivery.priced_intervals {
             assert_eq!(kept.estimates.sources, s.notes.sources, "{}", kept.unit);
-            assert_eq!(
-                kept.estimates.logs.len(),
-                s.notes.logs.len(),
-                "{}",
-                kept.unit
-            );
         }
     }
 

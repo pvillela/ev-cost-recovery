@@ -76,9 +76,6 @@ fn run(ending: &str, session_csvs: &[&Path]) -> Result<(), Box<dyn Error>> {
     })?;
 
     let energy = energy(billing_period_ending, session_csvs)?;
-    // Written before the report is printed, so a failure to write one is not buried under it.
-    energy.notes.write_logs()?;
-
     print!("{energy}");
     Ok(())
 }

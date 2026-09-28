@@ -444,6 +444,9 @@ impl fmt::Display for ReimbursementReconciliation {
             )
         )?;
 
+        // Under a heading of its own, after the figures, as the Cost recovery report places its
+        // inputs: a reader who wants the answer should not have to pass the caveats to reach it.
+        writeln!(f, "{}\n", h1("Source Data"))?;
         write!(f, "{}", self.notes.to_markdown())?;
         // After the session notes, in the order the two documents are read. The section always
         // names its file, even when there is nothing wrong with it: a reader checking a total
@@ -600,7 +603,7 @@ mod test {
     #[test]
     fn a_month_with_no_sessions_still_names_its_month() {
         let r = reconcile_evolute_reimbursement(
-            &Sessions::from_session_lists(vec![Vec::new()], vec![PathBuf::from(JUNE)], Vec::new()),
+            &Sessions::from_session_lists(vec![Vec::new()], vec![PathBuf::from(JUNE)]),
             date(2026, 6, 1),
             0.0,
             0.0,
@@ -799,8 +802,7 @@ mod test {
     }
 
     /// The report gains a Charges Report section naming the file. The GUI splits the report on its
-    /// headings, so a section here is a panel there — which is what puts these findings on screen
-    /// as well as in the log.
+    /// headings, so a section here is a panel there — which is what puts these findings on screen.
     #[test]
     fn the_report_carries_a_charges_report_section() {
         let text = reconcile_evolute_reimbursement(
@@ -872,25 +874,29 @@ mod test {
         );
     }
 
-    /// A row billed for part of the month reaches the run log as well as the report.
+    /// What the report says about its inputs sits under one "Source Data" heading, after the
+    /// figures: the session data first, then the Charges Report, in the order the two documents
+    /// are read.
     #[test]
-    fn a_partial_span_reaches_the_run_log() {
-        let charges = charges(
+    fn the_inputs_are_described_under_source_data_after_the_figures() {
+        let text = reconcile_evolute_reimbursement(
+            &june_report(),
             june(1),
-            &[
-                ((june(1), june(30)), vec![2, 3]),
-                ((june(15), june(30)), vec![4]),
-            ],
-        );
-        assert!(!charges.is_clean());
+            0.0,
+            0.0,
+            0.0,
+            rates(june(1), 0.11, 0.09, 0.07),
+        )
+        .unwrap()
+        .with_charges_report(charges(june(1), &[((june(1), june(30)), vec![2, 3])]))
+        .to_string();
 
-        let log = charges.log();
-        let text = log.render();
-        assert!(text.contains("Read Charges Report"), "{text}");
-        assert!(text.contains("rows 4"), "{text}");
-        assert_eq!(
-            log.path(),
-            PathBuf::from("XX-XX_Charges_June 2026-June 2026.charges.csv.read.log")
-        );
+        let at = |needle: &str| {
+            text.find(needle)
+                .unwrap_or_else(|| panic!("no {needle:?} in:\n{text}"))
+        };
+        assert!(at("Energy variance\n") < at("Source Data\n==========="));
+        assert!(at("Source Data\n") < at("Session data\n------------"));
+        assert!(at("Session data\n") < at("Charges Report\n--------------"));
     }
 }

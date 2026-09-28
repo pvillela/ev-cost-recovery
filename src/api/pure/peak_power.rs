@@ -279,7 +279,7 @@ impl Error for PeakPowerError {
 ///
 /// Each is one whole metering interval, because that is the resolution the feed states demand at.
 /// The estimate within it is still a 15-minute figure: an
-/// [`IntervalEstimates`](crate::session::IntervalEstimates) reports the highest of the interval's
+/// [`IntervalEstimates`] reports the highest of the interval's
 /// segments, which is the basis the demand charge is billed on. A `green_button::METER_INTERVAL`
 /// holds four of them. See docs/session/README.md, "Interval of interest boundaries".
 ///
@@ -537,8 +537,8 @@ fn notes_for_intervals<'a>(
     sessions: &Sessions,
     intervals: impl IntoIterator<Item = &'a IntervalEstimates>,
 ) -> SessionNotes {
-    // `false` for the kinds, so this starts with the sources, the excluded sessions and the logs
-    // and none of the period-wide anomalies.
+    // `false` for the kinds, so this starts with the sources, the excluded sessions and the overall
+    // anomalies, and none of the period-wide anomalies needing a look.
     let mut notes = sessions.notes(|_| false);
     for ioi in intervals {
         notes.add_anomalies(ioi.session_anomalies.iter().cloned());

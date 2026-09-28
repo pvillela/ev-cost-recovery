@@ -6,15 +6,14 @@
 
 use crate::{
     state::{
-        Conversion, ConversionSlot, ConvertState, GbConversion, GbWorkbook, SessionConversion,
-        SessionWorkbook, Which, WorkingDir,
+        Conversion, ConversionSlot, ConvertState, GbConversion, SessionConversion, Which,
+        WorkingDir,
     },
     theme::{self, Bold as _},
     widgets,
 };
 use eframe::egui;
 use ev_cost_recovery::api::OnExistingWorkbook;
-use std::path::Path;
 
 pub fn ui(ui: &mut egui::Ui, state: &mut ConvertState, working: &mut WorkingDir) {
     widgets::heading(ui, "Convert a file to a workbook");
@@ -48,9 +47,7 @@ pub fn ui(ui: &mut egui::Ui, state: &mut ConvertState, working: &mut WorkingDir)
                  them, then the derived ones, with the adjusted duration and the average kW as \
                  live formulas. Every session is written, anomalous ones included.",
             );
-            if let Some(outcome) = &state.sessions.outcome {
-                session_outcome(ui, outcome);
-            }
+            outcome(ui, &mut state.sessions, working);
         }
         Which::GreenButton => {
             picker::<GbConversion>(
@@ -66,9 +63,7 @@ pub fn ui(ui: &mut egui::Ui, state: &mut ConvertState, working: &mut WorkingDir)
                  Interval_values carries every hour of the export. A multi-year export takes a \
                  moment to parse.",
             );
-            if let Some(outcome) = &state.green_button.outcome {
-                gb_outcome(ui, outcome);
-            }
+            outcome(ui, &mut state.green_button, working);
         }
     }
 }
@@ -180,84 +175,34 @@ fn replace_prompt<C: Conversion>(ui: &mut egui::Ui, slot: &mut ConversionSlot<C>
     });
 }
 
-/// Where the workbook went. The same line for both conversions, so they read alike.
-fn written(ui: &mut egui::Ui, path: &Path) {
+/// What a conversion wrote and found, and the Copy and Save… row that keeps it.
+///
+/// The report is shown as the text it is, the same for both conversions and the same as the
+/// command line prints, so what is saved is what was read on screen.
+fn outcome<C: Conversion>(
+    ui: &mut egui::Ui,
+    slot: &mut ConversionSlot<C>,
+    working: &mut WorkingDir,
+) {
+    let Some(outcome) = &slot.outcome else {
+        return;
+    };
     ui.add_space(14.0);
     ui.label(egui::RichText::new("Workbook written").bold());
-    ui.add(egui::Label::new(path.display().to_string()).wrap());
-}
-
-fn session_outcome(ui: &mut egui::Ui, outcome: &SessionWorkbook) {
-    written(ui, &outcome.workbook);
-
-    // Beneath the workbook's path, not above it. The workbook was written; this says only that its
-    // log was not, and reads as a caveat on the line before it rather than as a failed conversion.
-    if let Some(message) = &outcome.log_failure {
-        ui.add_space(8.0);
-        widgets::error_block(ui, message);
-    }
-
+    ui.add(egui::Label::new(outcome.workbook.display().to_string()).wrap());
     ui.add_space(10.0);
-    if outcome.anomalies.is_empty() {
-        widgets::note(ui, "No row needed a judgement call.");
-        return;
-    }
-    ui.label(egui::RichText::new(format!(
-        "{} row(s) needed a judgement call",
-        outcome.anomalies.len()
-    )));
-    widgets::note(
+    widgets::export_row(
         ui,
-        "These are recorded in the workbook's Anomalies column and do not stop the conversion. \
-         Row numbers are rows of the CSV, counting the header.",
+        working,
+        &outcome.text,
+        &outcome.default_save_name(),
+        "Saves this report as markdown, beside the workbook by default.",
+        &mut slot.save_error,
     );
-    ui.add_space(6.0);
-    widgets::monospace_lines(ui, &outcome.anomalies.join("\n"));
-}
-
-fn gb_outcome(ui: &mut egui::Ui, gb: &GbWorkbook) {
-    let outcome = &gb.report;
-    written(ui, &outcome.path);
-
-    // Beneath the workbook's path, for the reason `session_outcome` gives.
-    if let Some(message) = &gb.log_failure {
+    if let Some(message) = &slot.save_error {
         ui.add_space(8.0);
         widgets::error_block(ui, message);
     }
-
     ui.add_space(10.0);
-    ui.label(format!(
-        "{} billing periods, {} intervals",
-        outcome.period_rows, outcome.interval_rows
-    ));
-
-    if outcome.incomplete_periods > 0 {
-        ui.add_space(6.0);
-        ui.label(format!(
-            "{} period(s) do not hold a full billing period's intervals",
-            outcome.incomplete_periods
-        ));
-        widgets::note(
-            ui,
-            "Highlighted in the sheet. The export's own coverage decides this: the first and last \
-             periods it reaches are ordinarily partial.",
-        );
-    }
-
-    if !outcome.anomaly_counts.is_empty() {
-        ui.add_space(6.0);
-        let counts: Vec<String> = outcome
-            .anomaly_counts
-            .iter()
-            .map(|(kind, count)| format!("{kind} x{count}"))
-            .collect();
-        ui.label(egui::RichText::new("Anomalies").bold());
-        widgets::note(
-            ui,
-            "Highlighted in the sheet, against the readings they concern. They do not stop the \
-             conversion.",
-        );
-        ui.add_space(6.0);
-        widgets::monospace_lines(ui, &counts.join("\n"));
-    }
+    widgets::monospace_block(ui, &outcome.text);
 }
