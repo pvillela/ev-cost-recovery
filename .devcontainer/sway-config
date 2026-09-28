@@ -4,8 +4,9 @@
 # default outright, so everything the headless session needs has to be stated here; nothing is
 # inherited.
 
-# One virtual screen. Comfortably larger than the app's 900x700 window at its 1.30 zoom -- about
-# 1170x910 points -- so the window is never clipped and never as large as the output it sits on.
+# One virtual screen. Comfortably larger than the app's 1000x700 window -- the app's zoom scales
+# what it draws, not the window -- so the window is never clipped and never as large as the output
+# it sits on.
 output HEADLESS-1 resolution 1920x1200
 
 # Every window keeps the size it asked for. sway tiles by default, which would stretch the app to

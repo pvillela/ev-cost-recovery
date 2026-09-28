@@ -21,6 +21,22 @@ const NOTICES: &str = include_str!(concat!(env!("OUT_DIR"), "/third-party-notice
 /// needs the count before it can decide which of them to draw.
 static NOTICE_LINES: LazyLock<Vec<&'static str>> = LazyLock::new(|| NOTICES.lines().collect());
 
+/// The modal's content width when the window has room for it.
+const WIDTH: f32 = 720.0;
+
+/// The least space kept between the modal's frame and each edge of the window.
+const WINDOW_GAP: f32 = 16.0;
+
+/// The notices' height when the window has room for it.
+const NOTICES_HEIGHT: f32 = 360.0;
+
+/// The fewest notice lines shown, however short the window. Below this the modal overflows the
+/// window rather than show a slot too short to read.
+const MIN_NOTICE_ROWS: f32 = 3.0;
+
+/// The space between the notices and the Close button.
+const CLOSE_GAP: f32 = 8.0;
+
 /// Draws the window when `open`, and clears it when the user dismisses it.
 pub fn window(ctx: &egui::Context, open: &mut bool) {
     if !*open {
@@ -29,8 +45,12 @@ pub fn window(ctx: &egui::Context, open: &mut bool) {
 
     let modal = egui::Modal::new(egui::Id::new("about")).show(ctx, |ui| {
         // Wide enough for the licence texts, which are written to about 80 columns and would
-        // otherwise be wrapped into an unreadable shape.
-        ui.set_width(720.0);
+        // otherwise be wrapped into an unreadable shape -- but no wider than the window, which
+        // zooming in with Ctrl and + can make narrower than that. A modal wider than the window is
+        // centred on it and loses both edges.
+        let frame = egui::Frame::popup(ui.style()).total_margin().sum();
+        let screen = ctx.content_rect().size();
+        ui.set_width(WIDTH.min(screen.x - frame.x - 2.0 * WINDOW_GAP));
 
         ui.label(
             egui::RichText::new(APP_NAME)
@@ -70,8 +90,20 @@ pub fn window(ctx: &egui::Context, open: &mut bool) {
         ui.add_space(4.0);
 
         let row_height = ui.text_style_height(&egui::TextStyle::Monospace);
-        egui::ScrollArea::vertical()
-            .max_height(360.0)
+        // The notices take what height is left once everything above and below them fits in the
+        // window, up to NOTICES_HEIGHT. The Close button is laid out after them, so its height is
+        // worked out here the way egui sizes a button.
+        let spacing = ui.spacing();
+        let close_height = (ui.text_style_height(&egui::TextStyle::Button)
+            + 2.0 * spacing.button_padding.y)
+            .max(spacing.interact_size.y);
+        let footer = CLOSE_GAP + close_height + 2.0 * spacing.item_spacing.y;
+        let header = ui.min_rect().height();
+        let room = screen.y - frame.y - 2.0 * WINDOW_GAP - header - footer;
+        // Both ways: a line is never wrapped, so one longer than the modal is wide scrolls within
+        // it instead of widening the modal.
+        egui::ScrollArea::both()
+            .max_height(NOTICES_HEIGHT.min(room).max(MIN_NOTICE_ROWS * row_height))
             .auto_shrink([false, false])
             // Only the visible rows are laid out. Handing the whole text to one label costs a
             // full layout pass over a quarter of a megabyte on every frame the window is open.
@@ -84,7 +116,7 @@ pub fn window(ctx: &egui::Context, open: &mut bool) {
                 }
             });
 
-        ui.add_space(8.0);
+        ui.add_space(CLOSE_GAP);
         ui.vertical_centered(|ui| ui.button("Close").clicked())
             .inner
     });

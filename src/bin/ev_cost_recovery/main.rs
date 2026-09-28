@@ -27,8 +27,13 @@ fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder::default()
             .with_title(app::APP_NAME)
-            .with_inner_size([900.0, 700.0])
-            .with_min_inner_size([560.0, 420.0])
+            // Opens whole on a 1024x768 screen, the smallest one sized for, with room for the
+            // window frame and a taskbar; and leaves room to shrink above the minimum below.
+            .with_inner_size([1000.0, 700.0])
+            // The width the tab bar needs at the zoom set below: the tabs and the buttons at the
+            // far end measure about 893 points together. Any narrower and the buttons at the end
+            // are drawn over the last tab, and narrower still they run off the window's edge.
+            .with_min_inner_size([900.0, 420.0])
             .with_icon(app::icon()),
         ..Default::default()
     };
