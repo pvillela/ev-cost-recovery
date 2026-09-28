@@ -119,7 +119,7 @@ fn chronological(sources: &[PathBuf]) -> Vec<&PathBuf> {
 ///
 /// The prose comes from each kind's [`Display`](std::fmt::Display), so there is one wording to
 /// maintain rather than a second copy here that could drift from it.
-fn glossary(kinds: impl IntoIterator<Item = AnomalyKind>, out: &mut Vec<String>) {
+pub(super) fn glossary(kinds: impl IntoIterator<Item = AnomalyKind>, out: &mut Vec<String>) {
     let mut seen: Vec<AnomalyKind> = Vec::new();
     for kind in kinds {
         if !seen.contains(&kind) {

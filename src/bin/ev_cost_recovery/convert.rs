@@ -187,10 +187,8 @@ fn outcome<C: Conversion>(
     let Some(outcome) = &slot.outcome else {
         return;
     };
+    // The report names the workbook itself, so nothing above it repeats the path.
     ui.add_space(14.0);
-    ui.label(egui::RichText::new("Workbook written").bold());
-    ui.add(egui::Label::new(outcome.workbook.display().to_string()).wrap());
-    ui.add_space(10.0);
     widgets::export_row(
         ui,
         working,

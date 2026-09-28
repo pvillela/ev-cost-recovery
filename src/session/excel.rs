@@ -12,10 +12,11 @@
 use super::{
     Anomaly, AnomalyKind,
     csv::{SessionRows, csv_session_rows},
+    report::glossary,
 };
 use crate::{
     error::ConversionError,
-    markdown::{field, h1, h2, wrap},
+    markdown::{Left, Right, field, h1, h2, table, wrap},
     time::{serial_of_civil, serial_of_duration, serial_of_instant},
 };
 use std::{
@@ -44,8 +45,9 @@ pub struct SessionWriteReport {
 impl SessionWriteReport {
     /// Renders what the conversion wrote and found as markdown that also reads as plain text.
     ///
-    /// Every row that needed a judgement call is listed, token and prose together, so a reader who
-    /// meets a bare token in the workbook's `anomalies` column can find what it means here.
+    /// Every row that needed a judgement call is listed in a table, and each kind that appears is
+    /// explained once beneath it, so a reader who meets a bare token in the workbook's `anomalies`
+    /// column can find what it means here.
     pub fn to_markdown(&self) -> String {
         let mut out = vec![h1("Session Report Conversion"), String::new()];
         out.push(field("Workbook", &self.output_path.display().to_string()));
@@ -68,9 +70,24 @@ impl SessionWriteReport {
             "",
         ));
         out.push(String::new());
-        for anomaly in &self.anomalies {
-            out.push(wrap(&format!("- {anomaly}"), "  "));
-        }
+        let rows: Vec<Vec<String>> = self
+            .anomalies
+            .iter()
+            .map(|a| {
+                vec![
+                    a.session.row.to_string(),
+                    a.session.id.clone(),
+                    a.kind.as_str().to_owned(),
+                ]
+            })
+            .collect();
+        out.push(table(
+            &["Row", "Session", "Anomaly"],
+            &rows,
+            &[Right, Left, Left],
+        ));
+        out.push(String::new());
+        glossary(self.anomalies.iter().map(|a| a.kind), &mut out);
         out.push(String::new());
         out.join("\n")
     }
@@ -503,7 +520,7 @@ fn set_widths(sheet: &mut Worksheet) {
 mod test {
     use super::*;
     use crate::golden;
-    use crate::session::test_support::{timing_anomalies, timing_anomalies_in_cell};
+    use crate::session::test_support::{session, timing_anomalies, timing_anomalies_in_cell};
     use std::fmt::Write as _;
     use std::{env, fs, process};
 
@@ -865,5 +882,54 @@ S3,2026-11-03 09:00,2026-11-03 09:30,9:00:00,0:29:00,2.9
         );
 
         fs::remove_dir_all(&dir).ok();
+    }
+
+    /// The conversion report tables one line per row that needed a judgement call, and explains
+    /// each kind once beneath the table however many rows carry it.
+    #[test]
+    fn the_conversion_report_tables_the_rows_and_explains_each_kind_once() {
+        let anomaly = |row, id, kind| Anomaly {
+            session: session("June.csv", row, id, "2026-06-01T12:00:00Z", 30, 4.0),
+            kind,
+        };
+        let report = SessionWriteReport {
+            output_path: PathBuf::from("/data/June.xlsx"),
+            anomalies: vec![
+                anomaly(5, "S1", AnomalyKind::ExcessiveAvgKw),
+                anomaly(9, "S2", AnomalyKind::ExcessiveAvgKw),
+                anomaly(12, "S3", AnomalyKind::ZeroActiveChargeTime),
+            ],
+        };
+
+        let text = report.to_markdown();
+        assert!(text.contains("Workbook: /data/June.xlsx"), "{text}");
+        assert!(text.contains("3 row(s) needed a judgement call"), "{text}");
+        assert!(text.contains("| Row | Session | Anomaly "), "{text}");
+        assert!(
+            text.contains("|   5 | S1      | ExcessiveAvgKw       |"),
+            "{text}"
+        );
+        assert!(
+            text.contains("|  12 | S3      | ZeroActiveChargeTime |"),
+            "{text}"
+        );
+        assert_eq!(text.matches("- ExcessiveAvgKw - ").count(), 1, "{text}");
+        assert_eq!(
+            text.matches("- ZeroActiveChargeTime - ").count(),
+            1,
+            "{text}"
+        );
+    }
+
+    /// A clean conversion says so, and has no table.
+    #[test]
+    fn a_clean_conversion_report_says_no_row_needed_a_judgement_call() {
+        let report = SessionWriteReport {
+            output_path: PathBuf::from("/data/June.xlsx"),
+            anomalies: Vec::new(),
+        };
+        let text = report.to_markdown();
+        assert!(text.contains("No row needed a judgement call."), "{text}");
+        assert!(!text.contains("| Row |"), "{text}");
     }
 }

@@ -18,8 +18,8 @@ A file downloaded from Toronto Hydro's [Green Button](https://www.torontohydro.c
 The export carries three series — kWh, kW and kVA — each timestamped in UTC on a one-hour grid. The
 kW and kVA figures are not hourly averages: each is the highest 15-minute interval within its hour.
 
-Timestamps are UTC instants, so DST has no impact here. The clocks going forward or back is a
-question for the local-time column a generated workbook renders, and not for the readings themselves.
+Timestamps are UTC instants, so daylight saving time does not affect the readings. It matters only
+when an hour is converted to local time: to display it, or to assign it a Time-of-Use period.
 
 An hour is **aligned** when it starts on a whole hour. All intervals in the feed are expected to be aligned. Only aligned hours can be a reported peak. Toronto Hydro's price-period boundaries all fall on the hour, and their UTC offsets are whole hours in both seasons.
 
@@ -90,5 +90,5 @@ Two different things follow from an incomplete period, and they are not the same
 
 ### The tokens are a wire format
 
-`Anomaly::as_str` is what a generated workbook cell holds, and what is read back from one. Renaming a variant silently makes every workbook already written deviate from the new naming.
+`Anomaly::as_str` is what a generated workbook cell holds. Renaming a variant silently makes every workbook already written deviate from the new naming.
 
