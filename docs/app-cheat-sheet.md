@@ -24,6 +24,19 @@ The Evolute portal states connection times to the second, with
 There are four tabs: **Cost recovery**, **Peak power detail**, **Evolute reimbursement** and
 **Convert to workbook**.
 
+## Text size
+
+| Do this | Expect |
+|:---|:---|
+| Ctrl and + (or =) | Everything in the window larger (Cmd on a Mac) |
+| Ctrl and - (or _) | Everything in the window smaller |
+| Ctrl and 0 | A standard size, smaller than the one the app starts at |
+| Ctrl and + twice, at the window's opening width | **Light**, **About** and the logo drawn over **Convert to workbook**; widen the window to part them |
+
+The app does not remember the size: the next launch opens at its own starting size, not the size
+it had when it was closed. Nor does it remember the files: closing the app loses every file chosen,
+on every tab, and every result, and they all have to be picked again.
+
 ## Cost recovery
 
 ### Normal usage example

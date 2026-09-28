@@ -50,6 +50,11 @@ silent.
 
 **Linux** -- Run it by double-clicking or from the command line.
 
+**Text size** -- Ctrl and + (or =) makes everything in the window larger, and Ctrl and - (or _)
+smaller (Cmd on a Mac). Ctrl and 0 goes to a standard size, which is smaller than the size the app starts at.
+The app does not remember the size: each launch starts at the app's own size again. Larger sizes need a wider
+window, or the buttons at the right of the tab bar cover the last tab.
+
 ### Running from sources
 
 If you want to execute from the source code, clone the repo and run `cargo run --bin ev_cost_recovery`.
