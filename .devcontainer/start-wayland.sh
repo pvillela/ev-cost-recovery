@@ -77,10 +77,14 @@ wait_for test -e "$BUS_SOCKET" || fail "the session bus did not come up; see $LO
 #
 # The configuration is read from the repository, beside this script, rather than from a copy in the
 # image: an edit to it then takes effect at the next container start, with no rebuild to forget.
+#
+# DEVCONTAINER_DIR is for sway-config's `exec` of virtual-pointer.py, which lives beside it.
 if ! pgrep -x sway >/dev/null; then
     rm -f "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY" "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY.lock" "$SWAYSOCK"
+    DEVCONTAINER_DIR="$(dirname "$(readlink -f "$0")")"
     WLR_BACKENDS=headless WLR_LIBINPUT_NO_DEVICES=1 WLR_RENDERER=pixman \
-        setsid sway -c "$(dirname "$(readlink -f "$0")")/sway-config" >>"$LOG" 2>&1 &
+        DEVCONTAINER_DIR="$DEVCONTAINER_DIR" \
+        setsid sway -c "$DEVCONTAINER_DIR/sway-config" >>"$LOG" 2>&1 &
 fi
 wait_for test -e "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY" ||
     fail "$WAYLAND_DISPLAY did not come up; see $LOG"
@@ -103,3 +107,8 @@ wait_for swaymsg -t get_outputs || fail "sway is not answering on $SWAYSOCK; see
 # here, where it can be named, rather than later, where it looks like the app.
 wait_for sh -c 'swaymsg -t get_inputs | grep -q "\"type\": \"keyboard\""' ||
     fail "sway started no keyboard on its seat; see $LOG"
+
+# The pointer, likewise (see sway-config). Without it an app starts with no pointer and ignores
+# every click, which again looks like the app.
+wait_for sh -c 'swaymsg -t get_inputs | grep -q "\"type\": \"pointer\""' ||
+    fail "sway started no pointer on its seat; see $LOG"

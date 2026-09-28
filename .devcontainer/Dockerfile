@@ -37,6 +37,8 @@ FROM mcr.microsoft.com/devcontainers/base:resolute
 #   app rather than to the compositor, so they are named here instead of being left to arrive as
 #   somebody else's dependency.
 # * `imagemagick` crops and compares the PNGs `grim` writes.
+# * `python3-pywayland` runs virtual-pointer.py, the seat's pointer. `python3-cffi-backend` is a
+#   dependency it does not declare: without it the import fails.
 #
 # No X11 client libraries, and Xwayland is switched off in the sway configuration. winit binds to
 # whichever display server it can reach, so an X server within reach would let it take a path the
@@ -45,7 +47,7 @@ FROM mcr.microsoft.com/devcontainers/base:resolute
 RUN export DEBIAN_FRONTEND=noninteractive \
     && apt-get update -qq \
     && apt-get install -y -qq \
-        sway grim wtype imagemagick \
+        sway grim wtype imagemagick python3-pywayland python3-cffi-backend \
         libwayland-client0 libxkbcommon0 \
         libgl1 libegl1 libgles2 libgl1-mesa-dri libvulkan1 mesa-vulkan-drivers \
         fonts-dejavu-core fonts-noto-core \

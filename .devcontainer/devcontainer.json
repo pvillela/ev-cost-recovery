@@ -26,7 +26,8 @@
   },
   "containerEnv": {
     // The headless Wayland session start-wayland.sh brings up. Nothing is shown on the host; the
-    // app is observed through screenshots (`grim`) and driven through `wtype`.
+    // app is observed through screenshots (`grim`) and driven through `wtype`, sway's cursor
+    // commands and `.devcontainer/virtual-pointer.py`.
     // Stated to match what sway binds, not chosen: libwayland names the first free socket from
     // `wayland-1` upward, and start-wayland.sh removes any stale socket of this name before starting
     // sway, so this is the name sway takes every time. The script waits for this exact socket and fails
