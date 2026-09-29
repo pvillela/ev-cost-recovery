@@ -88,11 +88,6 @@ impl PricedInterval {
     pub fn priced_figure(&self) -> f64 {
         self.estimates.figure(self.priced)
     }
-
-    /// This interval's report, titled for its basis and with the figure it was charged on marked.
-    pub fn to_markdown(&self) -> String {
-        self.estimates.to_markdown(self.unit, self.priced)
-    }
 }
 
 /// Breakdown of delivery cost attributable to EV sessions in a billing period.
@@ -546,6 +541,71 @@ fn notes_for_intervals<'a>(
     notes
 }
 
+/// Whether the meter figures cover the whole of the billing period.
+///
+/// Coverage is the only question. An export ordinarily holds many periods — the one this project
+/// reads spans nineteen months — and [`PeriodValues`] is one period's row picked out of it, so the
+/// file carrying other periods is expected and means nothing here. What matters is that the row is
+/// this period's and that no interval of it is missing.
+///
+/// [`read_gb_for_billing_period`](crate::green_button::read_gb_for_billing_period) returns a period
+/// the feed covers
+/// only partly rather than refusing it, on the grounds that which discrepancies matter is the
+/// caller's judgement. This is that judgement, for both entry points: nothing here can be estimated
+/// from a partial period.
+///
+/// Nothing downstream could detect a gap, since the estimate is drawn from the sessions; why a
+/// partial maximum is wrong is [`PeakPowerError::PeriodNotFullyCovered`]'s rationale.
+fn check_period_covered(
+    billing_period_ending: Date,
+    gb_period_values: &PeriodValues,
+) -> Result<(), PeakPowerError> {
+    let values_period_ending = gb_period_values.period.ending;
+    if values_period_ending != billing_period_ending {
+        return Err(PeakPowerError::ValuesAreForAnotherPeriod {
+            period_ending: billing_period_ending,
+            values_period_ending,
+        });
+    }
+    if !gb_period_values.is_complete() {
+        return Err(PeakPowerError::PeriodNotFullyCovered {
+            period_ending: billing_period_ending,
+            intervals: gb_period_values.interval_count,
+            expected: gb_period_values.period.expected_intervals(),
+        });
+    }
+    Ok(())
+}
+
+/// The metering interval a peak occurred in, as an interval of interest.
+///
+/// # Errors
+///
+/// [`PeakPowerError::NoPeak`] when the period carries no reading in that series at all.
+fn peak_interval(
+    peak: Option<Peak>,
+    unit: &'static str,
+    period_ending: Date,
+) -> Result<Interval, PeakPowerError> {
+    let peak = peak.ok_or(PeakPowerError::NoPeak {
+        period_ending,
+        unit,
+    })?;
+    // Only an interval that starts on the hour can be a peak — see `green_button::peaks` — so this
+    // is always a legal interval of interest and needs no further checking.
+    Ok(Interval::new(peak.at, METER_INTERVAL))
+}
+
+// -------------------------------------------------------------------------------------------------
+// The reports. Everything from here to the tests renders a `PricedInterval` or a `DeliveryCost`.
+
+impl PricedInterval {
+    /// This interval's report, titled for its basis and with the figure it was charged on marked.
+    pub fn to_markdown(&self) -> String {
+        self.estimates.to_markdown(self.unit, self.priced)
+    }
+}
+
 impl fmt::Display for DeliveryCost {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // Each line carries the demand it is levied on and the prorated figure it was actually
@@ -675,61 +735,6 @@ impl fmt::Display for DeliveryCost {
         }
         write!(f, "{}", self.meter.to_markdown())
     }
-}
-
-/// Whether the meter figures cover the whole of the billing period.
-///
-/// Coverage is the only question. An export ordinarily holds many periods — the one this project
-/// reads spans nineteen months — and [`PeriodValues`] is one period's row picked out of it, so the
-/// file carrying other periods is expected and means nothing here. What matters is that the row is
-/// this period's and that no interval of it is missing.
-///
-/// [`read_gb_for_billing_period`](crate::green_button::read_gb_for_billing_period) returns a period
-/// the feed covers
-/// only partly rather than refusing it, on the grounds that which discrepancies matter is the
-/// caller's judgement. This is that judgement, for both entry points: nothing here can be estimated
-/// from a partial period.
-///
-/// Nothing downstream could detect a gap, since the estimate is drawn from the sessions; why a
-/// partial maximum is wrong is [`PeakPowerError::PeriodNotFullyCovered`]'s rationale.
-fn check_period_covered(
-    billing_period_ending: Date,
-    gb_period_values: &PeriodValues,
-) -> Result<(), PeakPowerError> {
-    let values_period_ending = gb_period_values.period.ending;
-    if values_period_ending != billing_period_ending {
-        return Err(PeakPowerError::ValuesAreForAnotherPeriod {
-            period_ending: billing_period_ending,
-            values_period_ending,
-        });
-    }
-    if !gb_period_values.is_complete() {
-        return Err(PeakPowerError::PeriodNotFullyCovered {
-            period_ending: billing_period_ending,
-            intervals: gb_period_values.interval_count,
-            expected: gb_period_values.period.expected_intervals(),
-        });
-    }
-    Ok(())
-}
-
-/// The metering interval a peak occurred in, as an interval of interest.
-///
-/// # Errors
-///
-/// [`PeakPowerError::NoPeak`] when the period carries no reading in that series at all.
-fn peak_interval(
-    peak: Option<Peak>,
-    unit: &'static str,
-    period_ending: Date,
-) -> Result<Interval, PeakPowerError> {
-    let peak = peak.ok_or(PeakPowerError::NoPeak {
-        period_ending,
-        unit,
-    })?;
-    // Only an interval that starts on the hour can be a peak — see `green_button::peaks` — so this
-    // is always a legal interval of interest and needs no further checking.
-    Ok(Interval::new(peak.at, METER_INTERVAL))
 }
 
 // cargo test --lib -- api::pure::peak_power::test

@@ -160,6 +160,18 @@ impl fmt::Display for EnergyError {
     }
 }
 
+/// A band's name as a bill and a reader spell it.
+///
+/// Not [`Tou::as_str`], which is the text of a workbook cell and spells these `OnPeak`. This is
+/// prose, and goes into a sentence.
+fn band_name(tou: Tou) -> &'static str {
+    match tou {
+        Tou::OnPeak => "on-peak",
+        Tou::MidPeak => "mid-peak",
+        Tou::OffPeak => "off-peak",
+    }
+}
+
 impl Error for EnergyError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
@@ -346,6 +358,9 @@ fn blended_rate(
     Ok(cost / band_kwh)
 }
 
+// -------------------------------------------------------------------------------------------------
+// The reports. Everything from here to the tests renders an `Energy` or an `EnergyCost`.
+
 impl fmt::Display for Energy {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let kwh = &self.kwh;
@@ -501,18 +516,6 @@ impl fmt::Display for EnergyCost {
 /// One `| TOU | kWh |` row.
 fn band_row(name: &str, kwh: f64) -> Vec<String> {
     vec![name.to_owned(), format!("{kwh:.3}")]
-}
-
-/// A band's name as a bill and a reader spell it.
-///
-/// Not [`Tou::as_str`], which is the text of a workbook cell and spells these `OnPeak`. This is
-/// prose, and goes into a sentence.
-fn band_name(tou: Tou) -> &'static str {
-    match tou {
-        Tou::OnPeak => "on-peak",
-        Tou::MidPeak => "mid-peak",
-        Tou::OffPeak => "off-peak",
-    }
 }
 
 // cargo test --lib -- api::pure::energy::test

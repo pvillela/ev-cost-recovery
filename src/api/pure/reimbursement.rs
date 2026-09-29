@@ -271,6 +271,11 @@ pub fn reconcile_evolute_reimbursement(
     })
 }
 
+// -------------------------------------------------------------------------------------------------
+// The report. Everything from here to the tests renders a `ReimbursementReconciliation`; nothing
+// below computes a figure the struct does not already hold, beyond the per-band split that
+// `recovery_by_band` gives both sides.
+
 /// What the remittance variance means, in a sentence.
 ///
 /// A narrower claim than [`verdict`]'s, and worth keeping apart from it: this one says only

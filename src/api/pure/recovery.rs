@@ -559,6 +559,31 @@ fn stretch(
     }
 }
 
+/// An amount rounded to the cent, as the reports state it.
+///
+/// Shared by the two money reports, each of which prints a column that has to add down to a figure
+/// stated below it: this module's surplus and `reimbursement`'s two variances. A stored figure that
+/// disagreed with the printed column it summarizes reads as an arithmetic error in a report whose
+/// subject is arithmetic.
+///
+/// Through the formatter rather than by arithmetic on the value. `(x * 100.0).round() / 100.0`
+/// rounds a half away from zero while `{:.2}` rounds it to even, so the two disagree on an amount
+/// landing exactly on half a cent. The round trip through a string is what makes the result the
+/// printed figure by construction rather than by an argument that the two rules coincide.
+pub(super) fn to_the_cent(amount: f64) -> f64 {
+    let cents: f64 = format!("{amount:.2}")
+        .parse()
+        .expect("a decimal written by this formatter parses back");
+    // `+ 0.0` turns a negative zero positive and leaves every other value alone. Without it a
+    // surplus that rounds to nothing from below is stored as `-0.0`, and prints as `-0.00` beside
+    // a verdict saying the recovery covered the cost -- a sign the arithmetic does not mean.
+    cents + 0.0
+}
+
+// -------------------------------------------------------------------------------------------------
+// The reports. Everything from here to the tests renders a `CostRecovery` or a
+// `CostRecoverySurplus`, and the band table `reimbursement` shares.
+
 /// One time-of-use band's row in a cost-recovery table: name, kilowatt-hours, rate, recovery.
 ///
 /// Shared with `reimbursement`, which prints one table for the month where this module prints one
@@ -581,27 +606,6 @@ pub(super) fn band_row(name: &str, kwh: f64, rate: f64, recovery: f64) -> Vec<St
         format!("{rate:.5}"),
         format!("{recovery:.2}"),
     ]
-}
-
-/// An amount rounded to the cent, as the reports state it.
-///
-/// Shared by the two money reports, each of which prints a column that has to add down to a figure
-/// stated below it: this module's surplus and `reimbursement`'s two variances. A stored figure that
-/// disagreed with the printed column it summarizes reads as an arithmetic error in a report whose
-/// subject is arithmetic.
-///
-/// Through the formatter rather than by arithmetic on the value. `(x * 100.0).round() / 100.0`
-/// rounds a half away from zero while `{:.2}` rounds it to even, so the two disagree on an amount
-/// landing exactly on half a cent. The round trip through a string is what makes the result the
-/// printed figure by construction rather than by an argument that the two rules coincide.
-pub(super) fn to_the_cent(amount: f64) -> f64 {
-    let cents: f64 = format!("{amount:.2}")
-        .parse()
-        .expect("a decimal written by this formatter parses back");
-    // `+ 0.0` turns a negative zero positive and leaves every other value alone. Without it a
-    // surplus that rounds to nothing from below is stored as `-0.0`, and prints as `-0.00` beside
-    // a verdict saying the recovery covered the cost -- a sign the arithmetic does not mean.
-    cents + 0.0
 }
 
 /// The table one stretch of the period is shown as, bands then total.
