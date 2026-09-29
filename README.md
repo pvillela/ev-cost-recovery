@@ -168,6 +168,7 @@ Much, but not all, of this documentation pertains to software structure or elect
 
 - [CHANGELOG.md](CHANGELOG.md) -- What changed in each release, including every change that impacts calculated results.
 - [docs/app-cheat-sheet.md](docs/app-cheat-sheet.md) -- Steps for trying the app against data files in `data/` directory (not available in the repo): which to pick, what to expect, and the errors worth provoking.
+- [docs/blended-rates.md](docs/blended-rates.md) -- Notes about blended rates and their impact on EV charging activity cost attribution.
 - [docs/ERRORS.md](docs/ERRORS.md) -- Every error and anomaly the app reports: what each message means, and what to do about it.
 - [docs/maintenance-manual.md](docs/maintenance-manual.md) -- What to check before changing a constant, how to regenerate the golden files, the invariants nothing enforces.
 - [docs/site-specific-constants.md](docs/site-specific-constants.md) -- Constants specific to this site at the present time. Other sites using this repo's code will likely need to change some of them.
