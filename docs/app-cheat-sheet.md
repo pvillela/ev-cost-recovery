@@ -208,9 +208,10 @@ The two costs are those of the normal usage example: only the recovery depends o
 headed by its effective date and the dates of the period it priced:
 
 ```
-| At rates effective 2026-04-01 |  17.10 |
-| At rates effective 2026-06-01 | 107.36 |
-| Cost recovery                 | 124.46 |
+| Item                          |      kWh | Recovery |
+| At rates effective 2026-04-01 |  228.199 |    17.10 |
+| At rates effective 2026-06-01 | 1133.806 |   107.36 |
+| Billing period total          | 1362.005 |   124.46 |
 
 EV rates effective 2026-04-01  (2026-05-24 - 2026-05-31)
 

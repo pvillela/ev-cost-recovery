@@ -23,11 +23,11 @@ EV Cost Recovery
 Period: 2026-05-24 - 2026-06-23  (31 days)
 Rates workbook: EV_Cost_Recovery_Rates.xlsx
 
-| Item                          | Amount |
-|:------------------------------|-------:|
-| At rates effective 2026-05-01 |   0.20 |
-| At rates effective 2026-06-01 |   2.04 |
-| Cost recovery                 |   2.24 |
+| Item                          |    kWh | Recovery |
+|:------------------------------|-------:|---------:|
+| At rates effective 2026-05-01 |  2.000 |     0.20 |
+| At rates effective 2026-06-01 | 17.000 |     2.04 |
+| Billing period total          | 19.000 |     2.24 |
 
 Note: values are rounded for display. A column can therefore differ by a
 cent, or by a thousandth of a kilowatt-hour, from the total stated for it,

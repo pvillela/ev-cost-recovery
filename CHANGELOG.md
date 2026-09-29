@@ -23,6 +23,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- When the EV cost-recovery rates change during a billing period, the table at the top of the
+  Cost recovery report's *EV Cost Recovery* section has a kWh column, giving the energy priced at
+  each set of rates and in total. Its *Amount* column is headed *Recovery*, and its total line,
+  *Cost recovery*, is named *Billing period total*.
 - The app and the command-line tools write no `.log` files. What the logs held is in the reports
   described above.
 - The Convert to workbook tab shows the workbook's path once, on the report's `Workbook:` line.
