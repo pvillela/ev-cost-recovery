@@ -137,6 +137,18 @@ that actually went wrong, not a general principle.
   hand, and the export that really held the API open was the unmarked `period_values`. The fix is
   to move the test into `src/` beside what it tests, not to widen the API so it can stay outside.
 
+- **Every change a user can see goes into `CHANGELOG.md`, in the same commit.** Add it under
+  `## Unreleased`, in the Keep a Changelog 1.1.0 categories (Added, Changed, Deprecated, Removed,
+  Fixed, Security). What counts: anything a user of the app or CLI can see or run — commands,
+  flags, workbook columns, reports, error messages; any change to a constant, an algorithm or other
+  code that affects a visible result, described precisely but in terms a reader of the results can
+  follow: what changed, which results it affects, and how. The effect need not have one direction:
+  an algorithm change can raise some values and lower others depending on the inputs, and the entry
+  says so, and on what it depends, rather than naming a direction. Also any breaking change to the
+  public `api` module. Refactors, tests and docs are not entries. At a release, rename
+  `## Unreleased` to `## X.Y.Z - YYYY-MM-DD`, dated by the tagged commit, and open an empty
+  `## Unreleased` above it.
+
 ## When the user is refactoring code Claude wrote
 
 **The prior state is not the baseline.** A test failing after their change may be pinning a kludge
