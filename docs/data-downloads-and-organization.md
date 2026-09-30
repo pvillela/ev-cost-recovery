@@ -55,6 +55,6 @@ Organize the application's input and output files as follows:
   - `evolute` -- contains downloads from Evolute.
   - `green_button` -- contains downloads from Green Button.
   - `hydro_bills` -- contains hydro bills.
-  - `rates` -- contains the rates spreadsheet(s), usually just one which is updated with additional rows as EV cost-recovery rates change over time. See [docs/rates/README.md](rates/README.md).
+  - `rates` -- contains the rates spreadsheet(s), usually just one file which is updated with additional rows as EV cost-recovery rates change over time. See [docs/rates/README.md](rates/README.md).
   - `reports` -- contains the saved reports from the application.
   - `_archive` -- move files to the appropriate sub-folders of `_archive` to unclutter the main data folders as files accumulate over time.
