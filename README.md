@@ -72,6 +72,8 @@ the app names.
 
 ## Software inputs and outputs
 
+The files used by this software (aside from the rates Excel workbook) can be downloaded from Toronto Hydro and Evolute websites. See [docs/data-downloads-and-organization.md](docs/data-downloads-and-organization.md) for details.
+
 ### Inputs and outputs for `Cost recovery` <small>(and `Peak power detail`)</small>
 
 #### Inputs
@@ -169,6 +171,7 @@ Much, but not all, of this documentation pertains to software structure or elect
 - [CHANGELOG.md](CHANGELOG.md) -- What changed in each release, including every change that impacts calculated results.
 - [docs/app-cheat-sheet.md](docs/app-cheat-sheet.md) -- Steps for trying the app against data files in `data/` directory (not available in the repo): which to pick, what to expect, and the errors worth provoking.
 - [docs/blended-rates.md](docs/blended-rates.md) -- Notes about blended rates and their impact on EV charging activity cost attribution.
+- [docs/data-downloads-and-organization.md](docs/data-downloads-and-organization.md) -- How to download and organize the data files used by the software.
 - [docs/ERRORS.md](docs/ERRORS.md) -- Every error and anomaly the app reports: what each message means, and what to do about it.
 - [docs/maintenance-manual.md](docs/maintenance-manual.md) -- What to check before changing a constant, how to regenerate the golden files, the invariants nothing enforces.
 - [docs/site-specific-constants.md](docs/site-specific-constants.md) -- Constants specific to this site at the present time. Other sites using this repo's code will likely need to change some of them.

@@ -52,6 +52,10 @@ that date.
 | 2026-05-01     |  0.1100 |   0.0900 |   0.0700 |
 | 2026-09-01     |  0.5152 |   0.4740 |   0.4218 |
 
+## Rate updates
+
+As EV cost-recovery rates change over time, new rows should be added to the spreadsheet.
+
 ## A known limit
 
 Dates are read in the 1900 date system, which every current version of Excel and LibreOffice uses
