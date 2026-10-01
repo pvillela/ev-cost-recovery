@@ -45,7 +45,7 @@ curl -fsSL https://omp.sh/install | sh
 # (source ${NVM_DIR}/nvm.sh && npm install -g @google/gemini-cli)
 
 echo "Installing herdr ..."
-curl curl -fsSL https://herdr.dev/install.sh | sh
+curl -fsSL https://herdr.dev/install.sh | sh
 
 echo "Installing Zellij ..."
 ZELLIJ_VERSION=0.44.3

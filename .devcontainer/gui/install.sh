@@ -1,19 +1,31 @@
-# .devcontainer/Dockerfile
+#!/usr/bin/env bash
+# .devcontainer/gui/install.sh -- the `./gui` devcontainer feature. Runs as root during the image
+# build.
+set -e
 
-# Pinned to resolute (Ubuntu 26.04) deliberately, not merely inherited: it matches the host and the
-# `ubuntu-26.04` runners in .github/workflows, so all three agree on one glibc and a binary built
-# here behaves like the one CI ships. glibc is backward compatible only, so the release runs on
-# 26.04 and every later release but nothing earlier. That floor is a property of the build image,
-# which is why the tag is fixed rather than left to follow the newest.
-FROM mcr.microsoft.com/devcontainers/base:resolute
+####################################################################################################
+# WARNING: ANY EDIT TO ANY FILE IN THIS DIRECTORY REBUILDS THE GUI LAYER -- EVEN AN EDIT TO A
+# COMMENT.
+#
+# Docker keys this layer on the content of every file in .devcontainer/gui/, comments included. One
+# changed character in this script or in devcontainer-feature.json downloads a few hundred MB of
+# packages again at the next container build.
+#
+# Keep documentation that is likely to change outside this directory: see
+# .devcontainer/gui-feature.md.
+####################################################################################################
 
 # The Wayland session the eframe/egui app renders onto, and the tooling to drive and observe it
 # headlessly.
 #
-# This lives here rather than in setup.sh so it becomes a cached image layer. Docker keys its
-# build cache on the instructions and base image, not on the workspace path, whereas the
+# This is a feature rather than a step of setup.sh so it becomes a cached image layer. Docker keys
+# its build cache on the instructions and base image, not on the workspace path, whereas the
 # devcontainer's own identity is a hash of that path -- so moving the project rebuilds the
 # container but reuses this layer, instead of re-downloading a few hundred MB over the network.
+#
+# `installsAfter` in devcontainer-feature.json makes it the last layer of the image. Every layer
+# below it is free of GUI packages, so a devcontainer with no GUI that names the same base image
+# and the same toolchain features reuses those layers from the build cache.
 #
 # `--no-install-recommends` is deliberately NOT used: the portal packages below pull working
 # defaults through recommends, and trimming them is exactly the kind of change that turns into a
@@ -44,14 +56,14 @@ FROM mcr.microsoft.com/devcontainers/base:resolute
 # whichever display server it can reach, so an X server within reach would let it take a path the
 # desktop has no equivalent of, and that shows up as a screenshot nobody can account for rather
 # than as an error.
-RUN export DEBIAN_FRONTEND=noninteractive \
-    && apt-get update -qq \
-    && apt-get install -y -qq \
-        sway grim wtype imagemagick python3-pywayland python3-cffi-backend \
-        libwayland-client0 libxkbcommon0 \
-        libgl1 libegl1 libgles2 libgl1-mesa-dri libvulkan1 mesa-vulkan-drivers \
-        fonts-dejavu-core fonts-noto-core \
-        dbus-daemon dbus-bin \
-        xdg-desktop-portal xdg-desktop-portal-kde \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+export DEBIAN_FRONTEND=noninteractive
+apt-get update -qq
+apt-get install -y -qq \
+    sway grim wtype imagemagick python3-pywayland python3-cffi-backend \
+    libwayland-client0 libxkbcommon0 \
+    libgl1 libegl1 libgles2 libgl1-mesa-dri libvulkan1 mesa-vulkan-drivers \
+    fonts-dejavu-core fonts-noto-core \
+    dbus-daemon dbus-bin \
+    xdg-desktop-portal xdg-desktop-portal-kde
+apt-get clean
+rm -rf /var/lib/apt/lists/*

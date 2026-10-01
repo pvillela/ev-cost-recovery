@@ -1,18 +1,29 @@
 {
   "name": "Rust Dev Environment",
-  // Built from a Dockerfile rather than pulled as a plain `image` so the GUI runtime packages
-  // become a cached layer. The devcontainer's identity is a hash of the host workspace path, so
-  // moving the project forces a rebuild; Docker's layer cache is keyed on content instead, and
-  // carries those packages across the move rather than re-downloading them.
-  "build": {
-    "dockerfile": "Dockerfile"
-  },
+  // Pinned to resolute (Ubuntu 26.04) deliberately, not merely inherited: it matches the host and
+  // the `ubuntu-26.04` runners in .github/workflows, so all three agree on one glibc and a binary
+  // built here behaves like the one CI ships. glibc is backward compatible only, so the release
+  // runs on 26.04 and every later release but nothing earlier. That floor is a property of the
+  // build image, which is why the tag is fixed rather than left to follow the newest.
+  "image": "mcr.microsoft.com/devcontainers/base:resolute",
+  // Each feature is one image layer. The install order is Node, Rust, then `./gui`.
+  //
+  // THE ORDER OF THE KEYS BELOW DOES NOT SET THE INSTALL ORDER. The devcontainer tooling sorts
+  // features alphabetically by identifier, so `.../node` installs before `.../rust`. A feature
+  // that declares `installsAfter` goes after the features it names: `./gui` names the other two
+  // in gui/devcontainer-feature.json, which is what makes it last. `overrideFeatureInstallOrder`
+  // is the setting that forces a different order.
+  //
+  // The layers below `./gui` hold no GUI packages, so a devcontainer without a GUI that names
+  // this image and the same two features, with the same options, takes them from Docker's build
+  // cache.
   "features": {
     "ghcr.io/devcontainers/features/rust:1": {
       "version": "latest",
       "profile": "default"
     },
-    "ghcr.io/devcontainers/features/node:2": {}
+    "ghcr.io/devcontainers/features/node:2": {},
+    "./gui": {}
   },
   "postCreateCommand": "bash .devcontainer/setup.sh",
   // Not postCreateCommand: the session has to be re-established after a container restart too.

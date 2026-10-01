@@ -1,0 +1,10 @@
+{
+  "id": "gui",
+  "version": "1.0.0",
+  "name": "Headless Wayland GUI",
+  "description": "The Wayland session the eframe/egui app renders onto, and the tooling to drive and observe it headlessly.",
+  "installsAfter": [
+    "ghcr.io/devcontainers/features/rust",
+    "ghcr.io/devcontainers/features/node"
+  ]
+}
