@@ -117,9 +117,14 @@ impl fmt::Display for CoverageError {
                 period_ending,
                 coverage,
             } => {
+                // The subject agrees with how many reports are listed beneath it.
+                let subject = match coverage.len() {
+                    1 => "the session report does not cover",
+                    _ => "the session reports do not cover",
+                };
                 write!(
                     f,
-                    "the session reports do not cover the {} {period_start} to {period_ending}:",
+                    "{subject} the {} {period_start} to {period_ending}:",
                     span.as_str()
                 )?;
                 for c in coverage {
@@ -281,6 +286,29 @@ mod test {
         assert!(
             period.contains("the billing period 2026-05-24 to 2026-06-23"),
             "{period}"
+        );
+    }
+
+    /// The opening words agree in number with the reports listed under them.
+    #[test]
+    fn a_refusal_agrees_in_number_with_the_reports_given() {
+        let april = Path::new("Session_Report_April_1_2026-April_30_2026.csv");
+        let june = Path::new("Session_Report_June_1_2026-June_30_2026.csv");
+
+        let one = check_reports_cover_period(date(2026, 6, 23), &[april])
+            .expect_err("April does not cover the period")
+            .to_string();
+        assert!(
+            one.starts_with("the session report does not cover the billing period"),
+            "{one}"
+        );
+
+        let two = check_reports_cover_period(date(2026, 6, 23), &[april, june])
+            .expect_err("April and June do not cover a period starting 24 May")
+            .to_string();
+        assert!(
+            two.starts_with("the session reports do not cover the billing period"),
+            "{two}"
         );
     }
 

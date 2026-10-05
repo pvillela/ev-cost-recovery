@@ -32,6 +32,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The Convert to workbook tab shows the workbook's path once, on the report's `Workbook:` line.
 - The app window opens at 1000 × 700, which fits a 1024 × 768 screen, and cannot be made narrower
   than 900, the width its tab bar needs.
+- The refusal for session reports that leave part of a billing period or month uncovered reads
+  `the session report does not cover the …` when one report was given. With two or more it reads
+  `the session reports do not cover the …`.
 - **Breaking, `api`:** `SessionWriteReport` and `GbWriteReport` have no `log` field, and gain
   `to_markdown()`, which renders the conversion report. The session results' `notes` carry no logs:
   `SessionNotes::write_logs` and the `logs` fields are removed, and `Sessions::from_session_lists`

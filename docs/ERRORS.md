@@ -613,6 +613,8 @@ or, on the Reimbursement tab:
 
 > the session reports do not cover the month `<date>` to `<date>`:
 
+With one report given, each opens `the session report does not cover the`.
+
 One indented line per report given, so the gap can be seen against what was handed in.
 
 **Where** Cost recovery, Reimbursement.

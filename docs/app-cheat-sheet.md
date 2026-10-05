@@ -338,7 +338,7 @@ Also try:
 |:---|:---|
 | Type `0` into **Reimbursement** | Both variances negative — `-246.26` and `-111.54` — and "sent less than its own Charges Report" |
 | Delete **Reimbursement** (it will show `0.00` after you delete the value in it) and run | `the reimbursement amount is blank` — a blank is refused. A blank field looks the same as a deliberately typed `0.00` but they are different |
-| Choose the **May** session report instead of June | `the session reports do not cover the month 2026-06-01 to 2026-06-30:`, followed by the dates the May file does cover |
+| Choose the **May** session report instead of June | `the session report does not cover the month 2026-06-01 to 2026-06-30:`, followed by the dates the May file does cover |
 
 ## Exercise 9: *Convert to workbook* tab
 
