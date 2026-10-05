@@ -59,10 +59,10 @@ There are four tabs: **Cost recovery**, **Peak power detail**, **Evolute reimbur
 
 | Do this | Expect |
 |:---|:---|
-| Press Ctrl and + (or =) | Everything in the window gets larger |
-| Press Ctrl and - | Everything in the window gets smaller |
-| Press Ctrl and 0 | A standard size, smaller than the one the app starts at |
-| Press Ctrl and + twice, at the window's opening width | The theme button is drawn over **Convert to workbook**. Make the window wider to separate them |
+| Press `Ctrl and +` or `Ctrl and =` | Everything in the window gets larger |
+| Press `Ctrl and -` | Everything in the window gets smaller |
+| Press `Ctrl and 0` | A standard size, smaller than the one the app starts at |
+| Press `Ctrl and +` six times | The theme button is drawn over **Convert to workbook**. Make the window wider to separate them |
 | Press **🌙 Dark**, at the top right | The window turns dark, and the button changes to **☀ Light** |
 | Press **☀ Light** | The window is light again |
 
@@ -70,7 +70,7 @@ The app starts in the same theme as your computer: light, unless you have set Wi
 
 ## Exercise 2: Work out the surplus for June
 
-This is the app's main job. It compares what the EV chargers cost the building in one billing period with what the rates recovered from the drivers.
+This is the app's main job. It compares what the EV chargers cost the building in one billing period with what the rates recovered from the EV charger owners.
 
 Only the **June 2026** billing period can be run with the sample files. The meter readings stop on 24 June, so no later period has them.
 
@@ -104,33 +104,32 @@ A negative surplus, in red, means the rates did not cover the cost.
 
 ### What to look at
 
-The report under the figures has sections that open and close when you click their headings. Try it. What the files held is at the end, under **Source Data**, in two parts: *Session data*, with three smaller sections, and *Meter data*.
+The report under the figures has sections that collapse and expand when you click their headings. Try it. The **Source Data** section goes into noteworthy details about the source data.
 
-| Section | What to check |
+| Sub-section | What to check |
 |:---|:---|
 | *Session data* | Both session reports, May before June. Beneath them, `2 record(s) repeated a session already read …`: two sessions run past midnight on 31 May, so they appear in both months' reports. Each is counted once |
-| *Sessions left out* | Not there: nothing in these files is left out |
 | *Sessions needing a look* | Four rows, all `DuplicateId`: `S83723` twice in May and `S37487` twice in June, with an explanation beneath |
 | *Overall anomalies* | Everything unusual in each file, whether or not it changes the figures: 25 `ExcessiveAvgKw` and 2 `DuplicateId` for each of May and June, with an explanation of both |
-| *Meter data* | The Green Button export, and nothing more: no hour in the billing period needed a judgement call |
+| *Meter data* | The Green Button export, and nothing more: no anomalies detected in any of the metering intervals during the billing period. |
 
 ## Exercise 3: How the session report pickers behave
 
-Each session report picker stays shut until the one above it is ready. While shut, it says what it is waiting for:
+In the **Cost recovery** tab, each session report picker stays shut until a required prior selection is made. While shut, it says what it is waiting for:
 
-| Picker           | Shut while                             | It says                                            |
-| :--------------- | :------------------------------------- | :------------------------------------------------- |
-| Session report 1 | no bill is chosen                      | `Choose the bill first`                            |
-| Session report 1 | the bill chosen could not be read      | `The bill above could not be read`                 |
-| Session report 2 | Session report 1 is empty              | `Choose Session report 1 first`                    |
+| Picker           | Shut while                               | It says                                            |
+| :--------------- | :--------------------------------------- | :------------------------------------------------- |
+| Session report 1 | no bill is chosen                        | `Choose the bill first`                            |
+| Session report 2 | Session report 1 is empty                | `Choose Session report 1 first`                    |
 | Session report 2 | Session report 1 covers the whole period | `Session report 1 covers the whole billing period` |
 
 To see them:
 
 1. Close and reopen the app, so that nothing is chosen.
 2. Open **Cost recovery**. **Session report 1** says `Choose the bill first`.
-3. Choose the June bill, `TH_5728140000_2026_06_29.pdf`. **Session report 2** says `Choose Session report 1 first`.
-4. Choose the June session report in **Session report 1**. **Session report 2** opens: June alone leaves 24 to 31 May uncovered.
+3. Choose the June bill, `TH_5728140000_2026_06_29.pdf`. The **Session report 1** button is enabled and **Session report 2** says `Choose Session report 1 first`.
+4. Choose the June session report in **Session report 1**.
+5. **Session report 2** opens: June alone leaves 24 to 31 May uncovered. Choose the May session report.
 
 One report that does not cover the whole period is not an error. That is what **Session report 2** is for.
 
@@ -144,20 +143,19 @@ A different bill means a different billing period, so the app empties the sessio
 
 ## Exercise 4: Try different rates
 
-Choose the practice copy in the **Rates workbook** picker. Choose the other four files as in Exercise 2.
+In the **Cost recovery** tab, choose the practice copy in the **Rates workbook** picker. Choose the other four files as in Exercise 2.
 
 | Do this in the practice copy | Then press **Work out the surplus**, and expect |
 | :--- | :--- |
 | Set the rates on row 2 to `0.30` / `0.30` / `0.30` | Surplus **136.95**, in teal instead of red, and "covered" in the report |
 | Set the rates on row 2 to `0.20` / `0.20` / `0.20` | Surplus **0.75**, in teal: nearly break-even. Try other values to watch the sign flip either way |
-| Change the date on row 3 to `2026-06-01`, and its rates to `0.30` / `0.30` / `0.30` | Cost recovery **359.52**, surplus **87.87**. The rates now change during the period, so the report shows a separate table for each set of rates, as in Exercise 5 |
 
 Also try:
 
 | Do this | Expect |
 | :--- | :--- |
+| Choose a rates workbook on the *Evolute reimbursement* tab after a run here | It is chosen here (*Cost recovery tab*) too, the figures here disappear, and the *Peak power detail* tab greys out |
 | Change any picker after a run | The figures disappear, and the *Peak power detail* tab greys out |
-| Choose a rates workbook on the *Evolute reimbursement* tab after a run here | It is chosen here too, and the figures here disappear |
 
 ## Exercise 5: A rate change within the billing period
 
@@ -174,7 +172,7 @@ Rates change from time to time, and a change rarely falls on the day a billing p
 The June period runs 24 May to 23 June, so it starts at the April rates and changes to the June
 rates on 1 June. The September row is not used.
 
-1. Choose the five files of Exercise 2, but choose `EV_Cost_Recovery_Rates-change-in-period.xlsx` in the **Rates workbook** picker.
+1. In the **Cost recovery** tab, choose the five files of Exercise 2, but choose `EV_Cost_Recovery_Rates-change-in-period.xlsx` in the **Rates workbook** picker.
 2. Press **Work out the surplus**.
 
 Expect:
@@ -216,12 +214,12 @@ EV rates effective 2026-06-01  (2026-06-01 - 2026-06-23)
 ```
 
 The two tables' kWh add up to the `1362.005` kWh total of the *EV Energy Cost* section. Each
-session's energy is cut at midnight on 1 June, so nothing is counted twice and nothing is lost
+session's energy is split before and after midnight on 1 June, so nothing is counted twice and nothing is lost
 between them.
 
 ## Exercise 6: Mistakes the app catches
 
-Each of these is a mistake that is easy to make. The app refuses to work out a figure from bad input, and says what is wrong.
+In the **Cost recovery** tab, each of these is a mistake that is easy to make. The app refuses to work out a figure from bad input, and says what is wrong.
 
 **The wrong PDF as the bill.** Choose any PDF that is not a Toronto Hydro bill in the **Toronto Hydro bill** picker. As soon as it is chosen, the app says under the picker that it `couldn't parse input`, and **Session report 1** says `The bill above could not be read`.
 
@@ -258,19 +256,21 @@ rates workbook …\EV_Cost_Recovery_Rates - Copy.xlsx, sheet "rates": cell A3 ho
 a date format
 ```
 
-## Exercise 7: Peak power detail
+## Exercise 7: *Peak power detail* tab
+
+***Note:** This exercise is about a function that supports detailed analysis not normally required for routine use of the software.*
 
 Part of the building's bill depends on its highest power use in the period. This tab shows how much of that peak the EV chargers caused.
 
 1. Run Exercise 2 again, with the original rates workbook.
 2. Open the **Peak power detail** tab. It is greyed until a *Cost recovery* run succeeds.
 
-The report has three sections, one per peak: *EV Peak kVA Contribution*, *EV Peak kW Contribution* and *EV Peak kW 7-7 Contribution*. The value used for each charge is the one marked `*` in that section's *Estimates* table. The terms are explained under *Definitions and Conventions*, at the end of the report.
+The report has three sections, one per peak: *EV Peak kVA Contribution*, *EV Peak kW Contribution*, and *EV Peak kW 7-7 Contribution*. The value used for each charge is the one marked `*` in that section's *Estimates* table. The terms are explained under *Definitions and Conventions*, at the end of the report.
 
 | Section | What to check |
 |:---|:---|
 | `kVA` | `2026-06-11 19:00 to 20:00 EDT`, energy-based **6.828** kVA |
-| `kW` | The **same** hour — in this period the building's kW and kVA peaked together — energy-based **6.402** kW |
+| `kW` | The **same** hour — in this billing period, the building's kW and kVA peaked in the same 1-hour interval — energy-based **6.402** kW |
 | `kW 7-7` | A **different** hour, `14:00 to 15:00 EDT`. It must fall between 07:00 and 19:00, so it cannot be the 19:00 one. Energy-based **1.971** kW |
 
 The same three figures are in the `EV demand` column of *Delivery charges by component*, in the *Cost recovery* report. Compare the two tabs.
@@ -278,17 +278,17 @@ The same three figures are in the `EV demand` column of *Delivery charges by com
 In each section, the `Interval` line and the `Segment` column say different things:
 
 - The **interval** is the hour when the *building* peaked, from the meter readings.
-- The **segment** is the 15 minutes inside that hour when the *chargers* peaked, from the session reports — `19:00` for the kVA section, `14:45` for `kW 7-7`. The charge is based on the segment.
+- The **segment** is the 15 minutes inside that hour when the *chargers* peaked, from the session reports — `19:00` for the `kW` and `kVA` sections, `14:45` for `kW 7-7`. The charge is based on the segment.
 
 The *Segments* table under each set of estimates gives each segment's `Session count` and
 `Session kW`. The *Estimates* table's `All-in power` is worked out from these two;
 *Definitions and Conventions* says how. For `kW 7-7`, the first three segments are empty and the whole figure comes from `14:45`. That makes it the clearest one for seeing what a segment contributes.
 
-## Exercise 8: Evolute reimbursement
+## Exercise 8: *Evolute reimbursement* tab
 
 A separate question: did Evolute pay what our rates earned over a **calendar month**? A month is not the same as a billing period, so this figure and the surplus are not two views of one number.
 
-Only June can be run. It is the one month with both a session report and a Charges Report.
+Only June can be run with the sample test data. It is the one month with both a session report and a charges report.
 
 1. Open the **Evolute reimbursement** tab.
 2. Fill in:
@@ -325,21 +325,24 @@ Below the figures, in the sections:
 
 | Section | What to check |
 |:---|:---|
+| *Cost recovery earned, by time of use* | Total of `1309.965` kWh used by EV chargers per the session report, priced at the EV cost-recovery rates, amounting to a total recovery of `$111.54`. |
 | *Energy variance* | `1330.30` kWh on the Charges Report against `1309.97` priced, a difference of `20.33`. The two come from different documents and are not expected to agree exactly |
-| *Session data* | The one session report. No line about repeated records: the file repeats none |
+| *Session data* | The one session report |
 | *Sessions needing a look* | Two rows, both `DuplicateId`, both session `S37487` |
 | *Overall anomalies* | 25 `ExcessiveAvgKw` and 2 `DuplicateId` |
-| *Charges Report* | The file it was read from, and nothing more |
+| *Charges Report* | The file the data was read from, and nothing more |
 
 Also try:
 
 | Do this | Expect |
 |:---|:---|
 | Type `0` into **Reimbursement** | Both variances negative — `-246.26` and `-111.54` — and "sent less than its own Charges Report" |
-| Empty **Reimbursement** and run | `the reimbursement amount is blank`. A blank is refused, because zero is a real answer and has to be typed on purpose |
+| Delete **Reimbursement** (it will show `0.00` after you delete the value in it) and run | `the reimbursement amount is blank` — a blank is refused. A blank field looks the same as a deliberately typed `0.00` but they are different |
 | Choose the **May** session report instead of June | `the session reports do not cover the month 2026-06-01 to 2026-06-30:`, followed by the dates the May file does cover |
 
-## Exercise 9: Convert to workbook
+## Exercise 9: *Convert to workbook* tab
+
+***Note:** This exercise is about functions that supports detailed analysis not normally required for routine use of the software.*
 
 Turns one source file into an Excel workbook, saved in the same folder, for reading by eye. Nothing else in the app uses the workbook: the other tabs read the source files themselves.
 
@@ -347,8 +350,8 @@ Turns one source file into an Excel workbook, saved in the same folder, for read
 
 | Do this | Expect |
 |:---|:---|
-| Convert `data\evolute\Session_Report_June_1_2026-June_30_2026-seconds.csv` | The workbook `Session_Report_June_1_2026-June_30_2026-seconds.xlsx` appears in `data\evolute`. 25 rows are reported for review, every one of them `ExcessiveAvgKw` |
-| Convert the same file again | A **Replace existing workbook?** box. **Cancel** leaves the workbook alone; **Replace** overwrites it, including anything you typed into it |
+| Convert `data\evolute\Session_Report_June_1_2026-June_30_2026-seconds.csv` | The workbook `Session_Report_June_1_2026-June_30_2026-seconds.xlsx` appears in `data\evolute`. Anomalies are reported for 25 rows, every one of them `ExcessiveAvgKw` |
+| Convert the same file again | A **Replace existing workbook?** box. **Cancel** leaves the workbook alone; **Replace** overwrites it, including anything you may have typed into it |
 | Convert the Green Button export | A pause while several years of readings are read. The workbook has two sheets: `Peak_values`, one row per billing period, and `Interval_values`, one row per hour |
 
 The app never overwrites an existing workbook without asking.
