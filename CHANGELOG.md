@@ -5,7 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## 1.0.1 - 2026-10-06
+
+### Changed
+
+- The refusal for session reports that leave part of a billing period or month uncovered reads
+  `the session report does not cover the …` when one report is given. With two or more it reads
+  `the session reports do not cover the …`.
+- Fixed change log for v1.0.0.
+
+## 1.0.0 - 2026-10-04
 
 ### Added
 
@@ -32,9 +41,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The Convert to workbook tab shows the workbook's path once, on the report's `Workbook:` line.
 - The app window opens at 1000 × 700, which fits a 1024 × 768 screen, and cannot be made narrower
   than 900, the width its tab bar needs.
-- The refusal for session reports that leave part of a billing period or month uncovered reads
-  `the session report does not cover the …` when one report was given. With two or more it reads
-  `the session reports do not cover the …`.
 - **Breaking, `api`:** `SessionWriteReport` and `GbWriteReport` have no `log` field, and gain
   `to_markdown()`, which renders the conversion report. The session results' `notes` carry no logs:
   `SessionNotes::write_logs` and the `logs` fields are removed, and `Sessions::from_session_lists`
