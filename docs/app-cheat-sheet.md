@@ -40,9 +40,9 @@ Open the practice copy in Excel (or another spreadsheet program). Its `rates` sh
 |:---|:---|---:|---:|---:|
 | **1** | effective_date | on_peak | mid_peak | off_peak |
 | **2** | 2026-05-01 | 0.1100 | 0.0900 | 0.0700 |
-| **3** | 2026-09-01 | 0.5152 | 0.4740 | 0.4218 |
+| **3** | 2026-08-01 | 0.5152 | 0.4740 | 0.4218 |
 
-Each row is a set of rates, used from its `effective_date` until the next row's date. The workbook's format is described in [docs/rates/README.md](rates/README.md).
+Each row is a set of rates, used from its `effective_date` until the next row's date. Cell F2 holds a note, `This row is for testing purposes only.` The app ignores every column that row 1 does not name `effective_date`, `on_peak`, `mid_peak` or `off_peak`, so the note changes nothing. The workbook's format is described in [docs/rates/README.md](rates/README.md).
 
 After each change, **save** the workbook. The app reads it again each time you run, so you do not need to choose it again. Before the next exercise, put the value you changed back the way it was.
 
@@ -167,10 +167,11 @@ Rates change from time to time, and a change rarely falls on the day a billing p
 |:---|---:|---:|---:|
 | `2026-04-01` | `0.1000` | `0.0800` | `0.0600` |
 | `2026-06-01` | `0.1200` | `0.1000` | `0.0800` |
-| `2026-09-01` | `0.5152` | `0.4740` | `0.4218` |
+| `2026-08-01` | `0.5152` | `0.4740` | `0.4218` |
 
 The June period runs 24 May to 23 June, so it starts at the April rates and changes to the June
-rates on 1 June. The September row is not used.
+rates on 1 June. The August row is not used. The first two rows each carry the note
+`This row is for testing purposes only.` in column F.
 
 1. In the **Cost recovery** tab, choose the five files of Exercise 2, but choose `EV_Cost_Recovery_Rates-change-in-period.xlsx` in the **Rates workbook** picker.
 2. Press **Work out the surplus**.
@@ -248,11 +249,11 @@ rates workbook …\EV_Cost_Recovery_Rates - Copy.xlsx, sheet "rates": the effect
 down the sheet, with no date repeated
 ```
 
-**A date typed as text.** Type `'2026-09-01` into cell A3. The apostrophe at the start makes Excel store it as text:
+**A date typed as text.** Type `'2026-08-01` into cell A3. The apostrophe at the start makes Excel store it as text:
 
 ```
 rates workbook …\EV_Cost_Recovery_Rates - Copy.xlsx, sheet "rates": cell A3 holds the text
-"2026-09-01". An effective_date must be entered as a date, which the spreadsheet displays in
+"2026-08-01". An effective_date must be entered as a date, which the spreadsheet displays in
 a date format
 ```
 
@@ -434,7 +435,7 @@ The rates workbook changes below are made in the practice copy, with the files o
 … cell C2, the mid_peak rate effective 2026-05-01, holds "eleven cents", which is not a number
 ```
 
-**Bad rates in a row that is not used.** Type `tbd` into a rate on row 3. Nothing changes: row 3 takes effect in September, so the June period does not use it, and its rates are not checked.
+**Bad rates in a row that is not used.** Type `tbd` into a rate on row 3. Nothing changes: row 3 takes effect in August, so the June period does not use it, and its rates are not checked.
 
 **No rates in effect when the period starts.** Change the date on row 2 to `2026-06-10`:
 
