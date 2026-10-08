@@ -41,11 +41,16 @@ use std::{
 /// Charges Report.
 const REQUIRED_HEADERS: &[&str] = &["Start_Date", "End_Date", "Bill_Status", "kWh", "Cost"];
 
-/// How the report writes a date: `01-Jun-26`.
+/// How the report writes a date: `01-Jun-26`, or `Jun 1, 2026`.
 ///
-/// A two-digit year. jiff reads 00-68 as 20xx and 69-99 as 19xx; every year that appears in a
-/// report about EV chargers lands in the first range.
-const DATE_FORMAT: &str = "%d-%b-%y";
+/// Both forms appear in reports, and a cell is read by whichever one fits it.
+///
+/// The first carries a two-digit year. jiff reads 00-68 as 20xx and 69-99 as 19xx; every year that
+/// appears in a report about EV chargers lands in the first range.
+const DATE_FORMATS: [&str; 2] = ["%d-%b-%y", "%b %d, %Y"];
+
+/// What a date cell that fits neither of [`DATE_FORMATS`] is told.
+const DATE_EXPECTED: &str = "expected a date written as 01-Jun-26 or as Jun 1, 2026";
 
 /// What sits between the building and the date range in a Charges Report's file name.
 ///
@@ -136,6 +141,9 @@ impl Error for ChargesReportNameError {}
 /// A range, not a month. Whether a caller will accept a range longer than one month is that
 /// caller's rule, not this function's — see [`charges_report`], which does not.
 ///
+/// A `-` after the closing month ends the name as far as this reads it, and whatever follows is
+/// ignored: `XX-XX_Charges_June 2026-June 2026-derived` covers June 2026.
+///
 /// Nothing about the file is inspected: not whether it exists, and not what is inside it.
 ///
 /// # Errors
@@ -150,9 +158,14 @@ pub fn parse_charges_report_name(name: &str) -> Result<(Date, Date), ChargesRepo
         .ok_or_else(|| ChargesReportNameError::NotAReport { name: named() })?;
     let rest = &name[marker_at + NAME_MARKER.len()..];
 
-    let (from_text, to_text) = rest
-        .split_once('-')
-        .ok_or_else(|| ChargesReportNameError::MissingRange { name: named() })?;
+    // Anything after the closing month is ignored, so a file marked up by hand -- a `-derived`, a
+    // `-bak`, a `-what-if` -- still says what it covers. The two months are what is read; a suffix
+    // is a note to a person and says nothing about the charges inside.
+    let mut parts = rest.split('-');
+    let (from_text, to_text) = match (parts.next(), parts.next()) {
+        (Some(a), Some(b)) => (a, b),
+        _ => return Err(ChargesReportNameError::MissingRange { name: named() }),
+    };
     let read = |text: &str| {
         month_start(text).ok_or_else(|| ChargesReportNameError::BadMonth {
             name: named(),
@@ -557,7 +570,12 @@ fn parse_date(
     row: usize,
     column: &'static str,
 ) -> Result<Date, CsvReadError> {
-    Date::strptime(DATE_FORMAT, s).map_err(|e| bad_value(s, path, row, column, e))
+    // No one format's parse error is the cause: a cell that fits neither form is not a failed
+    // attempt at either, so the message states both.
+    DATE_FORMATS
+        .iter()
+        .find_map(|format| Date::strptime(format, s).ok())
+        .ok_or_else(|| bad_value(s, path, row, column, DATE_EXPECTED))
 }
 
 fn number(s: &str, path: &Path, row: usize, column: &'static str) -> Result<f64, CsvReadError> {
@@ -845,18 +863,68 @@ Start_Date,End_Date,Bill_Status,kWh,Cost
         assert!(message.contains("n/a"), "{message}");
     }
 
-    /// The report's own date format, which is neither ISO nor anything jiff parses by default.
+    /// The report's own date formats, neither of which is ISO nor anything jiff parses by default.
     #[test]
-    fn the_report_s_dates_are_read_in_the_form_it_writes_them() {
+    fn the_report_s_dates_are_read_in_the_forms_it_writes_them() {
         let p = fake_path();
+        for (text, expected) in [
+            ("01-Jun-26", june(1)),
+            ("30-Jun-26", june(30)),
+            // The day is not padded in this form, so both widths have to read.
+            ("Jun 1, 2026", june(1)),
+            ("Jun 30, 2026", june(30)),
+        ] {
+            assert_eq!(
+                parse_date(text, &p, 2, "Start_Date").unwrap(),
+                expected,
+                "{text}"
+            );
+        }
+    }
+
+    /// A date in neither form is refused, and the message states both forms rather than the parse
+    /// error of whichever one happened to be tried last.
+    #[test]
+    fn a_date_in_neither_form_is_refused_naming_both() {
+        for text in ["2026-06-01", "June 1, 2026", "1 Jun 2026", ""] {
+            let err = parse_date(text, &fake_path(), 3, "End_Date").unwrap_err();
+            let message = err.to_string();
+            assert!(message.contains("row 3"), "{text}: {message}");
+            assert!(message.contains("End_Date"), "{text}: {message}");
+            assert!(message.contains("01-Jun-26"), "{text}: {message}");
+            assert!(message.contains("Jun 1, 2026"), "{text}: {message}");
+        }
+    }
+
+    /// A report as the portal exports it for a building: dates as `Aug 13, 2026`, quoted because
+    /// of the comma, under a name marked up after the closing month.
+    #[test]
+    fn a_report_with_spelled_out_dates_and_a_marked_up_name_is_read() {
+        const CSV: &str = "\
+Building,Address,Start_Date,End_Date,Panel,Breaker,Name,Bill_Status,kWh,Cost
+B,1 Foo Road,\"Aug 13, 2026\",\"Aug 31, 2026\",Panel A,1,,Issued,0,$0.00
+B,1 Foo Road,\"Aug 13, 2026\",\"Aug 31, 2026\",Panel A,3,,Issued,32.1,$16.64
+";
+        let dir = temp_dir("spelled_out_dates");
+        let path = dir.join("1 Foo Road_Charges_August 2026-August 2026-derived.csv");
+        fs::write(&path, CSV).unwrap();
+
+        let report = charges_report(&path).unwrap();
+        assert_eq!(report.month, date(2026, 8, 1));
         assert_eq!(
-            parse_date("01-Jun-26", &p, 2, "Start_Date").unwrap(),
-            june(1)
+            (report.from, report.to),
+            (date(2026, 8, 13), date(2026, 8, 31))
         );
+        assert_eq!(report.rows, 2);
+        assert_eq!(report.total_kwh, 32.1);
+        assert_eq!(report.total_amount, 16.64);
+        // Billed from the 13th, so short of the month the name states.
         assert_eq!(
-            parse_date("30-Jun-26", &p, 2, "End_Date").unwrap(),
-            june(30)
+            report.partial_spans,
+            vec![((date(2026, 8, 13), date(2026, 8, 31)), vec![2, 3])]
         );
+
+        fs::remove_dir_all(&dir).ok();
     }
 
     fn june(day: i8) -> Date {
@@ -1008,6 +1076,29 @@ Start_Date,End_Date,Bill_Status,kWh,Cost
                 "{name}"
             );
         }
+    }
+
+    /// A suffix on the name is a note to a person, so it is ignored rather than allowed to hide
+    /// what the file covers.
+    #[test]
+    fn a_marked_up_name_still_states_its_months() {
+        for name in [
+            "XX-XX_Charges_June 2026-June 2026-derived",
+            "XX-XX_Charges_June 2026-June 2026-bak",
+            "XX-XX_Charges_June 2026-June 2026-what-if",
+            "123-A Foo Bar Road_Charges_June 2026-June 2026-doctored",
+        ] {
+            assert_eq!(
+                parse_charges_report_name(name),
+                Ok((june(1), june(30))),
+                "{name}"
+            );
+        }
+        // The suffix does not shorten a range: the closing month is still the second one stated.
+        assert_eq!(
+            parse_charges_report_name("XX-XX_Charges_June 2026-July 2026-derived"),
+            Ok((june(1), date(2026, 7, 31)))
+        );
     }
 
     /// The extension is not part of the name, and a name carrying one is refused.

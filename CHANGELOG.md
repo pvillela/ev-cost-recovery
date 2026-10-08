@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Added
+
+- A Charges Report's file name can carry any text after the second month, when a `-` separates
+  them, as in `XX-XX_Charges_June 2026-June 2026-derived.csv`. The text is ignored, as it is for a
+  session report.
+- A Charges Report's `Start_Date` and `End_Date` can be written as `Jun 1, 2026`, as well as
+  `01-Jun-26`.
+
+### Changed
+
+- The refusal for a Charges Report date that cannot be read ends
+  `expected a date written as 01-Jun-26 or as Jun 1, 2026`.
+
 ## 1.0.1 - 2026-10-06
 
 ### Changed

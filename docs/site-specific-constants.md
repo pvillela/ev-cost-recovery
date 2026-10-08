@@ -71,7 +71,8 @@ Do not edit the derived values to a literal — `ev_pilot_current_a()`, `ev_appa
 - `src/hydro_bill/pdf_text.rs` — `ROW_TOLERANCE = 1.5`, how far off a shared baseline a label and
   its value may sit.
 - `src/session/csv.rs` — `REQUIRED_HEADERS`, the charger vendor's session-export columns.
-- `src/charges_report.rs` — `REQUIRED_HEADERS`, and `DATE_FORMAT = "%d-%b-%y"` beside it.
+- `src/charges_report.rs` — `REQUIRED_HEADERS`, and `DATE_FORMATS = ["%d-%b-%y", "%b %d, %Y"]`
+  beside it.
 - `src/session/excel.rs` — `SESSION_REPORT_PREFIX`, and `src/session/file_name.rs`, which reads
   `Session_Report_June_1_2026-June_30_2026.csv` with English month names spelled in full;
   `src/charges_report.rs` reads `XX-XX_Charges_June 2026-June 2026.csv` the same way.
