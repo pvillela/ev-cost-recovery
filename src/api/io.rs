@@ -375,10 +375,10 @@ pub fn cost_recovery_surplus(
 ///
 /// # Arguments
 ///
-/// - `session_csv` - the Evolute session report for the month. One report, and its file name is
-///   what says which month this is.
-/// - `charges_csv` - Evolute's Charges Report for the same month, which is where both of Evolute's
-///   own figures come from. In production it sits in the same folder as the session report.
+/// - `session_csvs` - Evolute session reports that between them cover the month. See below.
+/// - `charges_csv` - Evolute's Charges Report for the month, which is where both of Evolute's own
+///   figures come from, and whose file name says which month this is. In production it sits in
+///   the same folder as the session reports.
 /// - `reimbursed` - what Evolute actually paid, in dollars. The one figure still given rather than
 ///   read, and it has to be: the money is seen to land in a bank statement or a remittance advice,
 ///   neither of which is a document this crate opens. Taking it off the Charges Report instead
@@ -393,7 +393,8 @@ pub fn cost_recovery_surplus(
 ///
 /// **One session report or several.** The portal exports any date range, so a month need not arrive
 /// in one file and a file need not be a month. What matters is that the names between them reach
-/// across the whole month without a gap.
+/// across the whole month without a gap. The month runs from local midnight and the names are
+/// dated in EST, so from April to November they have to reach back to the day before the 1st.
 ///
 /// Nothing here writes, as the module docs state.
 ///

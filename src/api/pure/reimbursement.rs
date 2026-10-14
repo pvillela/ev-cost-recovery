@@ -76,8 +76,10 @@ impl Error for ReimbursementError {}
 pub struct ReimbursementReconciliation {
     /// First day of the calendar month reconciled.
     ///
-    /// Read from the session report's file name, not from the sessions. A month nobody charged in
+    /// Read from the Charges Report's file name, not from the sessions. A month nobody charged in
     /// still has a reimbursement to reconcile, and sessions cannot name a month they do not reach.
+    ///
+    /// The month runs from local midnight to local midnight, as Evolute's Charges Report cuts it.
     pub month_start: Date,
     /// Last day of the calendar month reconciled, inclusive.
     pub month_end: Date,
@@ -185,6 +187,9 @@ fn recovery_by_band(kwh: &TouKwh, rates: &CostRecoveryRates) -> [f64; 3] {
 /// out — each band's kilowatt-hours at that band's rate, no loss factor and no tax — over the month
 /// rather than over a billing period. Sessions are cut at the month's edges as they are cut at a
 /// period's, so energy drawn on the 1st at 00:30 belongs to this month and not the last.
+///
+/// The edges are at local midnight, the clock Evolute's Charges Report cuts its month on, and not
+/// at midnight EST, which a billing period is cut on.
 ///
 /// # Arguments
 ///
@@ -443,8 +448,8 @@ impl fmt::Display for ReimbursementReconciliation {
                 "The two figures come from different documents and are arrived at differently. The \
                  first is from Evolute's billing of users for EV charging during the month. The \
                  second is computed from the Session Report. For a session running across \
-                 midnight on the first or the last day of the month, only the portion within the \
-                 month counts.",
+                 local midnight (ET) at the start or the end of the month, only the portion \
+                 within the month counts.",
                 "",
             )
         )?;
@@ -574,6 +579,30 @@ mod test {
         );
         // Evolute billed the whole session, so the part we did not price is the variance.
         assert!((r.kwh_variance - 4.0).abs() < 1e-9, "{}", r.kwh_variance);
+    }
+
+    /// The month begins at local midnight, as Evolute's Charges Report cuts it, and not at midnight
+    /// EST. In summer the two are an hour apart, and that hour belongs to this month.
+    #[test]
+    fn the_month_begins_at_local_midnight() {
+        // Starts 23:00 EDT on 31 May and runs two hours, so half of it falls in June. Cut at
+        // midnight EST, 01:00 EDT, none of it would.
+        let s = session(JUNE, 2, "S1", "2026-06-01T03:00:00Z", 120, 8.0);
+        let r = reconcile_evolute_reimbursement(
+            &as_report(vec![s]),
+            date(2026, 6, 1),
+            8.0,
+            0.0,
+            0.0,
+            rates(date(2026, 6, 1), 0.11, 0.09, 0.07),
+        )
+        .expect("a June report and rates effective on the 1st");
+
+        assert!(
+            (r.tou_kwh.total_kwh() - 4.0).abs() < 1e-9,
+            "{:?}",
+            r.tou_kwh
+        );
     }
 
     /// A session report can carry sessions dated outside the month it is named for -- the
@@ -767,10 +796,14 @@ mod test {
     /// Coverage rather than an equality of months: the portal exports any date range, so a user
     /// may never hold a month-aligned session report, and any number of reports may be needed to
     /// span the month between them.
+    ///
+    /// The month is cut at local midnight and the reports are dated in EST, so a month that begins
+    /// on daylight time needs a report reaching back to the day before it.
     #[test]
     fn the_session_reports_must_cover_the_charges_month() {
         let june_files = [
-            Path::new("data/Session_Report_June_1_2026-June_30_2026.csv"),
+            // June begins at 00:00 EDT, which the EST-dated report states as 23:00 on 31 May.
+            Path::new("data/Session_Report_May_31_2026-June_30_2026.csv"),
             // Reaching past the month at both ends is fine: what is refused is a gap.
             Path::new("data/Session_Report_May_20_2026-July_5_2026.csv"),
         ];
@@ -782,8 +815,26 @@ mod test {
             );
         }
 
+        // A report dated exactly the month misses its first hour.
+        let june_only = Path::new("data/Session_Report_June_1_2026-June_30_2026.csv");
+        assert!(
+            check_reports_cover(CoveredSpan::CalendarMonth, june(1), june(30), &[june_only])
+                .is_err()
+        );
+        // A month that begins on standard time has no such hour.
+        let january = Path::new("data/Session_Report_January_1_2026-January_31_2026.csv");
+        assert!(
+            check_reports_cover(
+                CoveredSpan::CalendarMonth,
+                date(2026, 1, 1),
+                date(2026, 1, 31),
+                &[january]
+            )
+            .is_ok()
+        );
+
         // Two halves of the month, neither enough alone.
-        let first_half = Path::new("data/Session_Report_June_1_2026-June_15_2026.csv");
+        let first_half = Path::new("data/Session_Report_May_31_2026-June_15_2026.csv");
         let second_half = Path::new("data/Session_Report_June_16_2026-June_30_2026.csv");
         assert!(
             check_reports_cover(CoveredSpan::CalendarMonth, june(1), june(30), &[first_half])

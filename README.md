@@ -100,7 +100,7 @@ Three files and a remittance amount:
 
 | Input                      | What it is                                                   |
 | :------------------------- | :----------------------------------------------------------- |
-| Session report             | An Evolute Session Report CSV covering the calendar month the Charges Report is for. |
+| Session report             | An Evolute Session Report CSV covering the calendar month the Charges Report is for. From April to November it must also include the last day of the month before; see [Challenge 3](#challenge-3-toronto-hydro-billing-period-evolute-reporting-time-zones). |
 | Charges report             | The Evolute Charges Report CSV file for the calendar month. Its file name is what states the month, and only a single month is accepted. |
 | Remittance                 | The reimbursement received from Evolute for the calendar month. |
 | Rates workbook             | The same workbook as for `Cost recovery`, described in [docs/rates/README.md](docs/rates/README.md); choosing it on one tab chooses it on both. The month is priced at the rates in effect on the 1st, and the rates may not change within the month. |
@@ -223,7 +223,7 @@ Toronto Hydro Green Button metering data is reported in UTC (Coordinated Univers
 
 Evolute's session reports state their times in EST as well, all year round, so they are not impacted by DST either.
 
-Evolute's charges reports cover calendar months, not Toronto Hydro billing periods.
+Evolute's charges reports cover calendar months, not Toronto Hydro billing periods. Unlike the bills and the session reports, they cut the month at midnight prevailing local time (ET), with DST. So from April to November a month begins at 23:00 EST on the last day of the month before, and the session reports for that month have to include that day.
 
 Reports produced by the application to be shown to the user are stated in prevailing local time (ET), so a summer session appears an hour later than the portal shows it — which is why every displayed time names its zone.
 

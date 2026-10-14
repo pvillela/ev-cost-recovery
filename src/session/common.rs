@@ -5,7 +5,7 @@ use super::site_model::{
 use crate::time::{Interval, TZ_OFFSETS, time_zone};
 use jiff::{
     Timestamp, Zoned,
-    civil::DateTime,
+    civil::{Date, DateTime},
     tz::{Offset, TimeZone},
 };
 use std::{
@@ -117,6 +117,14 @@ pub(crate) fn session_instant(dt: DateTime) -> Timestamp {
     dt.to_zoned(session_zone())
         .expect("a fixed offset has neither gaps nor folds")
         .timestamp()
+}
+
+/// The date Evolute's session report states for an instant, in EST.
+///
+/// Differs from `time::local_date` in the hour after midnight while daylight saving is in force:
+/// 00:30 EDT on 1 June is 23:30 on 31 May in the report.
+pub(crate) fn session_date(ts: Timestamp) -> Date {
+    ts.to_zoned(session_zone()).date()
 }
 
 /// The time Evolute's session report states for an instant, in EST: the inverse of

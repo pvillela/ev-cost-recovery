@@ -291,12 +291,14 @@ A separate question: did Evolute pay what our rates earned over a **calendar mon
 
 Only June can be run with the sample test data. It is the one month with both a session report and a charges report.
 
+The session report has to include 31 May, not only 1 to 30 June. The charges report's month begins at midnight local time, which in June is 23:00 EST on 31 May, and the session report is in EST. `data\evolute` has no such file, so this exercise uses the May-and-June file from `data\_archive`.
+
 1. Open the **Evolute reimbursement** tab.
 2. Fill in:
 
    | Field | Value |
    |:---|:---|
-   | Evolute Session Report | `data\evolute\Session_Report_June_1_2026-June_30_2026-seconds.csv` |
+   | Evolute Session Report | `data\_archive\evolute\Session_Report_May_1_2026-June_30_2026-seconds.csv` |
    | Evolute Charges Report | `data\evolute\XX-XX_Charges_June 2026-June 2026.csv` |
    | Reimbursement | `246.26` |
    | Rates workbook | `data\rates\EV_Cost_Recovery_Rates.xlsx` — already chosen if you chose it on the *Cost recovery* tab |
@@ -328,9 +330,9 @@ Below the figures, in the sections:
 |:---|:---|
 | *Cost recovery earned, by time of use* | Total of `1309.965` kWh used by EV chargers per the session report, priced at the EV cost-recovery rates, amounting to a total recovery of `$111.54`. |
 | *Energy variance* | `1330.30` kWh on the Charges Report against `1309.97` priced, a difference of `20.33`. The two come from different documents and are not expected to agree exactly |
-| *Session data* | The one session report |
-| *Sessions needing a look* | Two rows, both `DuplicateId`, both session `S37487` |
-| *Overall anomalies* | 25 `ExcessiveAvgKw` and 2 `DuplicateId` |
+| *Session data* | The one session report, and `2 record(s) repeated a session already read …`: the file repeats two sessions within itself. Each is counted once |
+| *Sessions needing a look* | Four rows, all `DuplicateId`: two for session `S83723` and two for `S37487` |
+| *Overall anomalies* | 50 `ExcessiveAvgKw` and 4 `DuplicateId`, over May and June |
 | *Charges Report* | The file the data was read from, and nothing more |
 
 Also try:
@@ -339,7 +341,8 @@ Also try:
 |:---|:---|
 | Type `0` into **Reimbursement** | Both variances negative — `-246.26` and `-111.54` — and "sent less than its own Charges Report" |
 | Delete **Reimbursement** (it will show `0.00` after you delete the value in it) and run | `the reimbursement amount is blank` — a blank is refused. A blank field looks the same as a deliberately typed `0.00` but they are different |
-| Choose the **May** session report instead of June | `the session report does not cover the month 2026-06-01 to 2026-06-30:`, followed by the dates the May file does cover |
+| Choose `data\evolute\Session_Report_June_1_2026-June_30_2026-seconds.csv` instead | `the session report does not cover the month 2026-06-01 to 2026-06-30, which session reports, dated in EST, must cover from 2026-05-31 to 2026-06-30:`, followed by the dates the June file does cover. It misses the month's first hour |
+| Choose the **May** session report instead | The same message, followed by the dates the May file covers |
 
 ## Exercise 9: *Convert to workbook* tab
 
@@ -385,8 +388,6 @@ The exercises below need files from `data\_archive`, or set up mistakes that are
 Put it in **Session report 1**, with the other files of Exercise 2. **Session report 2** stays shut. The four amounts are the same as in Exercise 2, to the cent: the same sessions, read from one file. The saved report runs to 158 lines. *Session data* names the one file and reports the same 2 repeated
 records, this time repeated within the file itself; *Overall anomalies* counts 50 `ExcessiveAvgKw`
 and 4 `DuplicateId`.
-
-On the *Evolute reimbursement* tab, the same file in place of the June session report gives the same figures as June alone. The month comes from the Charges Report; the session report only has to cover it.
 
 #### One session report that contains the other
 

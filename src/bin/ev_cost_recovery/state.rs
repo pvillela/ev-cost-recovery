@@ -1129,8 +1129,8 @@ mod test {
         let paths = (
             PathBuf::from("data/hydro_bills/TH_5728140000_2026_06_29.pdf"),
             PathBuf::from("data/green_button/TH_Electric_Usage_23-11-2024_to_24-06-2026.XML"),
-            PathBuf::from("data/evolute/Session_Report_May_1_2026-May_31_2026-mock.csv"),
-            PathBuf::from("data/evolute/Session_Report_June_1_2026-June_30_2026.csv"),
+            PathBuf::from("data/evolute/Session_Report_May_1_2026-May_31_2026-seconds.csv"),
+            PathBuf::from("data/evolute/Session_Report_June_1_2026-June_30_2026-seconds.csv"),
             PathBuf::from("data/rates/EV_Cost_Recovery_Rates.xlsx"),
         );
         for path in [&paths.0, &paths.1, &paths.2, &paths.3, &paths.4] {

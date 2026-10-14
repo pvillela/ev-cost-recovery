@@ -60,11 +60,12 @@ pub use common::{BREAKER_MAX_NORMAL_KW, BREAKER_RATING_KW};
 
 // --- Named elsewhere inside the crate ----------------------------------------------------------
 
+pub(crate) use common::SESSION_OFFSET;
 pub(crate) use csv::csv_sessions;
 // Overwrites without asking; the policy is `api::session_csv_to_xlsx`'s. See its doc comment.
 pub(crate) use energy::tou_kwh;
 pub(crate) use excel::session_csv_to_xlsx;
-pub(crate) use file_name::reports_cover;
+pub(crate) use file_name::{report_dates, reports_cover};
 pub(crate) use peak::estimates_from_sessions;
 
 // --- Tests -------------------------------------------------------------------------------------

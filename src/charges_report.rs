@@ -202,6 +202,8 @@ pub struct ChargesReport {
     /// and a file holding a row outside it is refused whole — see
     /// [`ChargesReportError::RowsOutsideMonth`]. So a `ChargesReport` that exists is one whose rows
     /// agree with its own name, and nothing downstream has to re-establish that.
+    ///
+    /// Evolute cuts the month at local midnight, with daylight saving, and not at midnight EST.
     pub month: Date,
     /// Earliest `Start_Date` on any row.
     ///

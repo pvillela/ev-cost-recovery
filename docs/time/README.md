@@ -44,7 +44,8 @@ instant and a time on that clock.
 | `Conn_DateTime_Start` and `Conn_DateTime_End` in Evolute's session report | standard time |
 | A Toronto Hydro billing period's boundaries, and the two dates its bill states | standard time |
 | Time-of-Use periods, the 07:00–19:00 demand window, the holiday calendar | prevailing local time |
-| Calendar months, and the date a rate change takes effect | prevailing local time |
+| Calendar months, including the month an Evolute Charges Report covers, and the date a rate change takes effect | prevailing local time |
+| The dates in a session report's file name | standard time |
 | Times shown in a report | prevailing local time |
 | The Green Button workbook's local-time columns | prevailing local time |
 
@@ -59,7 +60,8 @@ In `time`, "local" means prevailing local time: `local_date`, `local_hour`, `loc
 
 A Toronto Hydro **billing period** starts and ends at 00:00 EST, all year. `standard_date` and
 `standard_midnight` read that clock and `BILLING_OFFSET` is its offset. Only
-`hydro_bill::billing_period` calls them.
+`hydro_bill::billing_period` and the session-report coverage check in `api::pure::coverage` call
+them.
 
 Cut on prevailing local time, a summer period would start and end an hour early, and a period that
 contains a clock change would be an hour too long or too short. Cut that way, the periods reproduce
@@ -103,6 +105,14 @@ clock change, and every reported time names exactly one instant.
 
 `SESSION_OFFSET` and `BILLING_OFFSET` have the same value for unrelated reasons. They are separate
 constants so that either can change without the other.
+
+The dates in a session report's file name are standard-time dates too. A billing period is cut on
+the same clock, so a report named for the period's dates covers it. A calendar month is not: Evolute
+cuts the month its Charges Report covers at local midnight. While daylight saving is in force,
+local midnight on the 1st is 23:00 EST on the day before. So from April to November, the session
+reports for a month must include the last day of the month before.
+`session::file_name::report_dates` gives the standard-time dates a span needs, and
+`api::pure::check_reports_cover` checks the report names against them.
 
 ## What a person sees
 

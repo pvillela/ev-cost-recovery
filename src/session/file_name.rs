@@ -14,7 +14,9 @@
 //! [`api::pure::check_reports_cover_period`](crate::api::pure::check_reports_cover_period) joins
 //! the two.
 
-use jiff::civil::Date;
+use super::common::session_date;
+use crate::time::Interval;
+use jiff::{SignedDuration, civil::Date};
 use std::{
     fmt,
     path::{Path, PathBuf},
@@ -30,9 +32,9 @@ const NAME_FORM: &str = "Session_Report_<Month>_<Day>_<Year>-<Month>_<Day>_<Year
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SessionReportCoverage {
     pub path: PathBuf,
-    /// First calendar date the report covers.
+    /// First calendar date the report covers, in EST.
     pub from: Date,
-    /// Last calendar date the report covers, inclusive.
+    /// Last calendar date the report covers, inclusive, in EST.
     pub to: Date,
 }
 
@@ -172,6 +174,18 @@ fn report_date(s: &str) -> Option<Date> {
     // `Date::new` rather than the `date!` macro's panic on a day the month does not have: a file
     // name is input, and `Session_Report_June_31_2026-...` is a name to reject, not to crash on.
     Date::new(year.parse().ok()?, month, day.parse().ok()?).ok()
+}
+
+/// The first and last dates, both inclusive, that session report names must cover to hold every
+/// instant of `span`.
+///
+/// A report's name dates it in EST, the clock its timestamps are stated on, so these are EST
+/// dates. They differ from the dates of a span cut on another clock: a calendar month cut at local
+/// midnight in summer begins at 23:00 EST on the last day of the month before.
+pub(crate) fn report_dates(span: Interval) -> (Date, Date) {
+    // `end` is exclusive, so the last date is that of the last instant before it.
+    let last = span.end() - SignedDuration::from_nanos(1);
+    (session_date(span.start), session_date(last))
 }
 
 /// Whether the reports cover every date from `first` to `last` inclusive.

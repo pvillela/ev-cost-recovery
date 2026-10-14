@@ -11,7 +11,11 @@
 
 use crate::{
     hydro_bill::{NotABillingPeriodEnding, billing_period_dates},
-    session::{SessionReportNameError, parse_session_report_name, reports_cover},
+    session::{
+        SESSION_OFFSET, SessionReportNameError, parse_session_report_name, report_dates,
+        reports_cover,
+    },
+    time::{Interval, local_midnight, standard_midnight},
 };
 use jiff::civil::Date;
 use std::{
@@ -61,6 +65,13 @@ pub enum CoverageError {
         span: CoveredSpan,
         period_start: Date,
         period_ending: Date,
+        /// The first and last dates, both inclusive, that the session reports' names had to cover.
+        ///
+        /// Session reports are dated in EST. A billing period is cut on EST too, so for one of
+        /// those these are `period_start` and `period_ending`. A calendar month is cut at local
+        /// midnight, so one that begins while daylight saving is in force needs the day before
+        /// it as well: its first hour is 23:00 to 24:00 EST on that day.
+        report_dates: (Date, Date),
         coverage: Vec<SessionReportCoverage>,
     },
 }
@@ -87,6 +98,22 @@ impl CoveredSpan {
             Self::BillingPeriod => "billing period",
             Self::CalendarMonth => "month",
         }
+    }
+
+    /// The instants from midnight starting `first` to midnight ending `last`, on this calendar's
+    /// clock.
+    ///
+    /// Toronto Hydro cuts a billing period at midnight EST. Evolute's Charges Report cuts a month
+    /// at local midnight, with daylight saving.
+    fn interval(self, first: Date, last: Date) -> Interval {
+        let midnight = match self {
+            Self::BillingPeriod => standard_midnight,
+            Self::CalendarMonth => local_midnight,
+        };
+        let after = last
+            .tomorrow()
+            .expect("the last date of a span has a next day");
+        Interval::from_start_end(midnight(first), midnight(after))
     }
 }
 
@@ -115,6 +142,7 @@ impl fmt::Display for CoverageError {
                 span,
                 period_start,
                 period_ending,
+                report_dates: (report_start, report_ending),
                 coverage,
             } => {
                 // The subject agrees with how many reports are listed beneath it.
@@ -124,9 +152,21 @@ impl fmt::Display for CoverageError {
                 };
                 write!(
                     f,
-                    "{subject} the {} {period_start} to {period_ending}:",
+                    "{subject} the {} {period_start} to {period_ending}",
                     span.as_str()
                 )?;
+                // Named when it differs, because the dates listed below are compared with these
+                // and not with the span's own: without them, a report for exactly the month
+                // stated would be refused for no visible reason.
+                if (report_start, report_ending) != (period_start, period_ending) {
+                    write!(
+                        f,
+                        ", which session reports, dated in {}, must cover from {report_start} to \
+                         {report_ending}",
+                        SESSION_OFFSET.0
+                    )?;
+                }
+                write!(f, ":")?;
                 for c in coverage {
                     write!(f, "\n  {} covers {} to {}", c.path.display(), c.from, c.to)?;
                 }
@@ -177,9 +217,11 @@ pub fn check_reports_cover_period(
 /// period. The reimbursement reconciliation's is a calendar month, taken from the Charges Report's
 /// own name.
 ///
-/// `span` says which calendar `first` and `last` came from, and is used for nothing but the
-/// message. Without it every refusal calls the span a billing period, including the ones that are
-/// a month — see [`CoveredSpan`].
+/// `span` says which calendar `first` and `last` came from, and so which clock they are dates on:
+/// EST for a billing period, local time for a calendar month. The reports' names are dated in EST,
+/// so a month that begins while daylight saving is in force needs a report reaching back to the
+/// day before it — see [`CoverageError::PeriodNotCovered`]. `span` also names the calendar in the
+/// message, so that a month is not called a billing period.
 ///
 /// **How many reports there are is not a rule here.** One covering the whole span is as good as
 /// three, and a report reaching outside it neither helps nor blocks. What is refused is a gap.
@@ -222,11 +264,13 @@ pub fn check_reports_cover(
         })
         .collect::<Result<Vec<_>, _>>()?;
 
-    if !reports_cover(first, last, &coverage) {
+    let (report_start, report_ending) = report_dates(span.interval(first, last));
+    if !reports_cover(report_start, report_ending, &coverage) {
         return Err(CoverageError::PeriodNotCovered {
             span,
             period_start: first,
             period_ending: last,
+            report_dates: (report_start, report_ending),
             coverage,
         });
     }
@@ -287,6 +331,34 @@ mod test {
             period.contains("the billing period 2026-05-24 to 2026-06-23"),
             "{period}"
         );
+    }
+
+    /// A month that begins on daylight time is refused a report dated exactly the month, and the
+    /// message names the EST dates the report had to cover, since the month's own dates are ones
+    /// it does cover.
+    ///
+    /// A billing period is cut on EST, as the reports are dated, so its message names no others.
+    #[test]
+    fn a_refusal_names_the_report_dates_when_they_differ_from_the_span() {
+        let june = Path::new("Session_Report_June_1_2026-June_30_2026.csv");
+        let month = check_reports_cover(
+            CoveredSpan::CalendarMonth,
+            date(2026, 6, 1),
+            date(2026, 6, 30),
+            &[june],
+        )
+        .expect_err("June 1 EST starts an hour into the local month")
+        .to_string();
+        assert!(
+            month.contains("must cover from 2026-05-31 to 2026-06-30"),
+            "{month}"
+        );
+
+        let april = Path::new("Session_Report_April_1_2026-April_30_2026.csv");
+        let period = check_reports_cover_period(date(2026, 6, 23), &[april])
+            .expect_err("April does not cover the period")
+            .to_string();
+        assert!(!period.contains("must cover from"), "{period}");
     }
 
     /// The opening words agree in number with the reports listed under them.

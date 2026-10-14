@@ -32,8 +32,10 @@ Go to https://evolute.ca/#/ and login.
 - Click on the building listed in the "Select buildings" box.
 - Click on the panels shown in the "Select panels" box.
 - Do NOT touch the timezone selection. Leave it at "EST (UTC-5)".
-- Click on "Select a start date" and select the first day of the desired month.
+- Click on "Select a start date" and select the **last day of the month before** the desired month. For example, for June, select May 31.
 - Click on "Select an end date" and select the last day of the desired month.
+
+Why the extra day: the charges report cuts the month at midnight local time (ET). From April to November that is 23:00 EST on the day before the 1st, and the session report is in EST. A session report that starts on the 1st misses the month's first hour, and the *Evolute reimbursement* function refuses it. The extra day does no harm in the other months, or on the *Cost recovery* functions: a session that appears in two reports is counted once.
 - The appropriate "Report Type" is "Standard Report".
 - Click the "Generate Session Reports" button.
 

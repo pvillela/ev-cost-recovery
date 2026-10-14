@@ -125,7 +125,9 @@ fn inputs(ui: &mut egui::Ui, state: &mut ReimbursementState, working: &mut Worki
     widgets::note(
         ui,
         "If the two files turn out to cover different months, the reconciliation is refused rather \
-         than run.",
+         than run. From April to November the session report must include the last day of the \
+         month before: the Charges Report's month begins at local midnight, which is 23:00 EST \
+         on that day.",
     );
 
     ui.add_space(10.0);
