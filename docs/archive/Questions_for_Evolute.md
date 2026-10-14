@@ -11,9 +11,29 @@
 ### Charges report
 
 - I understand that the kWh and cost of a session that starts in month M and ends in month M+1 are fully captured in the charges report for month M+1. Please confirm.
-- Is the cut-off for the charges report and end-user billing midnight local time or midnight EST?
 
 ## Answers received
+
+### 14 Sep 2026
+
+1. **Q:** You mentioned "differences in how idle usage is captured". Can you elaborate on that?
+   - **A:** Building Report (Monthly Charges Report) is a running total, while some trickle data may not be captured in sessions. This relates to question 4.
+2. **Q:** Can you briefly describe how your system selects session information from your database to include in a monthly charges report?
+   - **A:** I'm not sure what you mean - the Monthly Charges Report is not related to the Sessions Report. Monthly Charges Report is calculated based on a running total that is updated daily. The sessions are referencing the same raw data as the Monthly Charges Reports, but that is where their relationship ends. The data is similar, because they use the same data base, there are discrepancies because their calculations/function/mechanisms are different. As said - the sessions report was developed for a specific purpose - it is not related to billing, even though it does have cost information.
+3. **Q:** Does the charges report define the calendar month based on local time (with daylight savings) or EST (always UTC-5)? Local Time.
+   - **A:** This is how I caught my mistake when comparing Sessions to billing after I downloaded the report using UTC-5. They were off by an hour.
+4. **Q:** I noticed some sessions that last only a few seconds and have total energy use of 0 or 0.1 kWh. What causes those sessions?
+   - **A:** Trickle charging that IS captured in sessions. Not all of it is. Some of it is lost due to rounding or not meeting minimum thresholds.
+
+### 13 Sep 2026
+
+- **Q:** As you can see from the summary [spreadsheet not attached], the numbers from my app agree pretty closely with the totals from the session reports, as they should because my app uses the session report as the input for the cost recovery calculation. You will notice, however, that while the total kWh numbers from the session and charges reports are close (equal in August, off by 0.5 in September), there is a difference between the total costs from the session reports and the charges reports that cannot be explained by rounding error. These numbers also make me wonder why the rounding of kWh values would be different between the two reports. I think this warrants further investigation.
+
+  - **A:** To clarify our earlier guidance, the Session Report is the most useful for reviewing individual charging sessions, and for tracking TOU usage and peaks. It is the best report we can generate right now for your needs. The Building Report is the appropriate reference for billed amounts.
+
+    The two reports serve different purposes and use different calculation methods. Billing is calculated daily from recorded usage and the applicable time-of-use rates, then aggregated into the monthly totals shown in the Building Report. The Session Report presents usage by session, so rounding and differences in how idle usage is captured can prevent the reports from matching exactly. Generally, the session report will have slightly less kWh totals than the building report, over time (not every month).
+
+    With only one full month of operation, we recommend allowing six months of data to accumulate before undertaking a broader comparison. If we see issues after six months, we can correct them and issue reimbursements if needed.
 
 ### 9 Sep 2026
 
