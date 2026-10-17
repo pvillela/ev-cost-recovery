@@ -18,13 +18,18 @@ See [README.md - Getting and running the software](../README.md#getting-and-runn
 |:---|:---|:---|
 | `data\hydro_bills` | `TH_5728140000_2026_06_29.pdf` and six others | Toronto Hydro bills, one per billing period |
 | `data\green_button` | `TH_Electric_Usage_23-11-2024_to_24-06-2026.XML` | The building's meter readings, downloaded from Toronto Hydro |
-| `data\evolute` | `Session_Report_May_1_2026-May_31_2026-seconds.csv` | Evolute charging sessions for May |
-| `data\evolute` | `Session_Report_June_1_2026-June_30_2026-seconds.csv` | Evolute charging sessions for June |
+| `data\evolute` | `Session_Report_April_30_2026-May_31_2026-seconds.csv` | Evolute charging sessions for May |
+| `data\evolute` | `Session_Report_May_31_2026-June_30_2026-seconds.csv` | Evolute charging sessions for June |
+| `data\evolute` | `Session_Report_June_30_2026-July_31_2026-mock.csv` | Evolute charging sessions for July |
+| `data\evolute` | `Session_Report_April_30_2026-June_30_2026-seconds.csv` | Evolute charging sessions for May and June in one file |
+| `data\evolute` | `Session_Report_June_1_2026-June_30_2026-seconds.csv` | June's sessions under a name that starts on 1 June, for the error in Exercise 4 |
 | `data\evolute` | `XX-XX_Charges_June 2026-June 2026.csv` | Evolute's Charges Report for June |
 | `data\rates` | `EV_Cost_Recovery_Rates.xlsx` | The rates charged for EV charging |
 | `data\rates` | `EV_Cost_Recovery_Rates-change-in-period.xlsx` | Rates that change during the June billing period |
 
-The June session report is real data, with names removed. The May one is made up from June's.
+Except for the one that shows the error, each session report starts on the last day of the month before its month. The *Evolute reimbursement* tab needs this from April to November: see [Exercise 4](#exercise-4-evolute-reimbursement-tab).
+
+The June session report is real data, with names removed. The May and July ones are made up.
 
 ### A practice copy of the rates workbook
 
@@ -68,9 +73,11 @@ There are four tabs: **Cost recovery**, **Peak power detail**, **Evolute reimbur
 
 The app starts in the same theme as your computer: light, unless you have set Windows to dark.
 
-## Exercise 2: Work out the surplus for June
+## Exercise 2: *Cost recovery* tab
 
 This is the app's main job. It compares what the EV chargers cost the building in one billing period with what the rates recovered from the EV charger owners.
+
+### Exercise 2a: Work out the surplus for June
 
 Only the **June 2026** billing period can be run with the sample files. The meter readings stop on 24 June, so no later period has them.
 
@@ -81,8 +88,8 @@ Only the **June 2026** billing period can be run with the sample files. The mete
    |:---|:---|:---|
    | Toronto Hydro bill | `data\hydro_bills` | `TH_5728140000_2026_06_29.pdf` |
    | Green Button export | `data\green_button` | `TH_Electric_Usage_23-11-2024_to_24-06-2026.XML` |
-   | Session report 1 | `data\evolute` | `Session_Report_May_1_2026-May_31_2026-seconds.csv` |
-   | Session report 2 | `data\evolute` | `Session_Report_June_1_2026-June_30_2026-seconds.csv` |
+   | Session report 1 | `data\evolute` | `Session_Report_April_30_2026-May_31_2026-seconds.csv` |
+   | Session report 2 | `data\evolute` | `Session_Report_May_31_2026-June_30_2026-seconds.csv` |
    | Rates workbook | `data\rates` | `EV_Cost_Recovery_Rates.xlsx` |
 
 3. Press **Work out the surplus**.
@@ -102,7 +109,7 @@ The June period runs from 24 May to 23 June, so it uses the rates on row 2 of th
 
 A negative surplus, in red, means the rates did not cover the cost.
 
-### What to look at
+#### What to look at
 
 The report under the figures has sections that collapse and expand when you click their headings. Try it. The **Source Data** section goes into noteworthy details about the source data.
 
@@ -113,7 +120,7 @@ The report under the figures has sections that collapse and expand when you clic
 | *Overall anomalies* | Everything unusual in each file, whether or not it changes the figures: 25 `ExcessiveAvgKw` and 2 `DuplicateId` for each of May and June, with an explanation of both |
 | *Meter data* | The Green Button export, and nothing more: no anomalies detected in any of the metering intervals during the billing period. |
 
-## Exercise 3: How the session report pickers behave
+### Exercise 2b: How the session report pickers behave
 
 In the **Cost recovery** tab, each session report picker stays shut until a required prior selection is made. While shut, it says what it is waiting for:
 
@@ -129,21 +136,21 @@ To see them:
 2. Open **Cost recovery**. **Session report 1** says `Choose the bill first`.
 3. Choose the June bill, `TH_5728140000_2026_06_29.pdf`. The **Session report 1** button is enabled and **Session report 2** says `Choose Session report 1 first`.
 4. Choose the June session report in **Session report 1**.
-5. **Session report 2** opens: June alone leaves 24 to 31 May uncovered. Choose the May session report.
+5. **Session report 2** opens: June alone leaves 24 to 30 May uncovered. Choose the May session report.
 
 One report that does not cover the whole period is not an error. That is what **Session report 2** is for.
 
-### Changing the bill
+#### Changing the bill
 
 A different bill means a different billing period, so the app empties the session report pickers to match. It always empties **Session report 2**. It keeps **Session report 1** only if its report reaches into the new period.
 
 1. Keep the June bill and the June session report in **Session report 1**.
 2. Choose `TH_5728140000_2026_07_28.pdf` as the bill. Its period runs from 24 June to 23 July. The June report reaches a week into it, so it stays.
-3. Choose `TH_5728140000_2026_05_28.pdf` as the bill instead. Its period ends on 23 May. Nothing in June belongs to it, so **Session report 1** empties.
+3. Choose `TH_5728140000_2026_05_28.pdf` as the bill instead. Its period ends on 23 May. The June report starts on 31 May, so nothing in it belongs to that period, and **Session report 1** empties.
 
-## Exercise 4: Try different rates
+### Exercise 2c: Try different rates
 
-In the **Cost recovery** tab, choose the practice copy in the **Rates workbook** picker. Choose the other four files as in Exercise 2.
+In the **Cost recovery** tab, choose the practice copy in the **Rates workbook** picker. Choose the other four files as in Exercise 2a.
 
 | Do this in the practice copy | Then press **Work out the surplus**, and expect |
 | :--- | :--- |
@@ -157,7 +164,7 @@ Also try:
 | Choose a rates workbook on the *Evolute reimbursement* tab after a run here | It is chosen here (*Cost recovery tab*) too, the figures here disappear, and the *Peak power detail* tab greys out |
 | Change any picker after a run | The figures disappear, and the *Peak power detail* tab greys out |
 
-## Exercise 5: A rate change within the billing period
+### Exercise 2d: A rate change within the billing period
 
 Rates change from time to time, and a change rarely falls on the day a billing period starts. The app then prices each part of the period at the rates in effect at the time.
 
@@ -173,7 +180,7 @@ The June period runs 24 May to 23 June, so it starts at the April rates and chan
 rates on 1 June. The August row is not used. The first two rows each carry the note
 `This row is for testing purposes only.` in column F.
 
-1. In the **Cost recovery** tab, choose the five files of Exercise 2, but choose `EV_Cost_Recovery_Rates-change-in-period.xlsx` in the **Rates workbook** picker.
+1. In the **Cost recovery** tab, choose the five files of Exercise 2a, but choose `EV_Cost_Recovery_Rates-change-in-period.xlsx` in the **Rates workbook** picker.
 2. Press **Work out the surplus**.
 
 Expect:
@@ -187,7 +194,7 @@ EV delivery cost     -92.02
 Surplus             -147.19          (red)
 ```
 
-The two costs are those of Exercise 2: only the recovery depends on the rates. The
+The two costs are those of Exercise 2a: only the recovery depends on the rates. The
 *EV Cost Recovery* section states the total first, then one table for each set of rates. Each table is
 headed by its effective date and the dates it priced:
 
@@ -218,7 +225,7 @@ The two tables' kWh add up to the `1362.005` kWh total of the *EV Energy Cost* s
 session's energy is split before and after midnight on 1 June, so nothing is counted twice and nothing is lost
 between them.
 
-## Exercise 6: Mistakes the app catches
+### Exercise 2e: Mistakes the app catches
 
 In the **Cost recovery** tab, each of these is a mistake that is easy to make. The app refuses to work out a figure from bad input, and says what is wrong.
 
@@ -227,11 +234,18 @@ In the **Cost recovery** tab, each of these is a mistake that is easy to make. T
 **The wrong month's session report.** Choose `TH_5728140000_2026_05_28.pdf` as the bill, then the June session report in **Session report 1**:
 
 ```
-This report covers 2026-06-01 to 2026-06-30, which is outside the billing period
+This report covers 2026-05-31 to 2026-06-30, which is outside the billing period
 2026-04-24 to 2026-05-23. Choose a report that reaches into the period.
 ```
 
-The rest are mistakes in the rates workbook. Choose the practice copy and the files from Exercise 2, make the change, save, and press **Work out the surplus**.
+**No meter data for the period.** Choose `TH_5728140000_2026_07_28.pdf` as the bill, the June session report in **Session report 1**, and `data\evolute\Session_Report_June_30_2026-July_31_2026-mock.csv` in **Session report 2**. The two cover 24 June to 23 July between them, so the run gets as far as the meter data:
+
+```
+the meter data covers 24 of the 720 intervals in the billing period ending 2026-07-23,
+so its maxima are not the period's
+```
+
+The rest are mistakes in the rates workbook. Choose the practice copy and the files from Exercise 2a, make the change, save, and press **Work out the surplus**.
 
 **A blank rate.** Delete the mid-peak rate on row 2 (cell C2):
 
@@ -257,13 +271,13 @@ rates workbook …\EV_Cost_Recovery_Rates - Copy.xlsx, sheet "rates": cell A3 ho
 a date format
 ```
 
-## Exercise 7: *Peak power detail* tab
+## Exercise 3: *Peak power detail* tab
 
 ***Note:** This exercise is about a function that supports detailed analysis not normally required for routine use of the software.*
 
 Part of the building's bill depends on its highest power use in the period. This tab shows how much of that peak the EV chargers caused.
 
-1. Run Exercise 2 again, with the original rates workbook.
+1. Run Exercise 2a again, with the original rates workbook.
 2. Open the **Peak power detail** tab. It is greyed until a *Cost recovery* run succeeds.
 
 The report has three sections, one per peak: *EV Peak kVA Contribution*, *EV Peak kW Contribution*, and *EV Peak kW 7-7 Contribution*. The value used for each charge is the one marked `*` in that section's *Estimates* table. The terms are explained under *Definitions and Conventions*, at the end of the report.
@@ -285,20 +299,20 @@ The *Segments* table under each set of estimates gives each segment's `Session c
 `Session kW`. The *Estimates* table's `All-in power` is worked out from these two;
 *Definitions and Conventions* says how. For `kW 7-7`, the first three segments are empty and the whole figure comes from `14:45`. That makes it the clearest one for seeing what a segment contributes.
 
-## Exercise 8: *Evolute reimbursement* tab
+## Exercise 4: *Evolute reimbursement* tab
 
 A separate question: did Evolute pay what our rates earned over a **calendar month**? A month is not the same as a billing period, so this figure and the surplus are not two views of one number.
 
 Only June can be run with the sample test data. It is the one month with both a session report and a charges report.
 
-The session report has to include 31 May, not only 1 to 30 June. The charges report's month begins at midnight local time, which in June is 23:00 EST on 31 May, and the session report is in EST. `data\evolute` has no such file, so this exercise uses the May-and-June file from `data\_archive`.
+The session report includes 31 May, not only 1 to 30 June. The charges report's month begins at midnight local time, which in June is 23:00 EST on 31 May, and the session report is in EST.
 
 1. Open the **Evolute reimbursement** tab.
 2. Fill in:
 
    | Field | Value |
    |:---|:---|
-   | Evolute Session Report | `data\_archive\evolute\Session_Report_May_1_2026-June_30_2026-seconds.csv` |
+   | Evolute Session Report | `data\evolute\Session_Report_May_31_2026-June_30_2026-seconds.csv` |
    | Evolute Charges Report | `data\evolute\XX-XX_Charges_June 2026-June 2026.csv` |
    | Reimbursement | `246.26` |
    | Rates workbook | `data\rates\EV_Cost_Recovery_Rates.xlsx` — already chosen if you chose it on the *Cost recovery* tab |
@@ -330,9 +344,9 @@ Below the figures, in the sections:
 |:---|:---|
 | *Cost recovery earned, by time of use* | Total of `1309.965` kWh used by EV chargers per the session report, priced at the EV cost-recovery rates, amounting to a total recovery of `$111.54`. |
 | *Energy variance* | `1330.30` kWh on the Charges Report against `1309.97` priced, a difference of `20.33`. The two come from different documents and are not expected to agree exactly |
-| *Session data* | The one session report, and `2 record(s) repeated a session already read …`: the file repeats two sessions within itself. Each is counted once |
-| *Sessions needing a look* | Four rows, all `DuplicateId`: two for session `S83723` and two for `S37487` |
-| *Overall anomalies* | 50 `ExcessiveAvgKw` and 4 `DuplicateId`, over May and June |
+| *Session data* | The one session report |
+| *Sessions needing a look* | Two rows, both `DuplicateId`, both session `S37487` |
+| *Overall anomalies* | 25 `ExcessiveAvgKw` and 2 `DuplicateId` |
 | *Charges Report* | The file the data was read from, and nothing more |
 
 Also try:
@@ -341,10 +355,23 @@ Also try:
 |:---|:---|
 | Type `0` into **Reimbursement** | Both variances negative — `-246.26` and `-111.54` — and "sent less than its own Charges Report" |
 | Delete **Reimbursement** (it will show `0.00` after you delete the value in it) and run | `the reimbursement amount is blank` — a blank is refused. A blank field looks the same as a deliberately typed `0.00` but they are different |
-| Choose `data\evolute\Session_Report_June_1_2026-June_30_2026-seconds.csv` instead | `the session report does not cover the month 2026-06-01 to 2026-06-30, which session reports, dated in EST, must cover from 2026-05-31 to 2026-06-30:`, followed by the dates the June file does cover. It misses the month's first hour |
-| Choose the **May** session report instead | The same message, followed by the dates the May file covers |
+| Choose the **May** session report instead | `the session report does not cover the month 2026-06-01 to 2026-06-30, which session reports, dated in EST, must cover from 2026-05-31 to 2026-06-30:`, followed by `…\Session_Report_April_30_2026-May_31_2026-seconds.csv covers 2026-04-30 to 2026-05-31` |
 
-## Exercise 9: *Convert to workbook* tab
+### A session report that starts on the 1st
+
+From April to November, the charges report's month begins at 23:00 EST on the last day of the month before, so a session report that starts on the 1st misses the month's first hour. The app refuses it.
+
+Run the exercise again, with `data\evolute\Session_Report_June_1_2026-June_30_2026-seconds.csv` as the **Evolute Session Report**. It holds the same sessions as the file used above, under a name that starts on 1 June. Press **Reconcile the month**:
+
+```
+the session report does not cover the month 2026-06-01 to 2026-06-30, which session reports,
+dated in EST, must cover from 2026-05-31 to 2026-06-30:
+  …\Session_Report_June_1_2026-June_30_2026-seconds.csv covers 2026-06-01 to 2026-06-30
+```
+
+The dates on the first line are the month's. The dates after "must cover from" are the ones the session report's name has to include.
+
+## Exercise 5: *Convert to workbook* tab
 
 ***Note:** This exercise is about functions that supports detailed analysis not normally required for routine use of the software.*
 
@@ -354,13 +381,13 @@ Turns one source file into an Excel workbook, saved in the same folder, for read
 
 | Do this | Expect |
 |:---|:---|
-| Convert `data\evolute\Session_Report_June_1_2026-June_30_2026-seconds.csv` | The workbook `Session_Report_June_1_2026-June_30_2026-seconds.xlsx` appears in `data\evolute`. Anomalies are reported for 25 rows, every one of them `ExcessiveAvgKw` |
+| Convert `data\evolute\Session_Report_May_31_2026-June_30_2026-seconds.csv` | The workbook `Session_Report_May_31_2026-June_30_2026-seconds.xlsx` appears in `data\evolute`. Anomalies are reported for 25 rows, every one of them `ExcessiveAvgKw` |
 | Convert the same file again | A **Replace existing workbook?** box. **Cancel** leaves the workbook alone; **Replace** overwrites it, including anything you may have typed into it |
 | Convert the Green Button export | A pause while several years of readings are read. The workbook has two sheets: `Peak_values`, one row per billing period, and `Interval_values`, one row per hour |
 
 The app never overwrites an existing workbook without asking.
 
-## Exercise 10: Saving and copying reports
+## Exercise 6: Saving and copying reports
 
 Every tab has a **Save…** button and a **Copy** button under its report. **Copy** puts the report on the clipboard, to paste into an email or a document. **Save…** offers a name:
 
@@ -371,32 +398,32 @@ Every tab has a **Save…** button and a **Copy** button under its report. **Cop
 | Evolute reimbursement | `Evolute_Reimbursement_<YYYY-MM>.report.md` |
 | Convert to workbook | `<workbook name>.conversion.report.md` |
 
-You can save under any name you like. Save the report from Exercise 2: it runs to 165 lines.
+You can save under any name you like. Save the report from Exercise 2a: it runs to 165 lines.
 
 Apart from converted workbooks and saved reports, the app writes nothing to your computer.
 
 ## Extra credit
 
-The exercises below need files from `data\_archive`, or set up mistakes that are unlikely in normal use. Familiarity with them is not needed to use the app.
+Familiarity with these exercises is not needed to use the app.
 
-### Exercises with files from the archive
+### Session report spanning multiple months
 
 #### One session report instead of two
 
-`data\_archive\evolute\Session_Report_May_1_2026-June_30_2026-seconds.csv` covers May and June in one file, as a single Evolute download for both months would. It covers the whole June billing period on its own.
+`data\evolute\Session_Report_April_30_2026-June_30_2026-seconds.csv` covers May and June in one file, as a single Evolute download for both months would. It covers the whole June billing period on its own.
 
-Put it in **Session report 1**, with the other files of Exercise 2. **Session report 2** stays shut. The four amounts are the same as in Exercise 2, to the cent: the same sessions, read from one file. The saved report runs to 158 lines. *Session data* names the one file and reports the same 2 repeated
+Put it in **Session report 1**, with the other files of Exercise 2a. **Session report 2** stays shut. The four amounts are the same as in Exercise 2a, to the cent: the same sessions, read from one file. The saved report runs to 158 lines. *Session data* names the one file and reports the same 2 repeated
 records, this time repeated within the file itself; *Overall anomalies* counts 50 `ExcessiveAvgKw`
 and 4 `DuplicateId`.
 
 #### One session report that contains the other
 
-With the June bill, put `data\evolute\Session_Report_June_1_2026-June_30_2026-seconds.csv` in **Session report 1**. June alone leaves 24 to 31 May uncovered, so **Session report 2** opens. Put
-`data\_archive\evolute\Session_Report_May_1_2026-June_30_2026-seconds.csv` in it:
+With the June bill, put `data\evolute\Session_Report_May_31_2026-June_30_2026-seconds.csv` in **Session report 1**. June alone leaves 24 to 30 May uncovered, so **Session report 2** opens. Put
+`data\evolute\Session_Report_April_30_2026-June_30_2026-seconds.csv` in it:
 
 ```
-Session report 2 covers 2026-05-01 to 2026-06-30, which already includes this
-file's 2026-06-01 to 2026-06-30. Move that file to this slot and clear the
+Session report 2 covers 2026-04-30 to 2026-06-30, which already includes this
+file's 2026-05-31 to 2026-06-30. Move that file to this slot and clear the
 second, or choose a report reaching dates it does not.
 ```
 
@@ -404,31 +431,9 @@ The note appears on the picker that has to change, which here is the first: the 
 keep. **Work out the surplus** stays disabled until it is fixed. **Clear** appears beside
 **Session report 2** whenever it holds a file.
 
-#### One day of overlap is enough
-
-With the June bill, put `data\_archive\evolute\Session_Report_August_1_2026-September_4_2026.csv` into **Session report 1**:
-
-```
-This report covers 2026-08-01 to 2026-09-04, which is outside the billing period
-2026-05-24 to 2026-06-23. Choose a report that reaches into the period.
-```
-
-One day of overlap is enough to be accepted. `data\_archive\evolute\Session_Report_July_1_2026-July_31_2026-mock.csv` gets the
-same message under the June bill, and none at all under `TH_5728140000_2026_07_28.pdf`, whose period
-runs 24 June to 23 July.
-
-#### No meter data for the period
-
-Choose `TH_5728140000_2026_07_28.pdf` as the bill, the June session report in **Session report 1**, and `data\_archive\evolute\Session_Report_July_1_2026-July_31_2026-mock.csv` in **Session report 2**. The two cover 24 June to 23 July between them, so the run gets as far as the meter data:
-
-```
-the meter data covers 24 of the 720 intervals in the billing period ending 2026-07-23,
-so its maxima are not the period's
-```
-
 ### Unlikely mistakes
 
-The rates workbook changes below are made in the practice copy, with the files of Exercise 2.
+The rates workbook changes below are made in the practice copy, with the files of Exercise 2a.
 
 **Text in a rate.** Type `eleven cents` into the mid-peak rate on row 2:
 
@@ -453,13 +458,13 @@ within the billing period 2026-05-24 to 2026-06-23, on 2026-06-01, 2026-06-15. A
 period can take one change at most
 ```
 
-**A rate change in the middle of a month, on the *Evolute reimbursement* tab.** Change the date on row 3 to `2026-06-15`, and run Exercise 8 with the practice copy:
+**A rate change in the middle of a month, on the *Evolute reimbursement* tab.** Change the date on row 3 to `2026-06-15`, and run Exercise 4 with the practice copy:
 
 ```
 … the rates change on 2026-06-15 (row 3), within the month 2026-06-01 to 2026-06-30. A month is reconciled at one set of rates, so they can change only on the 1st
 ```
 
-**A session report with the wrong name.** The app reads a session report's dates from its file name. In File Explorer, copy `Session_Report_June_1_2026-June_30_2026-seconds.csv` in `data\evolute`, and rename the copy `sessions.csv`. (If Windows hides the `.csv` ending, type just `sessions`.) Choose the June bill, then choose `sessions.csv` in **Session report 1**. It is refused on its name alone:
+**A session report with the wrong name.** The app reads a session report's dates from its file name. In File Explorer, copy `Session_Report_May_31_2026-June_30_2026-seconds.csv` in `data\evolute`, and rename the copy `sessions.csv`. (If Windows hides the `.csv` ending, type just `sessions`.) Choose the June bill, then choose `sessions.csv` in **Session report 1**. It is refused on its name alone:
 
 ```
 sessions is not a session report: the name must be
@@ -479,7 +484,9 @@ Delete the copy afterwards.
 
 **Two session reports with a gap between them.** Two reports that each reach into the period, but leave days between them uncovered, are refused: `the session reports do not cover the billing period …`, followed by what each file covers. The sample files cannot produce this.
 
-### About the sample files
+## About the sample files
 
 The Evolute portal states connection times to the second, with
 `Conn_DateTime_Start + Conn_Duration == Conn_DateTime_End`. The `-seconds` files were made (with `scripts/make-seconds-copies.py`) from `data\_archive\evolute\Session_Report_June_1_2026-June_30_2026.csv`, a sample provided by Evolute whose connection start and end times were cut to the minute. The May report was made from June's by `scripts/make-may-mock.py`.
+
+The files these scripts produced were later copied under names that start on the last day of the month before, as the *Evolute reimbursement* tab requires from April to November. Those copies are the files the exercises use.

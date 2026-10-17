@@ -1118,31 +1118,6 @@ fn close_sections(open: &mut Vec<(Section, u8)>, roots: &mut Vec<Section>, depth
 mod test {
     use super::*;
 
-    /// The five real inputs the tests below run the app against.
-    ///
-    /// Panics naming the file when one is absent, rather than returning `None` for the caller to
-    /// skip on. The harness has no skip outcome, so a test that returns early reports `ok` and its
-    /// message is swallowed unless someone passes `--nocapture`: a check nobody is running looks
-    /// exactly like one that passed. The tests that call this are `#[ignore]`d for that reason, so
-    /// the panic is only ever met by someone who asked for them by name.
-    fn real_inputs() -> (PathBuf, PathBuf, PathBuf, PathBuf, PathBuf) {
-        let paths = (
-            PathBuf::from("data/hydro_bills/TH_5728140000_2026_06_29.pdf"),
-            PathBuf::from("data/green_button/TH_Electric_Usage_23-11-2024_to_24-06-2026.XML"),
-            PathBuf::from("data/evolute/Session_Report_May_1_2026-May_31_2026-seconds.csv"),
-            PathBuf::from("data/evolute/Session_Report_June_1_2026-June_30_2026-seconds.csv"),
-            PathBuf::from("data/rates/EV_Cost_Recovery_Rates.xlsx"),
-        );
-        for path in [&paths.0, &paths.1, &paths.2, &paths.3, &paths.4] {
-            assert!(
-                path.exists(),
-                "{} is not in this checkout; these inputs are real customer documents",
-                path.display()
-            );
-        }
-        paths
-    }
-
     /// The four inputs `checked_figure` refuses, and the one it accepts.
     ///
     /// Its own doc names them; nothing asserted them. These are the messages a user meets when an
@@ -1266,8 +1241,41 @@ mod test {
         assert!(slot.confirm_replace.is_none(), "{:?}", slot.confirm_replace);
     }
 
-    /// A state with the four real files chosen, and the real rates workbook.
-    fn ready() -> (SurplusState, RatesWorkbook) {
+    /// The five sample files under `data/` that the `#[ignore]`d tests below run the app against:
+    /// the June bill, the meter export, the May and June session reports, and the rates workbook.
+    ///
+    /// For those tests only. `data/` is gitignored, so the files exist only on a machine that has
+    /// been given them, and not on a CI runner. The paths are relative to the package root, which
+    /// is where `cargo test` runs a test. The tests run only when asked for, by name or with
+    /// `-- --ignored`.
+    ///
+    /// Panics naming the file when one is absent, rather than returning `None` for the caller to
+    /// skip on. The harness has no skip outcome, so a test that returns early reports `ok` and its
+    /// message is swallowed unless someone passes `--nocapture`: a check nobody is running looks
+    /// exactly like one that passed.
+    fn real_inputs() -> (PathBuf, PathBuf, PathBuf, PathBuf, PathBuf) {
+        let paths = (
+            PathBuf::from("data/hydro_bills/TH_5728140000_2026_06_29.pdf"),
+            PathBuf::from("data/green_button/TH_Electric_Usage_23-11-2024_to_24-06-2026.XML"),
+            PathBuf::from("data/evolute/Session_Report_April_30_2026-May_31_2026-seconds.csv"),
+            PathBuf::from("data/evolute/Session_Report_May_31_2026-June_30_2026-seconds.csv"),
+            PathBuf::from("data/rates/EV_Cost_Recovery_Rates.xlsx"),
+        );
+        for path in [&paths.0, &paths.1, &paths.2, &paths.3, &paths.4] {
+            assert!(
+                path.exists(),
+                "{} is not in this checkout; these inputs are real customer documents",
+                path.display()
+            );
+        }
+        paths
+    }
+
+    /// A *Cost recovery* tab with the files from [`real_inputs`] chosen, ready to run, and the rates
+    /// workbook to run it with.
+    ///
+    /// For the `#[ignore]`d tests below only, for the reason [`real_inputs`] gives.
+    fn surplus_tab_with_real_inputs() -> (SurplusState, RatesWorkbook) {
         let (bill, meter, csv1, csv2, workbook) = real_inputs();
         let mut state = SurplusState::default();
         state.select(Input::Bill, bill);
@@ -1288,7 +1296,7 @@ mod test {
     #[test]
     #[ignore = "runs the app against the real inputs under data/"]
     fn the_app_produces_the_same_report_as_the_command_line() {
-        let (mut state, rates) = ready();
+        let (mut state, rates) = surplus_tab_with_real_inputs();
         state.run(&rates);
         assert!(state.error.is_none(), "{:?}", state.error);
         let outcome = state.outcome.as_ref().expect("the real inputs run");
@@ -1301,7 +1309,7 @@ mod test {
     #[test]
     #[ignore = "runs the app against the real inputs under data/"]
     fn a_run_leaves_the_three_priced_intervals_behind() {
-        let (mut state, rates) = ready();
+        let (mut state, rates) = surplus_tab_with_real_inputs();
         state.run(&rates);
         let outcome = state.outcome.as_ref().expect("the real inputs run");
         let units: Vec<_> = outcome
@@ -1362,7 +1370,7 @@ mod test {
     #[test]
     #[ignore = "runs the app against the real inputs under data/"]
     fn changing_an_input_discards_the_figures_it_produced() {
-        let (mut state, rates) = ready();
+        let (mut state, rates) = surplus_tab_with_real_inputs();
         state.run(&rates);
         assert!(state.outcome.is_some(), "{:?}", state.error);
 

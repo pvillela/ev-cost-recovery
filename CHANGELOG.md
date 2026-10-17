@@ -7,19 +7,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
 
-### Changed
+### Fixed
 
-- Evolute reimbursement: from April to November, the session report must include the last day of
-  the month before the Charges Report's month. Evolute has confirmed that the Charges Report cuts
-  its month at midnight local time (ET), and in those months that is 23:00 EST on the day before
-  the 1st. Session reports are dated in EST, so a report starting on the 1st misses the month's
-  first hour, and the energy used in that hour was priced at zero. Such a report is refused, with
-  a message that names the EST dates required:
+- Evolute reimbursement: from April to November, a session report starting on the 1st could leave
+  out sessions in the first hour of the month, and the reconciliation accepted it. Evolute has
+  confirmed that the Charges Report cuts its month at midnight local time (ET). In those months
+  that is 23:00 EST on the last day of the month before, and session reports are dated in EST. The
+  session report must now include that day, and one that does not is refused with a message
+  naming the EST dates required:
   `… does not cover the month 2026-06-01 to 2026-06-30, which session reports, dated in EST, must
   cover from 2026-05-31 to 2026-06-30:`. December to March are not affected, and neither are
   billing periods, which Toronto Hydro cuts on EST.
-- API: `CoverageError::PeriodNotCovered` has a `report_dates` field, the EST dates the session
-  reports had to cover.
 
 ## 1.0.2 - 2026-10-08
 
